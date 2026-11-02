@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=Merge Monkey
+Name=Delta
 Comment=A graphical user interface for git
-Exec=merge-monkey
-Icon=merge-monkey
+Exec=delta
+Icon=delta
 Categories=Development;RevisionControl;
 Terminal=false
-StartupWMClass=merge-monkey
+StartupWMClass=delta

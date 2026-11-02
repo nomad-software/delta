@@ -3,7 +3,7 @@ package ui
 import (
 	qt "github.com/mappu/miqt/qt6"
 
-	"github.com/nomad-software/merge-monkey/internal/settings"
+	"github.com/nomad-software/delta/internal/settings"
 )
 
 // themeChoices are the themes offered, by how the settings name them.

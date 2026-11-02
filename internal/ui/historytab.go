@@ -8,9 +8,9 @@ import (
 	qt "github.com/mappu/miqt/qt6"
 	"github.com/mappu/miqt/qt6/mainthread"
 
-	"github.com/nomad-software/merge-monkey/internal/git"
-	"github.com/nomad-software/merge-monkey/internal/graph"
-	"github.com/nomad-software/merge-monkey/internal/settings"
+	"github.com/nomad-software/delta/internal/git"
+	"github.com/nomad-software/delta/internal/graph"
+	"github.com/nomad-software/delta/internal/settings"
 )
 
 // historyTabIndex is where the history tab is among the window's tabs.
@@ -424,7 +424,8 @@ func (w *Window) showCommit() {
 }
 
 // setFiles shows the files of a commit, under a row with the text first, which
-// goes to the top of the diff.
+// goes to the top of the diff. Nil changes clear the list, where an empty list is
+// a commit that changed nothing.
 func (h *historyTab) setFiles(changes []git.Change, first string) {
 	h.updating = true
 	defer func() { h.updating = false }()

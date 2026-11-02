@@ -153,7 +153,7 @@ func parseStatus(out string) (Status, error) {
 		if f == "" {
 			continue
 		}
-		var c Change
+		var path, oldPath string
 		var x, y byte
 		switch f[0] {
 		case '#':
@@ -170,7 +170,7 @@ func parseStatus(out string) (Status, error) {
 			if len(p) != 9 {
 				return s, fmt.Errorf("unexpected status line: %q", f)
 			}
-			c.Path, x, y = p[8], p[1][0], p[1][1]
+			path, x, y = p[8], p[1][0], p[1][1]
 		case '2':
 			// 2 XY sub mH mI mW hH hI Xscore path, then the old path.
 			p := strings.SplitN(f, " ", 10)
@@ -178,7 +178,7 @@ func parseStatus(out string) (Status, error) {
 				return s, fmt.Errorf("unexpected status line: %q", f)
 			}
 			i++
-			c.Path, c.OldPath, x, y = p[9], fields[i], p[1][0], p[1][1]
+			path, oldPath, x, y = p[9], fields[i], p[1][0], p[1][1]
 		case 'u':
 			// u XY sub m1 m2 m3 mW h1 h2 h3 path
 			p := strings.SplitN(f, " ", 11)
@@ -191,15 +191,25 @@ func parseStatus(out string) (Status, error) {
 			return s, fmt.Errorf("unexpected status line: %q", f)
 		}
 		if x != '.' {
-			c.Code = x
-			s.Staged = append(s.Staged, c)
+			s.Staged = append(s.Staged, sideOf(path, oldPath, x))
 		}
 		if y != '.' {
-			c.Code = y
-			s.Unstaged = append(s.Unstaged, c)
+			s.Unstaged = append(s.Unstaged, sideOf(path, oldPath, y))
 		}
 	}
 	return s, nil
+}
+
+// sideOf returns a line of the status as a change on one side of the index. The
+// line's old path only belongs to the side that renamed or copied the file: after
+// a rename is staged, the old path is in neither the index nor the work tree, and
+// naming it to git on the unstaged side is an error.
+func sideOf(path, oldPath string, code byte) Change {
+	c := Change{Path: path, Code: code}
+	if code == 'R' || code == 'C' {
+		c.OldPath = oldPath
+	}
+	return c
 }
 
 // readHeader takes in a "# branch.…" line of the status.
@@ -269,7 +279,7 @@ func (r *Repo) capped(args []string, differs bool) (string, error) {
 	case readErr != nil:
 		return "", readErr
 	case waitErr != nil && !(differs && exitCode(waitErr) == 1):
-		// Without --index, diff exits 1 to say that the files differ.
+		// With --no-index, diff exits 1 to say that the files differ.
 		return "", failure(waitErr, "", stderr.String())
 	}
 	return string(data), nil
@@ -413,7 +423,8 @@ func (r *Repo) uncommittedDetail() ([]Change, string, error) {
 			continue
 		}
 		changes = append(changes, c)
-		if len(text) >= MaxDiff {
+		// Nothing goes after a diff that has been cut off.
+		if len(text) >= MaxDiff || strings.HasSuffix(text, cutNote()) {
 			continue
 		}
 		diff, err := r.Diff(c, false)
@@ -568,7 +579,7 @@ func (r *Repo) DeleteBranch(name string, force bool) (string, error) {
 
 // Merge merges the branch into the current one.
 func (r *Repo) Merge(name string) (string, error) {
-	return r.run("merge", "--no-edit", name)
+	return r.run("merge", name)
 }
 
 // AbortMerge abandons the merge in progress.

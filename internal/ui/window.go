@@ -10,8 +10,8 @@ import (
 	qt "github.com/mappu/miqt/qt6"
 	"github.com/mappu/miqt/qt6/mainthread"
 
-	"github.com/nomad-software/merge-monkey/internal/git"
-	"github.com/nomad-software/merge-monkey/internal/settings"
+	"github.com/nomad-software/delta/internal/git"
+	"github.com/nomad-software/delta/internal/settings"
 )
 
 // Window is the program's main window.
@@ -222,14 +222,8 @@ func (w *Window) makeMenus() {
 
 	remote := bar.AddMenuWithTitle("&Remote")
 	w.repoOnly = append(w.repoOnly,
-		w.action(remote, "&Fetch", "Ctrl+Shift+F", func() {
-			r := w.repo
-			w.run("Fetch", r.Fetch, nil)
-		}),
-		w.action(remote, "Pu&ll", "Ctrl+Shift+L", func() {
-			r := w.repo
-			w.run("Pull", r.Pull, nil)
-		}),
+		w.action(remote, "&Fetch", "Ctrl+Shift+F", func() { w.run("Fetch", w.repo.Fetch, nil) }),
+		w.action(remote, "Pu&ll", "Ctrl+Shift+L", func() { w.run("Pull", w.repo.Pull, nil) }),
 	)
 	remote.AddAction(w.push)
 	remote.AddAction(w.forcePush)
@@ -340,7 +334,7 @@ func (w *Window) updateActions() {
 // showTitle shows the repository and branch in the title and the status bar.
 func (w *Window) showTitle() {
 	if w.repo == nil {
-		w.SetWindowTitle("Merge Monkey")
+		w.SetWindowTitle("Delta")
 		w.where.SetText("")
 		return
 	}
@@ -349,7 +343,7 @@ func (w *Window) showTitle() {
 	if name == "" {
 		name = "detached HEAD"
 	}
-	w.SetWindowTitle(fmt.Sprintf("%s (%s) — Merge Monkey", filepath.Base(w.repo.Root), name))
+	w.SetWindowTitle(fmt.Sprintf("%s (%s) — Delta", filepath.Base(w.repo.Root), name))
 	where := name
 	if s.Upstream != "" {
 		where += fmt.Sprintf(" → %s  ↑%d ↓%d", s.Upstream, s.Ahead, s.Behind)
@@ -544,6 +538,6 @@ func (w *Window) saveSettings() {
 		}
 	}
 	if err := w.config.Save(w.path); err != nil {
-		fmt.Fprintln(os.Stderr, "merge-monkey: the settings could not be saved:", err)
+		fmt.Fprintln(os.Stderr, "delta: the settings could not be saved:", err)
 	}
 }

@@ -1,7 +1,7 @@
 #!/bin/sh
-# Builds Merge Monkey as a macOS app for Apple Silicon, with the Qt it needs
+# Builds Delta as a macOS app for Apple Silicon, with the Qt it needs
 # inside it, and puts it in a disk image to drag into Applications. The
-# result is build/Merge-Monkey-<version>-arm64.dmg.
+# result is build/Delta-<version>-arm64.dmg.
 #
 # It runs on a Mac with Apple Silicon, with Go, the Xcode command line tools
 # and the base of Homebrew's Qt (brew install go pkgconf qtbase), as the
@@ -22,8 +22,8 @@ cd "$(dirname "$0")/.."
 VERSION="${VERSION:-$(git describe --tags --always 2>/dev/null || echo dev)}"
 ARCH=arm64
 BUILD=build
-APP="$BUILD/Merge Monkey.app"
-OUTPUT="Merge-Monkey-$VERSION-$ARCH.dmg"
+APP="$BUILD/Delta.app"
+OUTPUT="Delta-$VERSION-$ARCH.dmg"
 MACDEPLOYQT="${MACDEPLOYQT:-$(command -v macdeployqt || echo "$(brew --prefix qtbase)/bin/macdeployqt")}"
 BREW_LIB="$(brew --prefix)/lib"
 
@@ -39,7 +39,7 @@ fi
 rm -rf "$APP" "$BUILD/$OUTPUT" "$BUILD/dmg"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-echo "Building Merge Monkey $VERSION"
+echo "Building Delta $VERSION"
 # The program is linked with room to name the libraries it uses by longer
 # paths, as macdeployqt names them by where they are in the app, which is
 # longer than where Homebrew has them; without it the last few are left as
@@ -53,20 +53,20 @@ echo "Building Merge Monkey $VERSION"
 # runtime gives up ("non-Go code set up signal handler without SA_ONSTACK
 # flag") when it arrives while Go code runs on the main thread. Goroutines
 # are still preempted where they call functions, which is all a GUI needs.
-go build -ldflags "-s -w -X=runtime.godebugDefault=asyncpreemptoff=1 -extldflags=-Wl,-headerpad_max_install_names" -o "$APP/Contents/MacOS/merge-monkey" .
+go build -ldflags "-s -w -X=runtime.godebugDefault=asyncpreemptoff=1 -extldflags=-Wl,-headerpad_max_install_names" -o "$APP/Contents/MacOS/delta" .
 
-# The icon is made from packaging/macos/merge-monkey.png (make icons: the
+# The icon is made from packaging/macos/delta.png (make icons: the
 # program's icon within the margin Apple's grid gives icons) at each of the
 # sizes macOS looks for, and those made into an .icns.
-ICONSET="$BUILD/merge-monkey.iconset"
+ICONSET="$BUILD/delta.iconset"
 rm -rf "$ICONSET"
 mkdir -p "$ICONSET"
 for size in 16 32 128 256 512; do
-	sips -z "$size" "$size" packaging/macos/merge-monkey.png --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+	sips -z "$size" "$size" packaging/macos/delta.png --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
 	double=$((size * 2))
-	sips -z "$double" "$double" packaging/macos/merge-monkey.png --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+	sips -z "$double" "$double" packaging/macos/delta.png --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
 done
-iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/merge-monkey.icns"
+iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/delta.icns"
 
 # The version is that of the tag, without its v, which macOS wants as
 # numbers; a build of no tag is 0.0.0. The app is given its Info.plist
@@ -131,7 +131,7 @@ codesign --verify --deep --strict "$APP"
 # still be running a few seconds later. Anything else is a library that is
 # missing or a crash. macOS has no timeout, so it is waited for by hand.
 scratch="$(mktemp -d)"
-HOME="$scratch" "$APP/Contents/MacOS/merge-monkey" &
+HOME="$scratch" "$APP/Contents/MacOS/delta" &
 pid=$!
 sleep 5
 if ! kill -0 "$pid" 2>/dev/null; then
@@ -152,7 +152,7 @@ mkdir -p "$BUILD/dmg"
 cp -R "$APP" "$BUILD/dmg/"
 ln -s /Applications "$BUILD/dmg/Applications"
 tries=0
-until hdiutil create -volname "Merge Monkey" -srcfolder "$BUILD/dmg" -fs HFS+ -format UDZO -ov "$BUILD/$OUTPUT"; do
+until hdiutil create -volname "Delta" -srcfolder "$BUILD/dmg" -fs HFS+ -format UDZO -ov "$BUILD/$OUTPUT"; do
 	tries=$((tries + 1))
 	if [ "$tries" -ge 5 ]; then
 		echo "The disk image could not be made" >&2

@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/mappu/miqt/qt6"
 
-	"github.com/nomad-software/merge-monkey/internal/settings"
+	"github.com/nomad-software/delta/internal/settings"
 )
 
 // The columns of the table of colours.
@@ -17,10 +17,6 @@ const (
 
 // colourTableHeight is the least height of the table of colours.
 const colourTableHeight = 170
-
-// fallbackCodeFontSize is the size of the code's font in points when the system's
-// has none to go by.
-const fallbackCodeFontSize = 10
 
 // settingsDialog edits the theme, the font of the code and the colours of the
 // diff.
@@ -162,23 +158,6 @@ func newSettingsDialog(parent *qt.QWidget, current settings.Settings, accepted f
 	return d
 }
 
-// codeFont returns a new font of the family and size in points, each the system's
-// fixed width font's if it is not given.
-func codeFont(family string, size int) *qt.QFont {
-	font := qt.NewQFont5(qt.QFontDatabase_SystemFont(qt.QFontDatabase__FixedFont))
-	if family != "" {
-		font.SetFamily(family)
-	}
-	switch {
-	case size > 0:
-		font.SetPointSize(size)
-	case font.PointSize() < settings.MinCodeFontSize:
-		// A font set in pixels has no size in points.
-		font.SetPointSize(fallbackCodeFontSize)
-	}
-	return font
-}
-
 // addColourSection adds a bold row as wide as the table, heading those after it.
 func (d *settingsDialog) addColourSection(title string) {
 	item := qt.NewQTableWidgetItem2(title)
@@ -208,16 +187,6 @@ func (d *settingsDialog) addColour(name string) *colourButton {
 	d.colours.SetItem(row, colColourName, item)
 	d.colours.SetCellWidget(row, colColourSwatch, cell)
 	return button
-}
-
-// heading returns a label for a section.
-func heading(text string) *qt.QLabel {
-	label := qt.NewQLabel3(text)
-	font := qt.NewQFont5(label.Font())
-	defer font.Delete()
-	font.SetBold(true)
-	label.SetFont(font)
-	return label
 }
 
 // show puts the settings in the dialog.

@@ -1,18 +1,18 @@
-# <img src="packaging/merge-monkey.png" alt="" width="40" height="40"> Merge Monkey
+# <img src="packaging/delta.png" alt="" width="40" height="40"> Delta
 
 A graphical user interface for git, in the spirit of `git gui` and `gitk`.
 Stage and commit on one tab, and browse the history as a graph on another. It is
 written in Go with Qt 6, through the [miqt](https://github.com/mappu/miqt)
 bindings, and runs on Linux and macOS.
 
-![The History tab of Merge Monkey](docs/history.png)
+![The History tab of Delta](docs/history.png)
 
-![The Branch tab of Merge Monkey](docs/branch.png)
+![The Branch tab of Delta](docs/branch.png)
 
 ## Running
 
 ```sh
-merge-monkey [folder]
+delta [folder]
 ```
 
 It opens the repository holding the folder given. Without one, it opens the
@@ -55,6 +55,8 @@ Below the commits, choose one to see the files it changed on the left, and its
 message and diff on the right. Choose a file to go to its place in the diff. A
 merge is shown as what it changed against its first parent.
 
+A diff over 4 MiB, on either tab, is cut off with a note saying so.
+
 ## Menus
 
 `Ctrl+1` and `Ctrl+2` go to the Branch and History tabs.
@@ -67,6 +69,9 @@ merge is shown as what it changed against its first parent.
 | Remote | Fetch, Pull, Push, Force Push, Add Remote, Rename Remote, Change URL, Remove Remote | Fetch `Ctrl+Shift+F`, Pull `Ctrl+Shift+L` |
 | Help   | About | `Ctrl+I` |
 
+Deleting a branch asks first, and asks again if it has commits that have not been
+merged.
+
 ## Settings
 
 The **User interface** tab of **File > Settings…** sets:
@@ -77,28 +82,28 @@ The **User interface** tab of **File > Settings…** sets:
 - The colours of added lines, removed lines and hunk headers (the grey
   `@@ -1,6 +1,7 @@`), in a table.
 
-The settings are kept in `merge-monkey/settings.json` under the system's
+The settings are kept in `delta/settings.json` under the system's
 configuration folder (`~/.config` on Linux), along with the size of the window
 and the panes of both tabs, which are saved when it closes.
 
 ## Desktop entry
 
-On Linux, Merge Monkey adds itself to the desktop's applications every time it
+On Linux, Delta adds itself to the desktop's applications every time it
 starts, so that it can be opened from the menu and kept in a dock. It writes
-`~/.local/share/applications/merge-monkey.desktop` and its icon to
-`~/.local/share/icons/hicolor/128x128/apps/merge-monkey.png` (or under
+`~/.local/share/applications/delta.desktop` and its icon to
+`~/.local/share/icons/hicolor/128x128/apps/delta.png` (or under
 `$XDG_DATA_HOME`). The entry starts the copy that ran last, wherever it is, which
 is the AppImage if it was run from one.
 
 ## Passwords
 
-Merge Monkey never prompts for a password itself. Git and ssh run without a
+Delta never prompts for a password itself. Git and ssh run without a
 terminal, so remote operations need a credential helper, an ssh agent or
 `SSH_ASKPASS`; otherwise they fail with git's error rather than hanging.
 
 ## Requirements
 
-Running it needs `git`. Building it from source also needs:
+Running it needs `git` 2.31 or later. Building it from source also needs:
 
 - Go 1.27.3 or later
 - A C++ compiler (GCC or Clang)
@@ -136,7 +141,7 @@ prints compiler warnings from the Qt headers that can be ignored. Later builds
 take a few seconds.
 
 ```sh
-make build        # builds ./merge-monkey
+make build        # builds ./delta
 make run          # builds and runs it
 make install      # installs it in $GOBIN or $(go env GOPATH)/bin, to run from anywhere
 make test         # runs the tests
@@ -145,7 +150,7 @@ make screenshots  # redraws the pictures in docs/
 make icons        # redraws the icons in packaging/, after the icon's code changes
 make appimage     # builds the AppImage
 make macos        # builds the macOS app, on a Mac
-make clean        # removes ./merge-monkey and build/
+make clean        # removes ./delta and build/
 ```
 
 ## Releases
@@ -162,7 +167,7 @@ package as an artifact of the run to download.
 
 ### AppImage for Linux
 
-`Merge-Monkey-*-x86_64.AppImage` is one file with Qt inside it. Make it
+`Delta-*-x86_64.AppImage` is one file with Qt inside it. Make it
 executable and run it. It works under X11 and Wayland, on systems with glibc 2.35
 or later, such as Ubuntu 22.04 and Debian 12. `git` is not included.
 
@@ -172,8 +177,8 @@ for that reason.
 
 ### macOS app
 
-`Merge-Monkey-*-arm64.dmg` is for Macs with Apple Silicon. Open it and drag Merge
-Monkey into Applications.
+`Delta-*-arm64.dmg` is for Macs with Apple Silicon. Open it and drag Delta
+into Applications.
 
 The app is not signed with an Apple Developer ID or notarised, so macOS won't
 open it the first time. Do one of these once:
@@ -182,7 +187,7 @@ open it the first time. Do one of these once:
 - Run this in Terminal:
 
   ```sh
-  xattr -dr com.apple.quarantine "/Applications/Merge Monkey.app"
+  xattr -dr com.apple.quarantine "/Applications/Delta.app"
   ```
 
 ## Licence

@@ -5,4 +5,4 @@
 # another folder, newer versions of Qt look for that file in the wrong place
 # and find no way to open a window.
 HERE="$(dirname "$(readlink -f "$0")")"
-exec "$HERE/usr/bin/merge-monkey" "$@"
+exec "$HERE/usr/bin/delta" "$@"

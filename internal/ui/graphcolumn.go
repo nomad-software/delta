@@ -3,7 +3,7 @@ package ui
 import (
 	qt "github.com/mappu/miqt/qt6"
 
-	"github.com/nomad-software/merge-monkey/internal/graph"
+	"github.com/nomad-software/delta/internal/graph"
 )
 
 // The size of the graph, in pixels.

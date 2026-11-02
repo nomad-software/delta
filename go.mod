@@ -1,4 +1,4 @@
-module github.com/nomad-software/merge-monkey
+module github.com/nomad-software/delta
 
 go 1.27.3
 

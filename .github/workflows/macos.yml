@@ -27,7 +27,7 @@ jobs:
     runs-on: macos-15
     steps:
       # Homebrew's Qt has the pkg-config files that the bindings are built
-      # with. Only its base is installed, which is all Merge Monkey uses, as
+      # with. Only its base is installed, which is all Delta uses, as
       # macdeployqt would put the plugins of the other modules in the app
       # too (see packaging/macos.sh).
       - name: Install Qt
@@ -62,7 +62,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Merge-Monkey-macOS
+          name: Delta-macOS
           path: build/*.dmg
           if-no-files-found: error
 

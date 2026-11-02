@@ -8,11 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/nomad-software/delta/internal/atomicfile"
 )
 
 // Name names the desktop entry and the icon, without their extensions. Under
 // Wayland, a window is matched to its entry by this name, which main.go gives Qt.
-const Name = "merge-monkey"
+const Name = "delta"
 
 // Install writes the desktop entry and the icon, given as PNG data, among the
 // user's own. It is called at every start, so that the entry always starts the
@@ -81,7 +83,7 @@ func dataFolder() (string, error) {
 func entry(command, class, icon string) string {
 	return "[Desktop Entry]\n" +
 		"Type=Application\n" +
-		"Name=Merge Monkey\n" +
+		"Name=Delta\n" +
 		"Comment=A graphical user interface for git\n" +
 		"Exec=" + escapeValue(quoteArgument(command)) + "\n" +
 		"TryExec=" + escapeValue(command) + "\n" +
@@ -108,8 +110,7 @@ func escapeValue(value string) string {
 	return strings.NewReplacer(`\`, `\\`, "\n", `\n`, "\t", `\t`, "\r", `\r`).Replace(value)
 }
 
-// writeIfChanged writes the data unless the file already holds it, through a temporary
-// file so that a failure leaves the old one whole.
+// writeIfChanged writes the data unless the file already holds it.
 func writeIfChanged(path string, data []byte) error {
 	if old, err := os.ReadFile(path); err == nil && bytes.Equal(old, data) {
 		return nil
@@ -117,21 +118,5 @@ func writeIfChanged(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Chmod(0o644); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
+	return atomicfile.Write(path, data, 0o644)
 }

@@ -1,7 +1,7 @@
 #!/bin/sh
-# Builds Merge Monkey and packs it, with the Qt libraries it needs, into an
+# Builds Delta and packs it, with the Qt libraries it needs, into an
 # AppImage: one file that runs on most Linux systems without installing
-# anything. The result is build/Merge-Monkey-<version>-x86_64.AppImage.
+# anything. The result is build/Delta-<version>-x86_64.AppImage.
 #
 # It is meant to be run on an old distribution (the GitHub workflow uses
 # Ubuntu 22.04, with Qt's own build of Qt), as an AppImage runs on systems as
@@ -18,13 +18,13 @@ ARCH=x86_64
 BUILD=build
 APPDIR="$BUILD/AppDir"
 TOOLS="$BUILD/tools"
-OUTPUT="Merge-Monkey-$VERSION-$ARCH.AppImage"
+OUTPUT="Delta-$VERSION-$ARCH.AppImage"
 
 rm -rf "$APPDIR"
 mkdir -p "$TOOLS"
 
-echo "Building Merge Monkey $VERSION"
-go build -ldflags "-s -w" -o "$BUILD/merge-monkey" .
+echo "Building Delta $VERSION"
+go build -ldflags "-s -w" -o "$BUILD/delta" .
 # linuxdeploy copies the program and every library it uses into a folder
 # laid out as an AppImage needs, and its Qt plugin adds the parts of Qt that
 # are loaded while running, which cannot be found by looking at the program.
@@ -101,9 +101,9 @@ export LINUXDEPLOY_OUTPUT_VERSION="$VERSION"
 
 "$TOOLS/linuxdeploy-$ARCH.AppImage" \
 	--appdir "$APPDIR" \
-	--executable "$BUILD/merge-monkey" \
-	--desktop-file packaging/merge-monkey.desktop \
-	--icon-file packaging/merge-monkey.png \
+	--executable "$BUILD/delta" \
+	--desktop-file packaging/delta.desktop \
+	--icon-file packaging/delta.png \
 	--custom-apprun packaging/AppRun \
 	--plugin qt
 

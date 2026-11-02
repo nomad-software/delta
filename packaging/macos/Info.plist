@@ -8,17 +8,17 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>Merge Monkey</string>
+	<string>Delta</string>
 	<key>CFBundleExecutable</key>
-	<string>merge-monkey</string>
+	<string>delta</string>
 	<key>CFBundleIconFile</key>
-	<string>merge-monkey</string>
+	<string>delta</string>
 	<key>CFBundleIdentifier</key>
-	<string>uk.net.nomad.merge-monkey</string>
+	<string>uk.net.nomad.delta</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Merge Monkey</string>
+	<string>Delta</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

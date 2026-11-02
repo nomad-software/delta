@@ -3,7 +3,7 @@ package ui
 import (
 	qt "github.com/mappu/miqt/qt6"
 
-	"github.com/nomad-software/merge-monkey/internal/diff"
+	"github.com/nomad-software/delta/internal/diff"
 )
 
 // tabWidth is how many spaces wide a tab is.
@@ -25,7 +25,6 @@ func newDiffView(added, removed, hunk string) *diffView {
 	v.SetReadOnly(true)
 	v.SetUndoRedoEnabled(false)
 	v.SetLineWrapMode(qt.QPlainTextEdit__NoWrap)
-	v.setCodeFont(qt.QFontDatabase_SystemFont(qt.QFontDatabase__FixedFont))
 	return v
 }
 

@@ -13,8 +13,8 @@ import (
 	qt "github.com/mappu/miqt/qt6"
 	"github.com/mappu/miqt/qt6/mainthread"
 
-	"github.com/nomad-software/merge-monkey/internal/git"
-	"github.com/nomad-software/merge-monkey/internal/settings"
+	"github.com/nomad-software/delta/internal/git"
+	"github.com/nomad-software/delta/internal/settings"
 )
 
 // TestMain runs the tests on a goroutine of their own while Qt's event loop
@@ -425,13 +425,74 @@ func TestBranchOperations(t *testing.T) {
 		w.removeBranch("topic")
 		w.answer = true
 		w.removeBranch("topic")
+	})
+	waitFor(t, "the deletion", func() bool {
+		local, _, _ := w.repo.Branches()
+		return !w.busy && !slices.Contains(local, "topic")
+	})
+	on(func() {
 		if len(w.asked) != 3 {
 			t.Errorf("asked %q", w.asked)
+		}
+	})
+}
+
+// TestDeletingABranchRunsInTheBackground checks that git is not run on the main
+// thread, which would hold up the window, and that nothing else can start
+// meanwhile. A branch with nothing of its own is deleted after one answer.
+func TestDeletingABranchRunsInTheBackground(t *testing.T) {
+	dir := newRepo(t)
+	runGit(t, dir, "branch", "topic")
+	w := newTestWindow(t, dir)
+	waitFor(t, "the branch", func() bool { return w.status.Branch == "main" && !w.busy })
+	on(func() {
+		w.answer = true
+		w.removeBranch("topic")
+		if !w.busy || w.repoOnly[0].IsEnabled() {
+			t.Errorf("busy %v, actions enabled %v, straight after", w.busy, w.repoOnly[0].IsEnabled())
 		}
 	})
 	waitFor(t, "the deletion", func() bool {
 		local, _, _ := w.repo.Branches()
 		return !w.busy && !slices.Contains(local, "topic")
+	})
+	on(func() {
+		if len(w.asked) != 1 {
+			t.Errorf("asked %q", w.asked)
+		}
+		if got := w.said.Text(); got != "Deleted the branch topic" {
+			t.Errorf("said %q", got)
+		}
+	})
+}
+
+// TestKeepingAnUnmergedBranch checks that declining the second question, once git
+// has refused, keeps the branch and says so.
+func TestKeepingAnUnmergedBranch(t *testing.T) {
+	dir := newRepo(t)
+	runGit(t, dir, "switch", "-c", "topic")
+	writeFile(t, dir, "file", "work\n")
+	runGit(t, dir, "commit", "-am", "work")
+	runGit(t, dir, "switch", "main")
+	w := newTestWindow(t, dir)
+	waitFor(t, "the branch", func() bool { return w.status.Branch == "main" && !w.busy })
+	var answers int
+	on(func() {
+		w.confirm = func(string, string) bool {
+			answers++
+			return answers == 1
+		}
+		w.removeBranch("topic")
+	})
+	waitFor(t, "the second question", func() bool { return answers == 2 && !w.busy })
+	on(func() {
+		local, _, _ := w.repo.Branches()
+		if !slices.Contains(local, "topic") {
+			t.Error("the branch is gone")
+		}
+		if got := w.said.Text(); got != "Kept the branch topic" {
+			t.Errorf("said %q", got)
+		}
 	})
 }
 
@@ -818,10 +879,10 @@ func screenshotRepo(t *testing.T) string {
 	return dir
 }
 
-// TestScreenshot draws the window to the path in MERGE_MONKEY_SCREENSHOT, in the
-// theme in MERGE_MONKEY_THEME, on the tab MERGE_MONKEY_TAB says.
+// TestScreenshot draws the window to the path in DELTA_SCREENSHOT, in the
+// theme in DELTA_THEME, on the tab DELTA_TAB says.
 func TestScreenshot(t *testing.T) {
-	path := os.Getenv("MERGE_MONKEY_SCREENSHOT")
+	path := os.Getenv("DELTA_SCREENSHOT")
 	if path == "" {
 		t.Skip("no path given")
 	}
@@ -833,10 +894,10 @@ func TestScreenshot(t *testing.T) {
 	w := newTestWindow(t, dir)
 	waitFor(t, "the files", func() bool { return w.idleWith(2, 1) })
 	on(func() {
-		if os.Getenv("MERGE_MONKEY_TAB") == "history" {
+		if os.Getenv("DELTA_TAB") == "history" {
 			w.tabs.SetCurrentIndex(historyTabIndex)
 		}
-		applyTheme(os.Getenv("MERGE_MONKEY_THEME"))
+		applyTheme(os.Getenv("DELTA_THEME"))
 		w.tab.unstaged.SetCurrentRow(0)
 		w.tab.message.SetPlainText("Make the file shout")
 		w.say("")
@@ -1229,7 +1290,7 @@ func TestAboutBox(t *testing.T) {
 		}
 		d := newAboutDialog(nil, icon)
 		defer d.Delete()
-		if d.WindowTitle() != "About Merge Monkey" {
+		if d.WindowTitle() != "About Delta" {
 			t.Errorf("title %q", d.WindowTitle())
 		}
 	})

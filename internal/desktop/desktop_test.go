@@ -9,11 +9,11 @@ import (
 )
 
 func TestEntry(t *testing.T) {
-	text := entry("/opt/merge monkey/app", "app", "/icons/merge-monkey.png")
+	text := entry("/opt/my delta/app", "app", "/icons/delta.png")
 	for _, line := range []string{
-		"[Desktop Entry]", "Type=Application", "Name=Merge Monkey",
-		`Exec="/opt/merge monkey/app"`, "TryExec=/opt/merge monkey/app",
-		"Icon=/icons/merge-monkey.png", "Terminal=false", "StartupWMClass=app",
+		"[Desktop Entry]", "Type=Application", "Name=Delta",
+		`Exec="/opt/my delta/app"`, "TryExec=/opt/my delta/app",
+		"Icon=/icons/delta.png", "Terminal=false", "StartupWMClass=app",
 	} {
 		if !strings.Contains(text, line+"\n") {
 			t.Errorf("no %q in\n%s", line, text)
@@ -76,11 +76,11 @@ func TestInstall(t *testing.T) {
 	if err := Install([]byte("image")); err != nil {
 		t.Fatal(err)
 	}
-	icon := filepath.Join(data, "icons", "hicolor", "128x128", "apps", "merge-monkey.png")
+	icon := filepath.Join(data, "icons", "hicolor", "128x128", "apps", "delta.png")
 	if got, err := os.ReadFile(icon); err != nil || string(got) != "image" {
 		t.Errorf("icon %q, %v", got, err)
 	}
-	path := filepath.Join(data, "applications", "merge-monkey.desktop")
+	path := filepath.Join(data, "applications", "delta.desktop")
 	got, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)

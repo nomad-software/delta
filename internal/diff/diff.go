@@ -41,9 +41,9 @@ type Parsed struct {
 var cleaner = strings.NewReplacer(
 	"\r\n", "\n",
 	"\r", " ",
-	" ", " ",
-	"﷐", " ",
-	"﷑", " ",
+	"\u2029", " ",
+	"\ufdd0", " ",
+	"\ufdd1", " ",
 )
 
 // hiddenHeaders start the lines of a file's header that are not shown. What is

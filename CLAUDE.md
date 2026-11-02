@@ -1,4 +1,4 @@
-# Merge Monkey
+# Delta
 
 A git GUI in Go with Qt 6 through the miqt bindings, modelled on `git gui`. `plan.txt` is the original brief. `../prism` is a reference for the look of the settings, about box and themes: use it as a reference, don't copy from it.
 
@@ -6,6 +6,7 @@ A git GUI in Go with Qt 6 through the miqt bindings, modelled on `git gui`. `pla
 
 * After every change run `make build` and `make install`, and `make vet` and `make test` when code changed. `staticcheck ./...` and `deadcode -test ./...` must be clean.
 * Keep this file and README.md up to date with every change.
+* Every bug found gets a unit test that fails without the fix, so that it can't come back.
 * Don't commit; the user does that.
 * miqt comes from `github.com/mappu/miqt`, at the latest commit of its master branch (`go get github.com/mappu/miqt@master`), not its last tag: "latest" means master. No `replace` directives or local dependencies.
 * Delete only what `qt.New…` makes. A value miqt returns by value is freed by its finalizer.
@@ -13,7 +14,7 @@ A git GUI in Go with Qt 6 through the miqt bindings, modelled on `git gui`. `pla
 
 ## Packaging
 
-`packaging/` and `.github/workflows/` are adapted from `../prism`: an AppImage built in an Ubuntu 22.04 container with Qt's own 6.9.3, and a macOS app for Apple Silicon with Homebrew's qtbase, both on `v` tags or by hand. The icon is drawn in code (`drawIcon`); `make icons` writes the copies in `packaging/`, and `TestPackagedIconsAreCurrent` says when that is needed. `make screenshots` redraws `docs/`. `main.go` embeds `packaging/merge-monkey.png` for the desktop entry, and `TestPackagedEntryAgrees` keeps `packaging/merge-monkey.desktop` in step with what is written at start.
+`packaging/` and `.github/workflows/` are adapted from `../prism`: an AppImage built in an Ubuntu 22.04 container with Qt's own 6.9.3, and a macOS app for Apple Silicon with Homebrew's qtbase, both on `v` tags or by hand. The icon is drawn in code (`drawIcon`); `make icons` writes the copies in `packaging/`, and `TestPackagedIconsAreCurrent` says when that is needed. `make screenshots` redraws `docs/`. `main.go` embeds `packaging/delta.png` for the desktop entry, and `TestPackagedEntryAgrees` keeps `packaging/delta.desktop` in step with what is written at start.
 
 ## Layout
 
@@ -22,14 +23,15 @@ A git GUI in Go with Qt 6 through the miqt bindings, modelled on `git gui`. `pla
 * `internal/graph`: lays out commits in lanes for the graph. No Qt.
 * `internal/desktop`: writes the Linux desktop entry and icon, at every start, only when they differ. No Qt.
 * `internal/settings`: the JSON settings, with defaults for unusable values. No Qt.
-* `internal/ui`: `window.go` (the window, its menus, reading status and settings), `operations.go` (every git command the menus and buttons run, and the questions before them), `branchtab.go` (the first tab's widgets), `historytab.go` (the second tab, its loading included), `graphcolumn.go` (paints the graph), `diffview.go`, `settingsdialog.go`, `about.go`, `theme.go`, `dialogs.go`, `icon.go`. Tests run with the offscreen platform.
+* `internal/atomicfile`: replaces a file whole, through a temporary file, for the settings and the desktop entry. No Qt.
+* `internal/ui`: `window.go` (the window, its menus, reading status and settings), `operations.go` (every git command the menus and buttons run, and the questions before them), `branchtab.go` (the first tab's widgets), `historytab.go` (the second tab, its loading included), `graphcolumn.go` (paints the graph), `diffview.go`, `settingsdialog.go`, `about.go`, `theme.go`, `dialogs.go`, `icon.go`, `widgets.go` (what several of those share: pane splitters and their handles, headings, the code's font, and the text of a change in a list). Tests run with the offscreen platform.
 
 ## Behaviour to keep
 
-* Git runs with `--literal-pathspecs`, `GIT_TERMINAL_PROMPT=0`, `GIT_EDITOR=true` and in a new session (`Setsid`), so it can't hang waiting on a terminal. `Setsid` is why this builds for Linux and macOS but not Windows.
-* `Window.run` runs one changing command at a time in the background, with the actions disabled, then rescans. Rescans and diffs run in the background too, and an answer that isn't to the latest request is dropped.
-* Status comes from `git status --porcelain=v2 --branch -z`. Unstaging always names paths, as a `git reset` without any would abandon a merge in progress.
-* Diffs are read up to `git.MaxDiff`. All patches are asked for with `git.patchOptions`, which `diff.Parse` relies on. It drops each file's header (`diff`, `index`, `---`, `+++`, new and deleted file modes, similarity), keeping what is news (renames, mode changes, binary). On the History tab a bold file name replaces it (`diffView.titles`), which file jumping uses (`Parsed.Files`). It also makes sure the text has exactly one block per line, which `diffView.paint` relies on. A hunk's `@@` range is in the Hunk headers colour (`HunkColour`, grey by default) with no background, and any text after it is the normal colour.
+* Git runs with `--literal-pathspecs`, `GIT_TERMINAL_PROMPT=0`, `GIT_EDITOR=true`, `GIT_MERGE_AUTOEDIT=no` and in a new session (`Setsid`), so it can't hang waiting on a terminal, and with `GIT_OPTIONAL_LOCKS=0`, so that its background reads don't get in the way of other git commands. `Setsid` is why this builds for Linux and macOS but not Windows.
+* `Window.background` runs one changing command at a time off the main thread, with the actions disabled, then rescans. `Window.run` is that, telling of any failure; deleting a branch uses `background` itself, as a refusal from git becomes a question. Only quick reads that a dialog needs first (branches, remotes, a branch name's validity) run on the main thread. Rescans and diffs run in the background too, and an answer that isn't to the latest request is dropped.
+* Status comes from `git status --porcelain=v2 --branch -z`. Unstaging always names paths, as a `git reset` without any would abandon a merge in progress. A status line's old path goes only on the side that renamed or copied the file (`sideOf`), as staging names it to git.
+* Diffs are read up to `git.MaxDiff`, and nothing follows one that was cut off. All patches are asked for with `git.patchOptions`, which `diff.Parse` relies on. It drops each file's header (`diff`, `index`, `---`, `+++`, new and deleted file modes, similarity), keeping what is news (renames, mode changes, binary). On the History tab a bold file name replaces it (`diffView.titles`), which file jumping uses (`Parsed.Files`). It also makes sure the text has exactly one block per line, which `diffView.paint` relies on. A hunk's `@@` range is in the Hunk headers colour (`HunkColour`, grey by default) with no background, and any text after it is the normal colour.
 * Diffs colour text, not backgrounds (the user's choice): added and removed lines take their colours as they are, through char formats (`diffView.paint`). Nothing in a diff has a background.
 * The settings dialog is tabbed, with one tab so far, User interface (an Appearance section, then a Colours table of Name and Colour, as `../prism` has it, with bold section rows and a filled button for each colour). Code font is one row under Appearance, as `../apemail` has it: any font of the system (no monospaced filter: the user wants any), the size inline, and a Default button. The code's font and size (`CodeFont`, `CodeFontSize`) apply to both diffs and the commit message; empty or 0 follows the system's fixed width font.
 * Themes: light and dark are Fusion with our own palette; following the system restores the desktop's style and an empty palette. `applyTheme` is not called at startup when following the system.

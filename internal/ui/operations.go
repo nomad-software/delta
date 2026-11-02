@@ -8,13 +8,12 @@ import (
 	qt "github.com/mappu/miqt/qt6"
 	"github.com/mappu/miqt/qt6/mainthread"
 
-	"github.com/nomad-software/merge-monkey/internal/git"
+	"github.com/nomad-software/delta/internal/git"
 )
 
-// run runs a git command that changes something in the background, with the rest
-// disabled, and then reads the status again. A failure is told of. after, if
-// given, is called with the outcome.
-func (w *Window) run(name string, op func() (string, error), after func(error)) {
+// background runs a git command that changes something in the background, with the
+// rest disabled, and then reads the status again. done is given the outcome.
+func (w *Window) background(name string, op func() (string, error), done func(string, error)) {
 	if w.busy || w.repo == nil {
 		return
 	}
@@ -25,19 +24,27 @@ func (w *Window) run(name string, op func() (string, error), after func(error)) 
 		out, err := op()
 		mainthread.Start(func() {
 			w.busy = false
-			if err != nil {
-				w.say(name + " failed")
-				w.failed(name+" Failed", err.Error())
-			} else {
-				w.say(strings.TrimSpace(name + " done. " + lastLine(out)))
-			}
-			if after != nil {
-				after(err)
-			}
+			done(out, err)
 			w.updateActions()
 			w.rescanRepository()
 		})
 	}()
+}
+
+// run runs a command as background does, telling of a failure. after, if given,
+// is called with the outcome.
+func (w *Window) run(name string, op func() (string, error), after func(error)) {
+	w.background(name, op, func(out string, err error) {
+		if err != nil {
+			w.say(name + " failed")
+			w.failed(name+" Failed", err.Error())
+		} else {
+			w.say(strings.TrimSpace(name + " done. " + lastLine(out)))
+		}
+		if after != nil {
+			after(err)
+		}
+	})
 }
 
 // firstLine returns the first line of the text.
@@ -254,17 +261,17 @@ func (w *Window) removeBranch(name string) {
 	if !w.confirm("Delete Branch", "Delete the branch "+name+"?") {
 		return
 	}
-	// This is quick and local, and what it says decides what to ask next.
-	_, err := r.DeleteBranch(name, false)
-	if err != nil {
-		if !w.confirm("Delete Branch", err.Error()+"\n\nDelete it anyway? Its unmerged commits will be lost.") {
+	// What git says to deleting it decides what to ask next.
+	w.background("Delete Branch", func() (string, error) { return r.DeleteBranch(name, false) }, func(_ string, err error) {
+		if err == nil {
+			w.say("Deleted the branch " + name)
 			return
 		}
-		w.run("Delete Branch", func() (string, error) { return r.DeleteBranch(name, true) }, nil)
-		return
-	}
-	w.say("Deleted the branch " + name)
-	w.rescanRepository()
+		w.say("Kept the branch " + name)
+		if w.confirm("Delete Branch", err.Error()+"\n\nDelete it anyway? Its unmerged commits will be lost.") {
+			w.run("Delete Branch", func() (string, error) { return r.DeleteBranch(name, true) }, nil)
+		}
+	})
 }
 
 // mergeBranch asks for a branch and merges it into the current one.

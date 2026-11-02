@@ -20,14 +20,14 @@ func version() string {
 // licences of what it is built with.
 func newAboutDialog(parent *qt.QWidget, icon *qt.QIcon) *qt.QDialog {
 	d := qt.NewQDialog(parent)
-	d.SetWindowTitle("About Merge Monkey")
+	d.SetWindowTitle("About Delta")
 	d.SetMinimumWidth(560)
 
 	picture := qt.NewQLabel2()
 	picture.SetPixmap(icon.PixmapWithExtent(96))
 	picture.SetAlignment(qt.AlignTop)
 
-	title := qt.NewQLabel3("Merge Monkey")
+	title := qt.NewQLabel3("Delta")
 	titleFont := qt.NewQFont5(title.Font())
 	defer titleFont.Delete()
 	titleFont.SetBold(true)

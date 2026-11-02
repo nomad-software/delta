@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/nomad-software/delta/internal/atomicfile"
 )
 
 // Themes, besides following the system, which is "".
@@ -55,7 +57,7 @@ type Settings struct {
 	// Theme is ThemeLight, ThemeDark, or empty to follow the system.
 	Theme string `json:"theme,omitempty"`
 
-	// AddedColour and RemovedColour tint the lines of a diff, as #rrggbb.
+	// AddedColour and RemovedColour colour the text of a diff's lines, as #rrggbb.
 	AddedColour   string `json:"addedColour"`
 	RemovedColour string `json:"removedColour"`
 	// HunkColour is the colour of the @@ range of a hunk's heading, as #rrggbb.
@@ -93,7 +95,7 @@ func Path() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	dir = filepath.Join(dir, "merge-monkey")
+	dir = filepath.Join(dir, "delta")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
@@ -121,21 +123,11 @@ func (s *Settings) normalise() {
 	if s.Width < leastWindowSize || s.Height < leastWindowSize {
 		s.Width, s.Height = d.Width, d.Height
 	}
-	if s.Sidebar[0] <= 0 || s.Sidebar[1] <= 0 {
-		s.Sidebar = d.Sidebar
-	}
-	if s.Lists[0] <= 0 || s.Lists[1] <= 0 {
-		s.Lists = d.Lists
-	}
-	if s.Editor[0] <= 0 || s.Editor[1] <= 0 {
-		s.Editor = d.Editor
-	}
-	if s.History[0] <= 0 || s.History[1] <= 0 {
-		s.History = d.History
-	}
-	if s.HistoryDetail[0] <= 0 || s.HistoryDetail[1] <= 0 {
-		s.HistoryDetail = d.HistoryDetail
-	}
+	s.Sidebar = s.Sidebar.or(d.Sidebar)
+	s.Lists = s.Lists.or(d.Lists)
+	s.Editor = s.Editor.or(d.Editor)
+	s.History = s.History.or(d.History)
+	s.HistoryDetail = s.HistoryDetail.or(d.HistoryDetail)
 	if s.Theme != ThemeLight && s.Theme != ThemeDark {
 		s.Theme = ""
 	}
@@ -143,35 +135,32 @@ func (s *Settings) normalise() {
 	if s.CodeFontSize < MinCodeFontSize || s.CodeFontSize > MaxCodeFontSize {
 		s.CodeFontSize = 0
 	}
-	if !colourPattern.MatchString(s.AddedColour) {
-		s.AddedColour = d.AddedColour
-	}
-	if !colourPattern.MatchString(s.RemovedColour) {
-		s.RemovedColour = d.RemovedColour
-	}
-	if !colourPattern.MatchString(s.HunkColour) {
-		s.HunkColour = d.HunkColour
-	}
+	s.AddedColour = colourOr(s.AddedColour, d.AddedColour)
+	s.RemovedColour = colourOr(s.RemovedColour, d.RemovedColour)
+	s.HunkColour = colourOr(s.HunkColour, d.HunkColour)
 }
 
-// Save writes the settings to the file, through a temporary file so that a
-// failure leaves the old one whole.
+// or returns the sizes if both panes have some, or else the fallback.
+func (p Panes) or(fallback Panes) Panes {
+	if p[0] <= 0 || p[1] <= 0 {
+		return fallback
+	}
+	return p
+}
+
+// colourOr returns the colour if it is one, or else the fallback.
+func colourOr(colour, fallback string) string {
+	if !colourPattern.MatchString(colour) {
+		return fallback
+	}
+	return colour
+}
+
+// Save writes the settings to the file, which only the user can read.
 func (s Settings) Save(path string) error {
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(append(data, '\n')); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
+	return atomicfile.Write(path, append(data, '\n'), 0o600)
 }

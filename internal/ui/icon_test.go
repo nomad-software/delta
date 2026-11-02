@@ -16,8 +16,8 @@ var packagedIcons = []struct {
 	path         string
 	size, margin int
 }{
-	{"merge-monkey.png", appIconSize, 0},
-	{filepath.Join("macos", "merge-monkey.png"), macIconSize, macIconMargin},
+	{"delta.png", appIconSize, 0},
+	{filepath.Join("macos", "delta.png"), macIconSize, macIconMargin},
 }
 
 // saveIcon draws an icon into a file.
@@ -47,9 +47,9 @@ func readImage(t *testing.T, path string) image.Image {
 }
 
 // TestWriteIcons is make icons: it draws the packaged icons into the folder in
-// MERGE_MONKEY_ICONS.
+// DELTA_ICONS.
 func TestWriteIcons(t *testing.T) {
-	dir := os.Getenv("MERGE_MONKEY_ICONS")
+	dir := os.Getenv("DELTA_ICONS")
 	if dir == "" {
 		t.Skip("no folder given")
 	}

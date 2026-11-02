@@ -395,6 +395,96 @@ func TestUncommittedDetail(t *testing.T) {
 	}
 }
 
+// TestUncommittedDetailStopsAtTheCut checks that an untracked file's diff does not
+// follow one that was cut off, here well short of MaxDiff, as its last line is long.
+func TestUncommittedDetailStopsAtTheCut(t *testing.T) {
+	r := newRepo(t)
+	write(t, r.Root, "big", "start\n")
+	if err := r.Stage([]Change{{Path: "big"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Commit("big"); err != nil {
+		t.Fatal(err)
+	}
+	write(t, r.Root, "big", "short\n"+strings.Repeat("x", MaxDiff+1)+"\n")
+	write(t, r.Root, "later", "later text\n")
+	changes, text, err := r.CommitDetail(UncommittedCommit(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changes) != 2 || !strings.HasSuffix(text, cutNote()) || strings.Contains(text, "later text") {
+		t.Errorf("%d changes, text %q", len(changes), text[max(0, len(text)-200):])
+	}
+}
+
+// TestStageAfterStagedRename checks that a file renamed in the index and then
+// changed can be staged, as its old path belongs only to the staged side.
+func TestStageAfterStagedRename(t *testing.T) {
+	r := newRepo(t)
+	write(t, r.Root, "old", "one\ntwo\nthree\nfour\nfive\n")
+	if err := r.Stage([]Change{{Path: "old"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Commit("old"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.run("mv", "old", "new"); err != nil {
+		t.Fatal(err)
+	}
+	write(t, r.Root, "new", "one\ntwo\nthree\nfour\nfive\nsix\n")
+	s, err := r.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantStaged := []Change{{Path: "new", OldPath: "old", Code: 'R'}}
+	wantUnstaged := []Change{{Path: "new", Code: 'M'}}
+	if !slices.Equal(s.Staged, wantStaged) || !slices.Equal(s.Unstaged, wantUnstaged) {
+		t.Fatalf("staged %+v, unstaged %+v", s.Staged, s.Unstaged)
+	}
+	if d, err := r.Diff(s.Unstaged[0], false); err != nil || !strings.Contains(d, "+six") {
+		t.Errorf("diff %q, %v", d, err)
+	}
+	if err := r.Stage(s.Unstaged); err != nil {
+		t.Fatal(err)
+	}
+	if s, err = r.Status(); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(s.Staged, wantStaged) || len(s.Unstaged) != 0 {
+		t.Errorf("staged %+v, unstaged %+v", s.Staged, s.Unstaged)
+	}
+}
+
+// TestOldPathBelongsToOneSide checks that a status line's old path only goes on
+// the side of the index that renamed or copied the file.
+func TestOldPathBelongsToOneSide(t *testing.T) {
+	const hashes = "N... 100644 100644 100644 aaaa bbbb"
+	moved := func(code byte) Change { return Change{Path: "new", OldPath: "old", Code: code} }
+	plain := func(code byte) Change { return Change{Path: "new", Code: code} }
+	for _, test := range []struct {
+		xy               string
+		staged, unstaged []Change
+	}{
+		{"R.", []Change{moved('R')}, nil},
+		{"RM", []Change{moved('R')}, []Change{plain('M')}},
+		{"RD", []Change{moved('R')}, []Change{plain('D')}},
+		{"C.", []Change{moved('C')}, nil},
+		{"CM", []Change{moved('C')}, []Change{plain('M')}},
+		{".R", nil, []Change{moved('R')}},
+		{".C", nil, []Change{moved('C')}},
+		{"MR", []Change{plain('M')}, []Change{moved('R')}},
+		{"AR", []Change{plain('A')}, []Change{moved('R')}},
+	} {
+		s, err := parseStatus("2 " + test.xy + " " + hashes + " R100 new\x00old\x00")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(s.Staged, test.staged) || !slices.Equal(s.Unstaged, test.unstaged) {
+			t.Errorf("%s: staged %+v, unstaged %+v", test.xy, s.Staged, s.Unstaged)
+		}
+	}
+}
+
 func TestUncommittedDetailOfUnbornBranch(t *testing.T) {
 	isolate(t)
 	dir := t.TempDir()
