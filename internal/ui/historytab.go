@@ -48,7 +48,7 @@ type historyTab struct {
 	// list is what the commits show, which starts with the uncommitted changes
 	// if there are any.
 	list []git.Commit
-	// shown and shownChanges are the hash and files of what is shown below.
+	// shownHash and shownChanges are the hash and files of what is shown below.
 	shownHash    string
 	shownChanges []git.Change
 
@@ -58,8 +58,8 @@ type historyTab struct {
 	// some are being read.
 	more, loading bool
 	// stale says that the repository may have changed since it was read, and
-	// shown that the tab has been shown, so that its panes have sizes.
-	stale, shown bool
+	// sized that the tab has been on show, so that its panes have sizes.
+	stale, sized bool
 	// updating says that the program is changing a list, so that its selection
 	// changing means nothing.
 	updating bool
@@ -124,8 +124,8 @@ func (w *Window) connectHistory() {
 			return
 		}
 		// Sizes are only taken as they stand once the panes are on show.
-		if !h.shown {
-			h.shown = true
+		if !h.sized {
+			h.sized = true
 			setPanes(h.split, w.config.History)
 			setPanes(h.detail, w.config.HistoryDetail)
 		}
@@ -167,7 +167,7 @@ func (h *historyTab) jumpToFile(row int) {
 		h.diff.scrollToLine(0)
 		return
 	}
-	if starts := h.diff.fileLines(); row-1 < len(starts) {
+	if starts := h.diff.parsed.Files; row-1 < len(starts) {
 		h.diff.scrollToLine(starts[row-1])
 	}
 }

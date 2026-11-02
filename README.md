@@ -29,8 +29,8 @@ otherwise on the Branch tab.
   `D` deleted, `R` renamed, `C` copied, `T` type changed, `?` untracked, `U` in
   conflict.
 * Choose a file to see its **diff**, with added lines in green and removed lines
-  in red, and without git's file headers. Drag over the list to see each file in turn. Double-click a file to stage or
-  unstage it.
+  in red, and without git's file headers. Drag over the list to see each file in
+  turn. Double-click a file to stage or unstage it. Ctrl and shift select several.
 * The **message pane** holds the commit message, with these beside it:
   * **Rescan** reads the state of the repository again.
   * **Stage Changes** stages everything in the unstaged list, untracked files
@@ -57,9 +57,10 @@ merge is shown as what it changed against its first parent.
 
 ## Menus
 
+`Ctrl+1` and `Ctrl+2` go to the Branch and History tabs.
+
 | Menu   | Items | Shortcuts |
 | ------ | ----- | --------- |
-| Tabs   | Branch, History | `Ctrl+1`, `Ctrl+2` |
 | File   | Open Repository, Settings, Quit | `Ctrl+O`, `Ctrl+,`, `Ctrl+Q` |
 | Branch | New Branch, Checkout, Rename, Delete, Merge, Abort Merge | `Ctrl+N`, `Ctrl+B`, Merge `Ctrl+M` |
 | Commit | Rescan, Stage Changes, Stage Selected, Unstage Selected, Unstage All, Commit, Push, Force Push | `F5`, `Ctrl+Shift+T`, `Ctrl+T`, `Ctrl+U`, `Ctrl+Shift+U`, `Ctrl+Return`, `Ctrl+P`, `Ctrl+Shift+P` |

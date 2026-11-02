@@ -122,6 +122,12 @@ func failure(err error, stdout, stderr string) error {
 	return errors.New(said)
 }
 
+// hasCommits says whether HEAD is a commit yet, which on a new branch it is not.
+func (r *Repo) hasCommits() bool {
+	_, err := r.run("rev-parse", "-q", "--verify", "HEAD")
+	return err == nil
+}
+
 // Status reads the state of the work tree and index.
 func (r *Repo) Status() (Status, error) {
 	out, err := r.run("status", "--porcelain=v2", "--branch", "-z", "--untracked-files=all")
@@ -217,10 +223,14 @@ func (s *Status) readHeader(line string) {
 	}
 }
 
+// patchOptions make a patch look the same whatever the user's configuration, which
+// the parsing of it relies on.
+var patchOptions = []string{"--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/"}
+
 // Diff returns the diff of a change, from the staged or unstaged side. Anything
 // over MaxDiff is cut off, at the end of a line, and a note put in its place.
 func (r *Repo) Diff(c Change, staged bool) (string, error) {
-	args := []string{"diff", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/"}
+	args := append([]string{"diff"}, patchOptions...)
 	switch {
 	case c.Code == Untracked:
 		// Compared with nothing, all of it is new.
@@ -308,7 +318,7 @@ func UncommittedCommit(parent string) Commit {
 // Log returns up to limit commits reachable from HEAD, after skipping some,
 // newest first, and every commit before its parents. A branch with no commits yet has none.
 func (r *Repo) Log(limit, skip int) ([]Commit, error) {
-	if _, err := r.run("rev-parse", "-q", "--verify", "HEAD"); err != nil {
+	if !r.hasCommits() {
 		return nil, nil
 	}
 	out, err := r.run("log", "--topo-order", "--no-color", "--no-show-signature", "--max-count="+strconv.Itoa(limit), "--skip="+strconv.Itoa(skip),
@@ -367,7 +377,7 @@ func (r *Repo) CommitDetail(c Commit) ([]Change, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	diff, err := r.capped(append([]string{"diff-tree", "-r", "-p", "-M", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", "--no-commit-id"}, compared(c)...), false)
+	diff, err := r.capped(slices.Concat([]string{"diff-tree", "-r", "-p", "-M", "--no-commit-id"}, patchOptions, compared(c)), false)
 	if err != nil {
 		return nil, "", err
 	}
@@ -379,7 +389,7 @@ func (r *Repo) CommitDetail(c Commit) ([]Change, string, error) {
 // has no HEAD to compare with, so shows what is staged and what is untracked.
 func (r *Repo) uncommittedDetail() ([]Change, string, error) {
 	base := "HEAD"
-	if _, err := r.run("rev-parse", "-q", "--verify", "HEAD"); err != nil {
+	if !r.hasCommits() {
 		base = "--cached"
 	}
 	out, err := r.run("diff", "-z", "-M", "--name-status", base, "--")
@@ -390,7 +400,7 @@ func (r *Repo) uncommittedDetail() ([]Change, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	text, err := r.capped([]string{"diff", "-M", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", base, "--"}, false)
+	text, err := r.capped(slices.Concat([]string{"diff", "-M"}, patchOptions, []string{base, "--"}), false)
 	if err != nil {
 		return nil, "", err
 	}

@@ -231,7 +231,7 @@ func TestStageCommitFlow(t *testing.T) {
 		// Choosing a file shows its diff.
 		w.tab.unstaged.SetCurrentRow(0)
 	})
-	waitFor(t, "the diff", func() bool { return strings.Contains(w.tab.diff.text, "+TWO") })
+	waitFor(t, "the diff", func() bool { return strings.Contains(w.tab.diff.parsed.Text, "+TWO") })
 	on(func() {
 		if w.tab.diffLabel.Text() != "Unstaged: file" {
 			t.Errorf("label %q", w.tab.diffLabel.Text())
@@ -457,7 +457,7 @@ func TestMergePrefillsMessage(t *testing.T) {
 		}
 		w.tab.unstaged.SetCurrentRow(0)
 	})
-	waitFor(t, "the conflict's diff", func() bool { return strings.Contains(w.tab.diff.text, "<<<<<<<") })
+	waitFor(t, "the conflict's diff", func() bool { return strings.Contains(w.tab.diff.parsed.Text, "<<<<<<<") })
 	on(func() { w.abortMerge.Trigger() })
 	waitFor(t, "the abort", func() bool { return !w.status.Merging && !w.busy })
 	on(func() {
@@ -841,7 +841,7 @@ func TestScreenshot(t *testing.T) {
 		w.tab.message.SetPlainText("Make the file shout")
 		w.say("")
 	})
-	waitFor(t, "the diff", func() bool { return strings.Contains(w.tab.diff.text, "+TWO") })
+	waitFor(t, "the diff", func() bool { return strings.Contains(w.tab.diff.parsed.Text, "+TWO") })
 	time.Sleep(200 * time.Millisecond)
 	on(func() {
 		if !w.Grab().Save(path) {
@@ -881,9 +881,7 @@ func TestStartsOnHistoryWithNothingToCommit(t *testing.T) {
 		w.tabs.SetCurrentIndex(0)
 		w.rescan.Trigger()
 	})
-	request := 0
-	on(func() { request = w.rescans })
-	waitFor(t, "the rescan", func() bool { return w.rescans == request && !w.busy })
+	// There is nothing to see of a rescan that changes nothing, so it has a moment.
 	time.Sleep(100 * time.Millisecond)
 	on(func() {
 		if w.tabs.CurrentIndex() != 0 {
@@ -968,14 +966,14 @@ func TestHistoryShowsCommits(t *testing.T) {
 		if got := listTexts(h.files); !slices.Equal(got, []string{"Commit message", "A  a", "A  b"}) {
 			t.Errorf("files %q", got)
 		}
-		if !strings.Contains(h.diff.text, "The body") || !strings.Contains(h.diff.text, "+b") {
-			t.Errorf("diff %q", h.diff.text)
+		if !strings.Contains(h.diff.parsed.Text, "The body") || !strings.Contains(h.diff.parsed.Text, "+b") {
+			t.Errorf("diff %q", h.diff.parsed.Text)
 		}
 		// Each file is headed by its name alone.
-		if strings.Contains(h.diff.text, "diff --git") || strings.Contains(h.diff.text, "+++") {
-			t.Errorf("diff %q", h.diff.text)
+		if strings.Contains(h.diff.parsed.Text, "diff --git") || strings.Contains(h.diff.parsed.Text, "+++") {
+			t.Errorf("diff %q", h.diff.parsed.Text)
 		}
-		for i, line := range h.diff.fileLines() {
+		for i, line := range h.diff.parsed.Files {
 			name := []string{"a", "b"}[i]
 			if got := h.diff.Document().FindBlockByNumber(line).Text(); got != name {
 				t.Errorf("heading %q, not %q", got, name)
@@ -985,7 +983,7 @@ func TestHistoryShowsCommits(t *testing.T) {
 			t.Errorf("label %q", h.fileLabel.Text())
 		}
 		// Choosing a file goes to it in the diff, and the first row back.
-		starts := h.diff.fileLines()
+		starts := h.diff.parsed.Files
 		if len(starts) != 2 {
 			t.Fatalf("file lines %v", starts)
 		}
@@ -1000,7 +998,7 @@ func TestHistoryShowsCommits(t *testing.T) {
 		// Choosing another commit shows that one.
 		h.commits.SetCurrentItem(h.commits.TopLevelItem(1))
 	})
-	waitFor(t, "the first commit", func() bool { return strings.Contains(h.diff.text, "first") && h.files.Count() == 2 })
+	waitFor(t, "the first commit", func() bool { return strings.Contains(h.diff.parsed.Text, "first") && h.files.Count() == 2 })
 }
 
 func TestHistoryFollowsChanges(t *testing.T) {
@@ -1076,8 +1074,8 @@ func TestHistoryShowsUncommittedChanges(t *testing.T) {
 		if got := listTexts(h.files); !slices.Equal(got, []string{"All changes", "M  file", "?  untracked"}) {
 			t.Errorf("files %q", got)
 		}
-		if !strings.Contains(h.diff.text, "+changed") || !strings.Contains(h.diff.text, "+untracked") {
-			t.Errorf("diff %q", h.diff.text)
+		if !strings.Contains(h.diff.parsed.Text, "+changed") || !strings.Contains(h.diff.parsed.Text, "+untracked") {
+			t.Errorf("diff %q", h.diff.parsed.Text)
 		}
 		if h.diffLabel.Text() != "Uncommitted changes" {
 			t.Errorf("label %q", h.diffLabel.Text())
@@ -1094,7 +1092,7 @@ func TestHistoryShowsUncommittedChanges(t *testing.T) {
 	// A new change to it shows on a rescan, staying where it is.
 	writeFile(t, dir, "later", "later\n")
 	on(func() { w.rescan.Trigger() })
-	waitFor(t, "the new file", func() bool { return h.files.Count() == 4 && strings.Contains(h.diff.text, "+later") })
+	waitFor(t, "the new file", func() bool { return h.files.Count() == 4 && strings.Contains(h.diff.parsed.Text, "+later") })
 
 	// Once it is committed the row has gone.
 	runGit(t, dir, "add", ".")
@@ -1190,7 +1188,7 @@ func TestHistoryOfEmptyAndOtherRepository(t *testing.T) {
 		}
 	})
 	waitFor(t, "nothing shown", func() bool {
-		return w.repo.Root != "" && !h.loading && h.commits.TopLevelItemCount() == 0 && h.files.Count() == 0 && h.diff.text == ""
+		return w.repo.Root != "" && !h.loading && h.commits.TopLevelItemCount() == 0 && h.files.Count() == 0 && h.diff.parsed.Text == ""
 	})
 }
 
@@ -1295,10 +1293,10 @@ func TestDraggingShowsEachFile(t *testing.T) {
 		return rows
 	}
 	on(func() { press(0, qt.NoModifier) })
-	waitFor(t, "the first file", func() bool { return strings.Contains(w.tab.diff.text, "text of a") })
+	waitFor(t, "the first file", func() bool { return strings.Contains(w.tab.diff.parsed.Text, "text of a") })
 	for row, name := range []string{"a", "b", "c"} {
 		on(func() { sendMouse(list, qt.QEvent__MouseMove, row, qt.NoButton, qt.LeftButton, qt.NoModifier) })
-		waitFor(t, "the file dragged over", func() bool { return strings.Contains(w.tab.diff.text, "text of "+name) })
+		waitFor(t, "the file dragged over", func() bool { return strings.Contains(w.tab.diff.parsed.Text, "text of "+name) })
 		on(func() {
 			if got := selected(); !slices.Equal(got, []int{row}) {
 				t.Errorf("over row %d, selected %v", row, got)

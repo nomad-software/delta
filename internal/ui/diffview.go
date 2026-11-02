@@ -15,12 +15,9 @@ type diffView struct {
 	added, removed, hunk string
 	// titles says that each file's name heads its diff, as there can be several.
 	titles bool
-	// raw is the diff given, parsed what is shown of it, text the same text, and
-	// painted says what colours it is drawn in.
-	raw     string
-	parsed  diff.Parsed
-	text    string
-	painted string
+	// raw is the diff given, and parsed what is shown of it.
+	raw    string
+	parsed diff.Parsed
 }
 
 func newDiffView(added, removed, hunk string) *diffView {
@@ -40,8 +37,7 @@ func (v *diffView) show(text string) {
 	}
 	v.raw = text
 	v.parsed = diff.Parse(text, v.titles)
-	v.text = v.parsed.Text
-	v.SetPlainText(v.text)
+	v.SetPlainText(v.parsed.Text)
 	v.paint()
 }
 
@@ -49,11 +45,6 @@ func (v *diffView) show(text string) {
 func (v *diffView) setCodeFont(font *qt.QFont) {
 	v.SetFont(font)
 	v.SetTabStopDistance(float64(tabWidth * v.FontMetrics().HorizontalAdvance(" ")))
-}
-
-// fileLines returns the lines where the diff of each file starts.
-func (v *diffView) fileLines() []int {
-	return v.parsed.Files
 }
 
 // scrollToLine puts a line at the top of the view. The scroll bar of a view that
@@ -64,26 +55,16 @@ func (v *diffView) scrollToLine(line int) {
 
 // setColours changes the colours of added and removed lines and hunk ranges.
 func (v *diffView) setColours(added, removed, hunk string) {
-	v.added, v.removed, v.hunk = added, removed, hunk
-	v.recolour()
-}
-
-// recolour draws the lines again if their colours have changed.
-func (v *diffView) recolour() {
-	if v.painted == v.colourKey() {
+	if added == v.added && removed == v.removed && hunk == v.hunk {
 		return
 	}
-	// Formats are only ever added to, so old ones are cleared by starting
-	// again. The scroll position would be lost with them.
+	v.added, v.removed, v.hunk = added, removed, hunk
+	// Formats are only ever added to, so old ones are cleared by starting again,
+	// which would lose the scroll position.
 	scroll := v.VerticalScrollBar().Value()
-	v.SetPlainText(v.text)
+	v.SetPlainText(v.parsed.Text)
 	v.paint()
 	v.VerticalScrollBar().SetValue(scroll)
-}
-
-// colourKey names the colours the text is drawn in.
-func (v *diffView) colourKey() string {
-	return v.added + v.removed + v.hunk
 }
 
 // paint colours the text of each line by what it is: the whole of an added or
@@ -91,7 +72,6 @@ func (v *diffView) colourKey() string {
 // as it is. A file's name is bold. Backgrounds are left alone, and what has no
 // colour of its own follows the palette.
 func (v *diffView) paint() {
-	v.painted = v.colourKey()
 	added, removed, hunk := colourFormat(v.added), colourFormat(v.removed), colourFormat(v.hunk)
 	defer added.Delete()
 	defer removed.Delete()
