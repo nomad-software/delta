@@ -307,6 +307,138 @@ func TestMergeConflict(t *testing.T) {
 	}
 }
 
+func TestLogAndDetail(t *testing.T) {
+	r := newRepo(t)
+	git(t, r.Root, "mv", "file", "moved")
+	write(t, r.Root, "added", "added\n")
+	git(t, r.Root, "add", "added")
+	git(t, r.Root, "commit", "-m", "second\n\nthe body")
+
+	commits, err := r.Log(10, 0)
+	if err != nil || len(commits) != 2 {
+		t.Fatalf("log %+v, %v", commits, err)
+	}
+	second, first := commits[0], commits[1]
+	if second.Subject != "second" || second.Author != "Test" || len(second.Parents) != 1 || second.Parents[0] != first.Hash {
+		t.Errorf("second %+v", second)
+	}
+	if !strings.Contains(second.Refs, "main") || second.Date.IsZero() {
+		t.Errorf("second %+v", second)
+	}
+	if page, _ := r.Log(1, 1); len(page) != 1 || page[0].Hash != first.Hash {
+		t.Errorf("second page %+v", page)
+	}
+
+	changes, text, err := r.CommitDetail(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Change{{Path: "added", Code: 'A'}, {Path: "moved", OldPath: "file", Code: 'R'}}
+	if !slices.Equal(changes, want) {
+		t.Errorf("files %+v", changes)
+	}
+	for _, part := range []string{"commit " + second.Hash, "Author:", "the body", "+added", "rename to moved"} {
+		if !strings.Contains(text, part) {
+			t.Errorf("no %q in %q", part, text)
+		}
+	}
+
+	// The first commit has no parent to compare with.
+	changes, text, err = r.CommitDetail(first)
+	if err != nil || !slices.Equal(changes, []Change{{Path: "file", Code: 'A'}}) || !strings.Contains(text, "+one") {
+		t.Errorf("first: %+v, %q, %v", changes, text, err)
+	}
+}
+
+func TestDetailOfMergeIsAgainstFirstParent(t *testing.T) {
+	r := newRepo(t)
+	git(t, r.Root, "switch", "-c", "topic")
+	write(t, r.Root, "theirs", "theirs\n")
+	git(t, r.Root, "add", ".")
+	git(t, r.Root, "commit", "-m", "theirs")
+	git(t, r.Root, "switch", "main")
+	write(t, r.Root, "ours", "ours\n")
+	git(t, r.Root, "add", ".")
+	git(t, r.Root, "commit", "-m", "ours")
+	git(t, r.Root, "merge", "--no-edit", "topic")
+	commits, err := r.Log(1, 0)
+	if err != nil || len(commits[0].Parents) != 2 {
+		t.Fatalf("log %+v, %v", commits, err)
+	}
+	changes, text, err := r.CommitDetail(commits[0])
+	if err != nil || !slices.Equal(changes, []Change{{Path: "theirs", Code: 'A'}}) || !strings.Contains(text, "+theirs") {
+		t.Errorf("merge: %+v, %q, %v", changes, text, err)
+	}
+}
+
+func TestUncommittedDetail(t *testing.T) {
+	r := newRepo(t)
+	write(t, r.Root, "file", "unstaged\n")
+	write(t, r.Root, "staged", "staged\n")
+	git(t, r.Root, "add", "staged")
+	write(t, r.Root, "untracked", "untracked\n")
+	changes, text, err := r.CommitDetail(UncommittedCommit("abc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Change{{Path: "file", Code: 'M'}, {Path: "staged", Code: 'A'}, {Path: "untracked", Code: Untracked}}
+	if !slices.Equal(changes, want) {
+		t.Errorf("files %+v", changes)
+	}
+	for _, part := range []string{"+unstaged", "+staged", "+untracked", "b/file", "b/staged", "b/untracked"} {
+		if !strings.Contains(text, part) {
+			t.Errorf("no %q in %q", part, text)
+		}
+	}
+	if strings.Count(text, "diff --git") != 3 {
+		t.Errorf("not one diff to a file: %q", text)
+	}
+}
+
+func TestUncommittedDetailOfUnbornBranch(t *testing.T) {
+	isolate(t)
+	dir := t.TempDir()
+	git(t, dir, "init", "-b", "main")
+	write(t, dir, "staged", "staged\n")
+	git(t, dir, "add", "staged")
+	write(t, dir, "untracked", "untracked\n")
+	r, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changes, text, err := r.CommitDetail(UncommittedCommit(""))
+	if err != nil || len(changes) != 2 || !strings.Contains(text, "+staged") || !strings.Contains(text, "+untracked") {
+		t.Errorf("%+v, %q, %v", changes, text, err)
+	}
+}
+
+func TestLogOfUnbornBranch(t *testing.T) {
+	isolate(t)
+	dir := t.TempDir()
+	git(t, dir, "init", "-b", "main")
+	r, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if commits, err := r.Log(10, 0); err != nil || len(commits) != 0 {
+		t.Errorf("log %+v, %v", commits, err)
+	}
+}
+
+func TestParseOddOutput(t *testing.T) {
+	if _, err := parseLog("too\x00few\n"); err == nil {
+		t.Error("a malformed log line was accepted")
+	}
+	if _, err := parseNameStatus("R100\x00only\x00"); err == nil {
+		t.Error("a rename with no new path was accepted")
+	}
+	got, err := parseNameStatus("M\x00odd name\x00R90\x00old\x00new\x00")
+	want := []Change{{Path: "odd name", Code: 'M'}, {Path: "new", OldPath: "old", Code: 'R'}}
+	if err != nil || !slices.Equal(got, want) {
+		t.Errorf("got %+v, %v", got, err)
+	}
+}
+
 func TestRemotes(t *testing.T) {
 	r := newRepo(t)
 	bare := t.TempDir()

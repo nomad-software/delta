@@ -8,13 +8,37 @@ import (
 	"github.com/nomad-software/merge-monkey/internal/settings"
 )
 
-// settingsDialog edits the theme and the colours of the diff.
+// The columns of the table of colours.
+const (
+	colColourName = iota
+	colColourSwatch
+	colourColumns
+)
+
+// colourTableHeight is the least height of the table of colours.
+const colourTableHeight = 170
+
+// fallbackCodeFontSize is the size of the code's font in points when the system's
+// has none to go by.
+const fallbackCodeFontSize = 10
+
+// settingsDialog edits the theme, the font of the code and the colours of the
+// diff.
 type settingsDialog struct {
 	*qt.QDialog
-	tabs           *qt.QTabWidget
-	theme          *qt.QComboBox
-	added, removed *colourButton
-	box            *qt.QDialogButtonBox
+	tabs        *qt.QTabWidget
+	theme       *qt.QComboBox
+	codeFamily  *qt.QFontComboBox
+	codeSize    *qt.QSpinBox
+	codeDefault *qt.QPushButton
+	// defaultFamily and defaultSize are the system's fixed width font, as the
+	// fields show it, which is what is meant when nothing else is chosen.
+	defaultFamily        string
+	defaultSize          int
+	added, removed, hunk *colourButton
+	// colours is the table of the colours.
+	colours *qt.QTableWidget
+	box     *qt.QDialogButtonBox
 }
 
 // colourButton shows a colour, and chooses another when clicked.
@@ -62,31 +86,61 @@ func newSettingsDialog(parent *qt.QWidget, current settings.Settings, accepted f
 	for _, t := range themeChoices {
 		d.theme.AddItem(t.label)
 	}
-	d.added = newColourButton("Added Lines")
-	d.removed = newColourButton("Removed Lines")
+	d.codeFamily = qt.NewQFontComboBox2()
+	d.codeSize = qt.NewQSpinBox2()
+	d.codeSize.SetRange(settings.MinCodeFontSize, settings.MaxCodeFontSize)
+	d.codeSize.SetSuffix(" pt")
+	system := codeFont("", 0)
+	defer system.Delete()
+	d.codeFamily.SetCurrentFont(system)
+	d.defaultFamily = d.codeFamily.CurrentText()
+	d.defaultSize = system.PointSize()
+	d.codeDefault = qt.NewQPushButton3("Default")
+	d.codeDefault.SetToolTip("The system's fixed width font")
+	d.codeDefault.OnClicked(func() { d.showFont("", 0) })
+	codeRow := qt.NewQHBoxLayout2()
+	codeRow.AddWidget2(d.codeFamily.QWidget, 1)
+	codeRow.AddWidget(d.codeSize.QWidget)
+	codeRow.AddWidget(d.codeDefault.QWidget)
+
+	d.colours = qt.NewQTableWidget3(0, colourColumns)
+	d.colours.SetMinimumHeight(colourTableHeight)
+	d.colours.SetHorizontalHeaderLabels([]string{"Name", "Colour"})
+	d.colours.VerticalHeader().SetVisible(false)
+	d.colours.VerticalHeader().SetSectionResizeMode(qt.QHeaderView__ResizeToContents)
+	d.colours.SetSelectionMode(qt.QAbstractItemView__NoSelection)
+	d.colours.SetEditTriggers(qt.QAbstractItemView__NoEditTriggers)
+	d.colours.SetFocusPolicy(qt.NoFocus)
+	d.colours.SetHorizontalScrollBarPolicy(qt.ScrollBarAlwaysOff)
+	d.colours.HorizontalHeader().SetSectionResizeMode2(colColourName, qt.QHeaderView__Stretch)
+	d.colours.HorizontalHeader().SetSectionResizeMode2(colColourSwatch, qt.QHeaderView__ResizeToContents)
+	d.addColourSection("Diff")
+	d.added = d.addColour("Added lines")
+	d.removed = d.addColour("Removed lines")
+	d.hunk = d.addColour("Hunk headers")
 
 	useDefaults := qt.NewQPushButton3("Use Default Colours")
 	useDefaults.OnClicked(func() {
 		d.added.set(settings.DefaultAdded)
 		d.removed.set(settings.DefaultRemoved)
+		d.hunk.set(settings.DefaultHunk)
 	})
 	defaultsRow := qt.NewQHBoxLayout2()
 	defaultsRow.AddStretch()
 	defaultsRow.AddWidget(useDefaults.QWidget)
 
-	note := qt.NewQLabel3("Lines of a diff are tinted with these colours, mixed into the background so that the text stays readable in any theme.")
-	note.SetWordWrap(true)
+	form := qt.NewQFormLayout2()
+	form.AddRow3("Theme", d.theme.QWidget)
+	form.AddRow4("Code font", codeRow.QLayout)
 
 	page := qt.NewQWidget2()
-	form := qt.NewQFormLayout(page)
-	form.SetContentsMargins(20, 20, 20, 20)
-	form.AddRowWithWidget(heading("Appearance").QWidget)
-	form.AddRow3("Theme", d.theme.QWidget)
-	form.AddRowWithWidget(heading("Diff colours").QWidget)
-	form.AddRow3("Added lines", d.added.QWidget)
-	form.AddRow3("Removed lines", d.removed.QWidget)
-	form.AddRowWithWidget(note.QWidget)
-	form.AddRowWithLayout(defaultsRow.QLayout)
+	pageLayout := qt.NewQVBoxLayout(page)
+	pageLayout.SetContentsMargins(20, 20, 20, 20)
+	pageLayout.AddWidget(heading("Appearance").QWidget)
+	pageLayout.AddLayout(form.QLayout)
+	pageLayout.AddWidget(heading("Colours").QWidget)
+	pageLayout.AddWidget2(d.colours.QWidget, 1)
+	pageLayout.AddLayout(defaultsRow.QLayout)
 
 	d.show(current)
 
@@ -108,6 +162,54 @@ func newSettingsDialog(parent *qt.QWidget, current settings.Settings, accepted f
 	return d
 }
 
+// codeFont returns a new font of the family and size in points, each the system's
+// fixed width font's if it is not given.
+func codeFont(family string, size int) *qt.QFont {
+	font := qt.NewQFont5(qt.QFontDatabase_SystemFont(qt.QFontDatabase__FixedFont))
+	if family != "" {
+		font.SetFamily(family)
+	}
+	switch {
+	case size > 0:
+		font.SetPointSize(size)
+	case font.PointSize() < settings.MinCodeFontSize:
+		// A font set in pixels has no size in points.
+		font.SetPointSize(fallbackCodeFontSize)
+	}
+	return font
+}
+
+// addColourSection adds a bold row as wide as the table, heading those after it.
+func (d *settingsDialog) addColourSection(title string) {
+	item := qt.NewQTableWidgetItem2(title)
+	item.SetFlags(qt.ItemIsEnabled)
+	font := qt.NewQFont5(item.Font())
+	defer font.Delete()
+	font.SetBold(true)
+	item.SetFont(font)
+	row := d.colours.RowCount()
+	d.colours.InsertRow(row)
+	d.colours.SetItem(row, colColourName, item)
+	d.colours.SetSpan(row, colColourName, 1, colourColumns)
+}
+
+// addColour adds a row with the name of a colour and the button to choose it,
+// which stands a little clear of the lines of its cell.
+func (d *settingsDialog) addColour(name string) *colourButton {
+	button := newColourButton(name)
+	item := qt.NewQTableWidgetItem2(name)
+	item.SetFlags(qt.ItemIsEnabled)
+	cell := qt.NewQWidget2()
+	layout := qt.NewQHBoxLayout(cell)
+	layout.SetContentsMargins(6, 3, 6, 3)
+	layout.AddWidget(button.QWidget)
+	row := d.colours.RowCount()
+	d.colours.InsertRow(row)
+	d.colours.SetItem(row, colColourName, item)
+	d.colours.SetCellWidget(row, colColourSwatch, cell)
+	return button
+}
+
 // heading returns a label for a section.
 func heading(text string) *qt.QLabel {
 	label := qt.NewQLabel3(text)
@@ -125,14 +227,33 @@ func (d *settingsDialog) show(s settings.Settings) {
 			d.theme.SetCurrentIndex(i)
 		}
 	}
+	d.showFont(s.CodeFont, s.CodeFontSize)
 	d.added.set(s.AddedColour)
 	d.removed.set(s.RemovedColour)
+	d.hunk.set(s.HunkColour)
+}
+
+// showFont puts a font in the dialog, each part the system's if it is not given.
+func (d *settingsDialog) showFont(family string, size int) {
+	font := codeFont(family, size)
+	defer font.Delete()
+	d.codeFamily.SetCurrentFont(font)
+	d.codeSize.SetValue(font.PointSize())
 }
 
 // chosen returns the settings with what is in the dialog.
 func (d *settingsDialog) chosen(s settings.Settings) settings.Settings {
 	s.Theme = themeChoices[d.theme.CurrentIndex()].value
+	// What is still the system's goes on following the system.
+	s.CodeFont, s.CodeFontSize = "", 0
+	if family := d.codeFamily.CurrentText(); family != d.defaultFamily {
+		s.CodeFont = family
+	}
+	if size := d.codeSize.Value(); size != d.defaultSize {
+		s.CodeFontSize = size
+	}
 	s.AddedColour = d.added.colour
 	s.RemovedColour = d.removed.colour
+	s.HunkColour = d.hunk.colour
 	return s
 }

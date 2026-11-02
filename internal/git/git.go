@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // MaxDiff is the most of a diff that is read, in bytes. The rest of a larger
@@ -78,7 +79,7 @@ func Open(dir string) (*Repo, error) {
 // ssh, which would otherwise ask on the terminal the program was started from
 // and hang.
 func (r *Repo) command(args ...string) *exec.Cmd {
-	cmd := exec.Command("git", append([]string{"--literal-pathspecs"}, args...)...)
+	cmd := exec.Command("git", append([]string{"--literal-pathspecs", "-c", "core.quotePath=false"}, args...)...)
 	cmd.Dir = r.Root
 	cmd.Env = append(os.Environ(),
 		"GIT_TERMINAL_PROMPT=0",
@@ -219,7 +220,7 @@ func (s *Status) readHeader(line string) {
 // Diff returns the diff of a change, from the staged or unstaged side. Anything
 // over MaxDiff is cut off, at the end of a line, and a note put in its place.
 func (r *Repo) Diff(c Change, staged bool) (string, error) {
-	args := []string{"diff", "--no-color", "--no-ext-diff"}
+	args := []string{"diff", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/"}
 	switch {
 	case c.Code == Untracked:
 		// Compared with nothing, all of it is new.
@@ -229,6 +230,12 @@ func (r *Repo) Diff(c Change, staged bool) (string, error) {
 	default:
 		args = append(append(args, "--"), c.paths()...)
 	}
+	return r.capped(args, c.Code == Untracked)
+}
+
+// capped runs git and returns what it wrote, cut off as Diff says. differs says
+// that an exit code of 1 only means that files differ.
+func (r *Repo) capped(args []string, differs bool) (string, error) {
 	cmd := r.command(args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -248,14 +255,19 @@ func (r *Repo) Diff(c Change, staged bool) (string, error) {
 	switch {
 	case cut:
 		data = data[:bytes.LastIndexByte(data[:MaxDiff], '\n')+1]
-		return string(data) + fmt.Sprintf("[The rest is not shown: this diff is over %d MiB.]\n", MaxDiff>>20), nil
+		return string(data) + cutNote(), nil
 	case readErr != nil:
 		return "", readErr
-	case waitErr != nil && !(c.Code == Untracked && exitCode(waitErr) == 1):
+	case waitErr != nil && !(differs && exitCode(waitErr) == 1):
 		// Without --index, diff exits 1 to say that the files differ.
 		return "", failure(waitErr, "", stderr.String())
 	}
 	return string(data), nil
+}
+
+// cutNote returns what is said in place of what is cut off a diff.
+func cutNote() string {
+	return fmt.Sprintf("[The rest is not shown: this diff is over %d MiB.]\n", MaxDiff>>20)
 }
 
 // exitCode returns the exit code of a command's error, or -1.
@@ -265,6 +277,168 @@ func exitCode(err error) int {
 		return exit.ExitCode()
 	}
 	return -1
+}
+
+// Commit is one commit in the history.
+type Commit struct {
+	Hash, Short string
+	// Parents are the hashes of the commits it follows.
+	Parents []string
+	Author  string
+	Date    time.Time
+	// Refs names the branches and tags at the commit, as git writes them.
+	Refs    string
+	Subject string
+}
+
+// Uncommitted is the hash of the commit standing for the changes not yet
+// committed, which no real commit's can be.
+const Uncommitted = "uncommitted"
+
+// UncommittedCommit returns the commit standing for the changes not yet
+// committed, on top of a commit, if there is one yet.
+func UncommittedCommit(parent string) Commit {
+	c := Commit{Hash: Uncommitted, Subject: "Uncommitted changes"}
+	if parent != "" {
+		c.Parents = []string{parent}
+	}
+	return c
+}
+
+// Log returns up to limit commits reachable from HEAD, after skipping some,
+// newest first, and every commit before its parents. A branch with no commits yet has none.
+func (r *Repo) Log(limit, skip int) ([]Commit, error) {
+	if _, err := r.run("rev-parse", "-q", "--verify", "HEAD"); err != nil {
+		return nil, nil
+	}
+	out, err := r.run("log", "--topo-order", "--no-color", "--no-show-signature", "--max-count="+strconv.Itoa(limit), "--skip="+strconv.Itoa(skip),
+		"--format=%H%x00%h%x00%P%x00%an%x00%at%x00%D%x00%s", "HEAD", "--")
+	if err != nil {
+		return nil, err
+	}
+	return parseLog(out)
+}
+
+// parseLog reads the output of git log in the format Log asks for.
+func parseLog(out string) ([]Commit, error) {
+	var commits []Commit
+	for line := range strings.Lines(out) {
+		f := strings.Split(strings.TrimRight(line, "\n"), "\x00")
+		if len(f) != 7 {
+			return nil, fmt.Errorf("unexpected log line: %q", line)
+		}
+		seconds, err := strconv.ParseInt(f[4], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("unexpected log line: %q", line)
+		}
+		commits = append(commits, Commit{
+			Hash: f[0], Short: f[1], Parents: strings.Fields(f[2]), Author: f[3],
+			Date: time.Unix(seconds, 0), Refs: f[5], Subject: f[6],
+		})
+	}
+	return commits, nil
+}
+
+// compared returns the arguments of git diff-tree that compare a commit with its
+// first parent, or with nothing if it has none. A merge is shown as what it
+// brought into its branch.
+func compared(c Commit) []string {
+	if len(c.Parents) == 0 {
+		return []string{"--root", c.Hash}
+	}
+	return []string{c.Parents[0], c.Hash}
+}
+
+// CommitDetail returns the files a commit changed, in the order of its diff, and
+// the text of its header, message and diff, cut off as Diff says.
+func (r *Repo) CommitDetail(c Commit) ([]Change, string, error) {
+	if c.Hash == Uncommitted {
+		return r.uncommittedDetail()
+	}
+	out, err := r.run(append([]string{"diff-tree", "-r", "-z", "-M", "--no-commit-id", "--name-status"}, compared(c)...)...)
+	if err != nil {
+		return nil, "", err
+	}
+	changes, err := parseNameStatus(out)
+	if err != nil {
+		return nil, "", err
+	}
+	header, err := r.run("log", "-1", "--no-color", "--no-decorate", "--no-show-signature", "--date=iso", "--format=fuller", c.Hash, "--")
+	if err != nil {
+		return nil, "", err
+	}
+	diff, err := r.capped(append([]string{"diff-tree", "-r", "-p", "-M", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", "--no-commit-id"}, compared(c)...), false)
+	if err != nil {
+		return nil, "", err
+	}
+	return changes, strings.TrimRight(header, "\n") + "\n\n" + diff, nil
+}
+
+// uncommittedDetail returns the files changed since HEAD, staged or not, then
+// those untracked, and their diffs, cut off as Diff says. A branch with no commits
+// has no HEAD to compare with, so shows what is staged and what is untracked.
+func (r *Repo) uncommittedDetail() ([]Change, string, error) {
+	base := "HEAD"
+	if _, err := r.run("rev-parse", "-q", "--verify", "HEAD"); err != nil {
+		base = "--cached"
+	}
+	out, err := r.run("diff", "-z", "-M", "--name-status", base, "--")
+	if err != nil {
+		return nil, "", err
+	}
+	changes, err := parseNameStatus(out)
+	if err != nil {
+		return nil, "", err
+	}
+	text, err := r.capped([]string{"diff", "-M", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", base, "--"}, false)
+	if err != nil {
+		return nil, "", err
+	}
+	s, err := r.Status()
+	if err != nil {
+		return nil, "", err
+	}
+	for _, c := range s.Unstaged {
+		if c.Code != Untracked {
+			continue
+		}
+		changes = append(changes, c)
+		if len(text) >= MaxDiff {
+			continue
+		}
+		diff, err := r.Diff(c, false)
+		if err != nil {
+			return nil, "", err
+		}
+		text += diff
+	}
+	if len(text) > MaxDiff {
+		text = text[:strings.LastIndexByte(text[:MaxDiff], '\n')+1] + cutNote()
+	}
+	return changes, text, nil
+}
+
+// parseNameStatus reads the output of git diff-tree -z --name-status.
+func parseNameStatus(out string) ([]Change, error) {
+	changes := []Change{}
+	fields := strings.Split(out, "\x00")
+	for i := 0; i+1 < len(fields); i += 2 {
+		status := fields[i]
+		if status == "" {
+			return nil, fmt.Errorf("unexpected diff-tree output: %q", out)
+		}
+		c := Change{Code: status[0], Path: fields[i+1]}
+		// A rename or copy has the old path, then the new one.
+		if c.Code == 'R' || c.Code == 'C' {
+			i++
+			if i+1 >= len(fields) || fields[i+1] == "" {
+				return nil, fmt.Errorf("unexpected diff-tree output: %q", out)
+			}
+			c.OldPath, c.Path = c.Path, fields[i+1]
+		}
+		changes = append(changes, c)
+	}
+	return changes, nil
 }
 
 // pathList returns the paths of changes in the form --pathspec-file-nul reads,

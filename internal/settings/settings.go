@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 )
 
 // Themes, besides following the system, which is "".
@@ -15,13 +16,21 @@ const (
 	ThemeDark  = "dark"
 )
 
-// Default colours of the lines of a diff.
+// Default colours of a diff: lines added and removed, and the @@ range of a hunk's
+// heading.
 const (
-	DefaultAdded   = "#2ea043"
-	DefaultRemoved = "#e5534b"
+	DefaultAdded   = "#00a000"
+	DefaultRemoved = "#ff1919"
+	DefaultHunk    = "#808080"
 )
 
 const leastWindowSize = 200
+
+// The sizes the code's font can be, in points.
+const (
+	MinCodeFontSize = 6
+	MaxCodeFontSize = 72
+)
 
 // Panes are the sizes of the two panes of a splitter, in pixels.
 type Panes [2]int
@@ -38,6 +47,10 @@ type Settings struct {
 	Sidebar Panes `json:"sidebar"`
 	Lists   Panes `json:"lists"`
 	Editor  Panes `json:"editor"`
+	// History is the commits and what is below them, and HistoryDetail the
+	// files and the diff, on the history tab.
+	History       Panes `json:"history"`
+	HistoryDetail Panes `json:"historyDetail"`
 
 	// Theme is ThemeLight, ThemeDark, or empty to follow the system.
 	Theme string `json:"theme,omitempty"`
@@ -45,6 +58,14 @@ type Settings struct {
 	// AddedColour and RemovedColour tint the lines of a diff, as #rrggbb.
 	AddedColour   string `json:"addedColour"`
 	RemovedColour string `json:"removedColour"`
+	// HunkColour is the colour of the @@ range of a hunk's heading, as #rrggbb.
+	HunkColour string `json:"hunkColour"`
+
+	// CodeFont is the family of the font of diffs and the commit message, empty
+	// for the system's fixed width font, and CodeFontSize its size in points,
+	// 0 for that font's size.
+	CodeFont     string `json:"codeFont,omitempty"`
+	CodeFontSize int    `json:"codeFontSize,omitempty"`
 
 	// Repository is the repository last opened.
 	Repository string `json:"repository,omitempty"`
@@ -58,8 +79,11 @@ func Defaults() Settings {
 		Sidebar:       Panes{300, 800},
 		Lists:         Panes{340, 340},
 		Editor:        Panes{520, 180},
+		History:       Panes{280, 420},
+		HistoryDetail: Panes{280, 800},
 		AddedColour:   DefaultAdded,
 		RemovedColour: DefaultRemoved,
+		HunkColour:    DefaultHunk,
 	}
 }
 
@@ -106,14 +130,27 @@ func (s *Settings) normalise() {
 	if s.Editor[0] <= 0 || s.Editor[1] <= 0 {
 		s.Editor = d.Editor
 	}
+	if s.History[0] <= 0 || s.History[1] <= 0 {
+		s.History = d.History
+	}
+	if s.HistoryDetail[0] <= 0 || s.HistoryDetail[1] <= 0 {
+		s.HistoryDetail = d.HistoryDetail
+	}
 	if s.Theme != ThemeLight && s.Theme != ThemeDark {
 		s.Theme = ""
+	}
+	s.CodeFont = strings.TrimSpace(s.CodeFont)
+	if s.CodeFontSize < MinCodeFontSize || s.CodeFontSize > MaxCodeFontSize {
+		s.CodeFontSize = 0
 	}
 	if !colourPattern.MatchString(s.AddedColour) {
 		s.AddedColour = d.AddedColour
 	}
 	if !colourPattern.MatchString(s.RemovedColour) {
 		s.RemovedColour = d.RemovedColour
+	}
+	if !colourPattern.MatchString(s.HunkColour) {
+		s.HunkColour = d.HunkColour
 	}
 }
 

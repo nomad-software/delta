@@ -25,12 +25,19 @@ type Window struct {
 
 	tabs *qt.QTabWidget
 	tab  *branchTab
+	// tabKeys are the shortcuts to each tab, in order.
+	tabKeys []*qt.QShortcut
+	// history is the second tab.
+	history *historyTab
 	// where and said are the status bar's text: what branch is checked out, and
 	// what last happened.
 	where, said *qt.QLabel
 
 	// repo is the repository open, or nil, and status what was last read of it.
-	repo        *git.Repo
+	repo *git.Repo
+	// choosingTab says that the first status read since starting decides which
+	// tab to be on.
+	choosingTab bool
 	status      git.Status
 	mergeFilled bool
 
@@ -46,7 +53,7 @@ type Window struct {
 	rescan, stageAll, stageSelected, unstageSelected      *qt.QAction
 	unstageAll, commit, push, forcePush, abortMerge, open *qt.QAction
 
-	// confirm asks before doing what can't be taken back, and error tells of a
+	// confirm asks before doing what can't be taken back, and failed tells of a
 	// failure. Tests replace them.
 	confirm func(title, text string) bool
 	failed  func(title, text string)
@@ -69,11 +76,16 @@ func NewWindow(path string) *Window {
 	w.tab = newBranchTab(w.config)
 	w.tabs = qt.NewQTabWidget2()
 	w.tabs.AddTab(w.tab.page, "Branch")
+	w.history = newHistoryTab(w.config)
+	w.tabs.AddTab(w.history.page, "History")
 	w.SetCentralWidget(w.tabs.QWidget)
 	w.makeStatusBar()
 
 	w.makeMenus()
+	w.makeTabKeys()
+	w.applyCodeFont()
 	w.connect()
+	w.connectHistory()
 	w.showTitle()
 	w.updateActions()
 
@@ -97,6 +109,7 @@ func (w *Window) Start(argument string) {
 	setPanes(w.tab.lists, w.config.Lists)
 	setPanes(w.tab.editor, w.config.Editor)
 
+	w.choosingTab = true
 	if argument != "" {
 		if err := w.openRepository(argument); err != nil {
 			w.failed("Open Repository", err.Error())
@@ -124,8 +137,20 @@ func (w *Window) makeStatusBar() {
 	w.said.SetTextFormat(qt.PlainText)
 	// However long a message is, it does not hold the window open.
 	w.said.SetSizePolicy2(qt.QSizePolicy__Ignored, qt.QSizePolicy__Preferred)
+	fade(w.where)
+	fade(w.said)
 	bar.AddWidget(w.where.QWidget)
 	bar.AddWidget2(w.said.QWidget, 1)
+}
+
+// statusOpacity is how opaque the status bar's text is.
+const statusOpacity = 0.5
+
+// fade makes a label of the status bar see-through. The label owns the effect.
+func fade(label *qt.QLabel) {
+	effect := qt.NewQGraphicsOpacityEffect()
+	effect.SetOpacity(statusOpacity)
+	label.SetGraphicsEffect(effect.QGraphicsEffect)
 }
 
 // say shows the message in the status bar.
@@ -133,11 +158,24 @@ func (w *Window) say(message string) {
 	w.said.SetText(message)
 }
 
+// makeTabKeys makes the shortcuts to each tab: Ctrl+1 to the first, and so on.
+func (w *Window) makeTabKeys() {
+	for i := range w.tabs.Count() {
+		sequence := qt.NewQKeySequence2(fmt.Sprintf("Ctrl+%d", i+1))
+		defer sequence.Delete()
+		shortcut := qt.NewQShortcut2(sequence, w.QObject)
+		shortcut.OnActivated(func() { w.tabs.SetCurrentIndex(i) })
+		w.tabKeys = append(w.tabKeys, shortcut)
+	}
+}
+
 // action adds an action of the window to a menu.
 func (w *Window) action(menu *qt.QMenu, text, key string, triggered func()) *qt.QAction {
 	a := qt.NewQAction5(text, w.QObject)
 	if key != "" {
-		a.SetShortcut(qt.NewQKeySequence2(key))
+		sequence := qt.NewQKeySequence2(key)
+		defer sequence.Delete()
+		a.SetShortcut(sequence)
 	}
 	a.OnTriggered(triggered)
 	menu.AddAction(a)
@@ -273,19 +311,18 @@ func (w *Window) updateActions() {
 		a.SetEnabled(idle)
 	}
 	message := strings.TrimSpace(t.message.ToPlainText()) != ""
-	set := func(a *qt.QAction, enabled bool) { a.SetEnabled(enabled) }
-	set(w.open, !w.busy)
-	set(w.rescan, idle)
-	set(w.stageAll, idle && len(w.status.Unstaged) > 0)
-	set(w.stageSelected, idle && len(t.unstaged.SelectedItems()) > 0)
-	set(w.unstageSelected, idle && len(t.staged.SelectedItems()) > 0)
-	set(w.unstageAll, idle && len(w.status.Staged) > 0)
+	w.open.SetEnabled(!w.busy)
+	w.rescan.SetEnabled(idle)
+	w.stageAll.SetEnabled(idle && len(w.status.Unstaged) > 0)
+	w.stageSelected.SetEnabled(idle && len(t.unstaged.SelectedItems()) > 0)
+	w.unstageSelected.SetEnabled(idle && len(t.staged.SelectedItems()) > 0)
+	w.unstageAll.SetEnabled(idle && len(w.status.Staged) > 0)
 	// A merge can be committed with nothing staged, when its result is the
 	// same as the current branch.
-	set(w.commit, idle && message && (len(w.status.Staged) > 0 || w.status.Merging))
-	set(w.push, idle)
-	set(w.forcePush, idle)
-	set(w.abortMerge, idle && w.status.Merging)
+	w.commit.SetEnabled(idle && message && (len(w.status.Staged) > 0 || w.status.Merging))
+	w.push.SetEnabled(idle)
+	w.forcePush.SetEnabled(idle)
+	w.abortMerge.SetEnabled(idle && w.status.Merging)
 
 	t.rescan.SetEnabled(w.rescan.IsEnabled())
 	if w.allStaged() {
@@ -333,6 +370,7 @@ func (w *Window) openRepository(dir string) error {
 	w.repo = r
 	w.config.Repository = r.Root
 	w.applyStatus(git.Status{})
+	w.clearHistory()
 	w.tab.message.Clear()
 	w.mergeFilled = false
 	w.say("Opened " + r.Root)
@@ -342,8 +380,8 @@ func (w *Window) openRepository(dir string) error {
 
 // chooseRepository asks for a repository to open.
 func (w *Window) chooseRepository() {
-	start := w.config.Repository
-	dir := qt.QFileDialog_GetExistingDirectory3(w.QWidget, "Open Repository", start)
+	w.choosingTab = false
+	dir := qt.QFileDialog_GetExistingDirectory3(w.QWidget, "Open Repository", w.config.Repository)
 	if dir == "" {
 		return
 	}
@@ -358,6 +396,7 @@ func (w *Window) rescanRepository() {
 	if r == nil {
 		return
 	}
+	w.markHistoryStale()
 	w.rescans++
 	request := w.rescans
 	go func() {
@@ -371,10 +410,12 @@ func (w *Window) rescanRepository() {
 				return
 			}
 			if err != nil {
+				w.choosingTab = false
 				w.say("Rescan failed: " + firstLine(err.Error()))
 				return
 			}
 			w.applyStatus(s)
+			w.chooseTab(s)
 			// The message git prepared for a merge is offered once, and not
 			// again if it is cleared.
 			if !s.Merging {
@@ -387,6 +428,18 @@ func (w *Window) rescanRepository() {
 			}
 		})
 	}()
+}
+
+// chooseTab goes to the history on starting in a repository with nothing to
+// commit, as there is nothing to do on the branch tab.
+func (w *Window) chooseTab(s git.Status) {
+	if !w.choosingTab {
+		return
+	}
+	w.choosingTab = false
+	if len(s.Unstaged) == 0 && len(s.Staged) == 0 && !s.Merging {
+		w.tabs.SetCurrentIndex(historyTabIndex)
+	}
 }
 
 // applyStatus shows the status.
@@ -741,13 +794,6 @@ func (w *Window) addRemote() {
 	d := newFormDialog(w.QWidget, "Add Remote")
 	name := d.addText("Name", "origin", notEmpty)
 	url := d.addText("URL", "", notEmpty)
-	// Both have to be filled in, whichever was typed in last.
-	check := func(string) {
-		d.ok.SetEnabled(strings.TrimSpace(name.Text()) != "" && strings.TrimSpace(url.Text()) != "")
-	}
-	name.OnTextChanged(check)
-	url.OnTextChanged(check)
-	check("")
 	if !d.run() {
 		return
 	}
@@ -820,8 +866,19 @@ func (w *Window) applySettings(s settings.Settings) {
 	if themeChanged {
 		applyTheme(s.Theme)
 	}
-	w.tab.diff.setColours(s.AddedColour, s.RemovedColour)
+	w.tab.diff.setColours(s.AddedColour, s.RemovedColour, s.HunkColour)
+	w.history.diff.setColours(s.AddedColour, s.RemovedColour, s.HunkColour)
+	w.applyCodeFont()
 	w.saveSettings()
+}
+
+// applyCodeFont gives the diffs and the commit message the font chosen.
+func (w *Window) applyCodeFont() {
+	font := codeFont(w.config.CodeFont, w.config.CodeFontSize)
+	defer font.Delete()
+	w.tab.diff.setCodeFont(font)
+	w.history.diff.setCodeFont(font)
+	w.tab.message.SetFont(font)
 }
 
 // saveSettings saves the settings with the window and panes as they are now.
@@ -835,6 +892,11 @@ func (w *Window) saveSettings() {
 		w.config.Sidebar = panes(w.tab.sidebar)
 		w.config.Lists = panes(w.tab.lists)
 		w.config.Editor = panes(w.tab.editor)
+		// Panes never shown have no sizes of their own yet.
+		if w.history.shown {
+			w.config.History = panes(w.history.split)
+			w.config.HistoryDetail = panes(w.history.detail)
+		}
 	}
 	if err := w.config.Save(w.path); err != nil {
 		fmt.Fprintln(os.Stderr, "merge-monkey: the settings could not be saved:", err)

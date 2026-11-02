@@ -59,11 +59,10 @@ func newBranchTab(config settings.Settings) *branchTab {
 
 	t.diffLabel = heading("Diff")
 	t.diffLabel.SetTextFormat(qt.PlainText)
-	t.diff = newDiffView(config.AddedColour, config.RemovedColour)
+	t.diff = newDiffView(config.AddedColour, config.RemovedColour, config.HunkColour)
 
 	t.message = qt.NewQPlainTextEdit2()
 	t.message.SetPlaceholderText("Commit message")
-	t.message.SetFont(qt.QFontDatabase_SystemFont(qt.QFontDatabase__FixedFont))
 
 	t.rescan = qt.NewQPushButton3("Rescan")
 	// The button is as wide as its longer text, so that nothing moves as it
@@ -142,11 +141,36 @@ func paintGrip(handle *qt.QSplitterHandle) {
 	painter.End()
 }
 
-// newFileList returns a list of changed files, of which any can be selected.
+// mix returns the percentage of the colour mixed into the background.
+func mix(colour, background *qt.QColor, percent int) *qt.QColor {
+	channel := func(c, b int) int { return (c*percent + b*(100-percent)) / 100 }
+	return qt.NewQColor3(
+		channel(colour.Red(), background.Red()),
+		channel(colour.Green(), background.Green()),
+		channel(colour.Blue(), background.Blue()),
+	)
+}
+
+// newFileList returns a list of changed files. Several can be selected with ctrl
+// and shift. Dragging moves the one file selected along with the pointer, so that
+// each is shown in turn, where Qt would otherwise select all those passed over.
 func newFileList() *qt.QListWidget {
 	list := qt.NewQListWidget2()
 	list.SetSelectionMode(qt.QAbstractItemView__ExtendedSelection)
 	list.SetUniformItemSizes(true)
+	list.OnMouseMoveEvent(func(super func(*qt.QMouseEvent), event *qt.QMouseEvent) {
+		if event.Buttons()&qt.LeftButton == 0 {
+			super(event)
+			return
+		}
+		if event.Modifiers() != qt.NoModifier {
+			return
+		}
+		position := event.Pos()
+		if item := list.ItemAt(position); item != nil && !(item.IsSelected() && len(list.SelectedItems()) == 1) {
+			list.SetCurrentRow2(list.Row(item), qt.QItemSelectionModel__ClearAndSelect)
+		}
+	})
 	return list
 }
 

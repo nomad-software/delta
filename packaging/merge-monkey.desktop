@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Merge Monkey
+Comment=A graphical user interface for git
+Exec=merge-monkey
+Icon=merge-monkey
+Categories=Development;RevisionControl;
+Terminal=false
+StartupWMClass=merge-monkey

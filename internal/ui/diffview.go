@@ -6,62 +6,65 @@ import (
 	"github.com/nomad-software/merge-monkey/internal/diff"
 )
 
-// How much of a colour goes into the background of a line, in percent. The
-// colours are mixed into the palette's background rather than used as they are,
-// so that one colour reads well, under the palette's text, in light and dark
-// themes alike.
-const (
-	changeTint = 30
-	hunkTint   = 14
-	metaTint   = 6
-)
+// tabWidth is how many spaces wide a tab is.
+const tabWidth = 4
 
-// diffView shows a diff read-only, with whole lines tinted by what they are. A
-// block's background is used, as only that reaches the full width of the view;
-// a syntax highlighter can only colour behind the text.
+// diffView shows a diff read-only, with its text coloured by what each line is.
 type diffView struct {
 	*qt.QPlainTextEdit
-	added, removed string
-	// text is what is shown, and painted says what colours it is drawn in.
+	added, removed, hunk string
+	// titles says that each file's name heads its diff, as there can be several.
+	titles bool
+	// raw is the diff given, parsed what is shown of it, text the same text, and
+	// painted says what colours it is drawn in.
+	raw     string
+	parsed  diff.Parsed
 	text    string
-	kinds   []diff.Kind
 	painted string
 }
 
-func newDiffView(added, removed string) *diffView {
-	v := &diffView{QPlainTextEdit: qt.NewQPlainTextEdit2(), added: added, removed: removed}
+func newDiffView(added, removed, hunk string) *diffView {
+	v := &diffView{QPlainTextEdit: qt.NewQPlainTextEdit2(), added: added, removed: removed, hunk: hunk}
 	v.SetReadOnly(true)
 	v.SetUndoRedoEnabled(false)
 	v.SetLineWrapMode(qt.QPlainTextEdit__NoWrap)
-	font := qt.QFontDatabase_SystemFont(qt.QFontDatabase__FixedFont)
-	v.SetFont(font)
-	v.SetTabStopDistance(float64(4 * v.FontMetrics().HorizontalAdvance(" ")))
-	// The tints are worked out from the palette, which the theme can change.
-	v.OnChangeEvent(func(super func(*qt.QEvent), event *qt.QEvent) {
-		super(event)
-		if t := event.Type(); t == qt.QEvent__PaletteChange || t == qt.QEvent__ApplicationPaletteChange {
-			v.recolour()
-		}
-	})
+	v.setCodeFont(qt.QFontDatabase_SystemFont(qt.QFontDatabase__FixedFont))
 	return v
 }
 
 // show shows the diff. Showing the same text again leaves the view as it is,
 // scrolled where it was, as happens on every rescan.
 func (v *diffView) show(text string) {
-	text = diff.Clean(text)
-	if text == v.text {
+	if text == v.raw {
 		return
 	}
-	v.text = text
-	v.kinds = diff.Classify(text)
-	v.SetPlainText(text)
+	v.raw = text
+	v.parsed = diff.Parse(text, v.titles)
+	v.text = v.parsed.Text
+	v.SetPlainText(v.text)
 	v.paint()
 }
 
-// setColours changes the colours of added and removed lines.
-func (v *diffView) setColours(added, removed string) {
-	v.added, v.removed = added, removed
+// setCodeFont changes the font, and with it how wide a tab is.
+func (v *diffView) setCodeFont(font *qt.QFont) {
+	v.SetFont(font)
+	v.SetTabStopDistance(float64(tabWidth * v.FontMetrics().HorizontalAdvance(" ")))
+}
+
+// fileLines returns the lines where the diff of each file starts.
+func (v *diffView) fileLines() []int {
+	return v.parsed.Files
+}
+
+// scrollToLine puts a line at the top of the view. The scroll bar of a view that
+// does not wrap counts in lines.
+func (v *diffView) scrollToLine(line int) {
+	v.VerticalScrollBar().SetValue(line)
+}
+
+// setColours changes the colours of added and removed lines and hunk ranges.
+func (v *diffView) setColours(added, removed, hunk string) {
+	v.added, v.removed, v.hunk = added, removed, hunk
 	v.recolour()
 }
 
@@ -78,54 +81,63 @@ func (v *diffView) recolour() {
 	v.VerticalScrollBar().SetValue(scroll)
 }
 
-// colourKey names what the tints are made from.
+// colourKey names the colours the text is drawn in.
 func (v *diffView) colourKey() string {
-	p := qt.QGuiApplication_Palette()
-	return v.added + v.removed + p.ColorWithCr(qt.QPalette__Base).Name() + p.ColorWithCr(qt.QPalette__Text).Name()
+	return v.added + v.removed + v.hunk
 }
 
-// paint gives each line that is not unchanged its background.
+// paint colours the text of each line by what it is: the whole of an added or
+// removed line, and the @@ range of a hunk's heading, leaving any text after it
+// as it is. A file's name is bold. Backgrounds are left alone, and what has no
+// colour of its own follows the palette.
 func (v *diffView) paint() {
 	v.painted = v.colourKey()
-	p := qt.QGuiApplication_Palette()
-	base, text := p.ColorWithCr(qt.QPalette__Base), p.ColorWithCr(qt.QPalette__Text)
-	formats := map[diff.Kind]*qt.QTextBlockFormat{
-		diff.Added:   tintFormat(mix(qt.NewQColor6(v.added), base, changeTint)),
-		diff.Removed: tintFormat(mix(qt.NewQColor6(v.removed), base, changeTint)),
-		diff.Hunk:    tintFormat(mix(text, base, hunkTint)),
-		diff.Meta:    tintFormat(mix(text, base, metaTint)),
-	}
+	added, removed, hunk := colourFormat(v.added), colourFormat(v.removed), colourFormat(v.hunk)
+	defer added.Delete()
+	defer removed.Delete()
+	defer hunk.Delete()
+	title := qt.NewQTextCharFormat()
+	defer title.Delete()
+	title.SetFontWeight(int(qt.QFont__Bold))
+
 	doc := v.Document()
 	cursor := qt.NewQTextCursor2(doc)
 	defer cursor.Delete()
 	cursor.BeginEditBlock()
 	defer cursor.EndEditBlock()
+	// format applies to the part of the block up to its length.
+	format := func(block *qt.QTextBlock, length int, f *qt.QTextCharFormat) {
+		cursor.SetPosition(block.Position())
+		cursor.SetPosition2(block.Position()+length, qt.QTextCursor__KeepAnchor)
+		cursor.MergeCharFormat(f)
+	}
 	block := doc.Begin()
-	for _, kind := range v.kinds {
+	for i, kind := range v.parsed.Kinds {
 		if !block.IsValid() {
 			break
 		}
-		if format := formats[kind]; format != nil {
-			cursor.SetPosition(block.Position())
-			cursor.SetBlockFormat(format)
+		switch kind {
+		case diff.Added:
+			format(block, block.Length()-1, added)
+		case diff.Removed:
+			format(block, block.Length()-1, removed)
+		case diff.Hunk:
+			// The range is plain ASCII, so its length is the same in Qt's terms.
+			format(block, v.parsed.RangeEnds[i], hunk)
+		case diff.File:
+			format(block, block.Length()-1, title)
 		}
 		block = block.Next()
 	}
 }
 
-// tintFormat returns the format of a block with the background.
-func tintFormat(colour *qt.QColor) *qt.QTextBlockFormat {
-	format := qt.NewQTextBlockFormat()
-	format.SetBackground(qt.NewQBrush3(colour))
+// colourFormat returns a format of text in the colour.
+func colourFormat(name string) *qt.QTextCharFormat {
+	colour := qt.NewQColor6(name)
+	defer colour.Delete()
+	brush := qt.NewQBrush3(colour)
+	defer brush.Delete()
+	format := qt.NewQTextCharFormat()
+	format.SetForeground(brush)
 	return format
-}
-
-// mix returns the percentage of the colour mixed into the background.
-func mix(colour, background *qt.QColor, percent int) *qt.QColor {
-	channel := func(c, b int) int { return (c*percent + b*(100-percent)) / 100 }
-	return qt.NewQColor3(
-		channel(colour.Red(), background.Red()),
-		channel(colour.Green(), background.Green()),
-		channel(colour.Blue(), background.Blue()),
-	)
 }

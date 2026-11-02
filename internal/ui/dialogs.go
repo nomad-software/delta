@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"slices"
 	"strings"
 
 	qt "github.com/mappu/miqt/qt6"
@@ -11,6 +12,8 @@ type formDialog struct {
 	*qt.QDialog
 	form *qt.QFormLayout
 	ok   *qt.QPushButton
+	// fieldsValid are what say whether each field can be used.
+	fieldsValid []func() bool
 }
 
 func newFormDialog(parent *qt.QWidget, title string) *formDialog {
@@ -35,16 +38,21 @@ func (d *formDialog) run() bool {
 	return accepted
 }
 
-// addText adds a field of text, and has OK enabled only while valid says what is
-// in it can be used. Spaces around the text are ignored.
+// addText adds a field of text, with OK enabled only while valid says that what
+// is in every such field can be used. Spaces around the text are ignored.
 func (d *formDialog) addText(label, initial string, valid func(string) bool) *qt.QLineEdit {
 	edit := qt.NewQLineEdit2()
 	edit.SetText(initial)
-	check := func() { d.ok.SetEnabled(valid(strings.TrimSpace(edit.Text()))) }
-	edit.OnTextChanged(func(string) { check() })
-	check()
+	d.fieldsValid = append(d.fieldsValid, func() bool { return valid(strings.TrimSpace(edit.Text())) })
+	edit.OnTextChanged(func(string) { d.check() })
+	d.check()
 	d.form.AddRow3(label, edit.QWidget)
 	return edit
+}
+
+// check enables OK if every field can be used.
+func (d *formDialog) check() {
+	d.ok.SetEnabled(!slices.ContainsFunc(d.fieldsValid, func(valid func() bool) bool { return !valid() }))
 }
 
 // addChoice adds a list to choose from.
