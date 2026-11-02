@@ -1,0 +1,10 @@
+I'm writing a git gui with the following features.
+
+The main window should have tabs.
+The first tab is the branch tab which is split into a left sidebar with unstaged changes (files) to the top and staged changes to the bottom. The main pane is a diff and the bottom pane is the message pane. This is very much like `git gui`. There should be buttons next to the message pane which are rescan, stage changes, commit and push. There should also be an option to force push.
+
+There should be a menu on the main window with settings and about box like Prism. Only use prism as a reference, not to copy. There should be highlighing on the diff with the usuall green/red. Add these colours to the settings.
+
+There should be a branch menu to create a new branch, checkout, etc. A commit menu to do that same as the buttons, A remote menu to do remote operations.
+
+Save the window and panes size in the settings.
