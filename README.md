@@ -5,9 +5,9 @@ Stage and commit your changes, and browse the history as a graph. It is
 written in Go with Qt 6, through the [miqt](https://github.com/mappu/miqt)
 bindings, and runs on Linux and macOS.
 
-![The history in Delta](docs/history.png)
+![The changes in Delta](docs/changes.png)
 
-![The changes in Delta](docs/branch.png)
+![The history in Delta](docs/history.png)
 
 ## Running
 
@@ -17,15 +17,21 @@ delta [folder]
 
 It opens the repository holding the folder given. Without one, it opens the
 repository the current folder is in, or else none, until you open one from
-**File > Open Repository…**. It doesn't remember the last one open.
+**File > Open Repository…**. It doesn't remember the last one open. It always
+starts on the changes.
 
-It starts on the changes. A toolbar under the menus has **New Branch**,
-**Checkout** and **Delete**, then **Rescan** and **Stage** (which is **Unstage**
-when everything is staged, as the button beside the message is), then **Pull**
-and **Push**, then **History**, which shows the history in place of the changes
-until it is pressed again, as **Branch > Show History** (`Ctrl+H`) does. The
-arrow beside **Push** opens an option to force the push, ticked along with the
-**Force push** checkbox.
+## The toolbar
+
+| Button | Does |
+| ------ | ---- |
+| **New Branch** | Makes a branch, and checks it out if you like. |
+| **Checkout** | Switches to another branch. |
+| **Delete** | Deletes a branch, after asking. |
+| **Rescan** | Reads the state of the repository again. |
+| **Stage** | Stages everything listed. When everything is staged it is **Unstage**, which unstages it all. |
+| **Pull** | Pulls into the current branch. |
+| **Push** | Pushes the current branch, setting its upstream on the first push. Its arrow opens a **Force push** option. |
+| **History** | Shows the history in place of the changes until it is pressed again, as **Branch > Show History** (`Ctrl+H`) does. |
 
 At the toolbar's right end, a spinner says **Working** while anything takes more
 than a moment: a command, reading the status, a diff or the history, or a fetch.
@@ -33,43 +39,61 @@ than a moment: a command, reading the status, a diff or the history, or a fetch.
 ## The changes
 
 * **Unstaged Changes** and **Staged Changes**, in the sidebar, list the changed
-  files, each with a circle in a Solarized colour for what happened to it: blue
-  modified, green added, red deleted, violet renamed, cyan copied, yellow type
-  changed, grey untracked, orange in conflict. Hover over a file to have it said in words.
-  The history's list of files has the same circles.
+  files, each with a circle in a Solarized colour for what happened to it. Hover
+  over a file to have it said in words. The history's list of files has the same
+  circles.
+
+  | Circle | Change |
+  | ------ | ------ |
+  | Blue   | Modified |
+  | Green  | Added |
+  | Red    | Deleted |
+  | Violet | Renamed |
+  | Cyan   | Copied |
+  | Yellow | Type changed |
+  | Grey   | Untracked |
+  | Orange | In conflict |
+
 * Choose a file to see its **diff**, with added lines in green and removed lines
   in red, and without git's file headers. Drag over the list to see each file in
   turn. Double-click a file to stage or unstage it. Ctrl and shift select several.
-* The **message pane** holds the commit message, with these beside it:
-  * **Rescan** reads the state of the repository again.
-  * **Stage Changes** stages everything in the unstaged list, untracked files
-    included. When everything is staged it becomes **Unstage Changes**, which
-    unstages everything.
-  * **Commit** commits what is staged.
-  * **Push** pushes the current branch, setting its upstream on the first push.
-  * **Force push** makes the next push a forced one, after asking you first.
+* The **message pane** holds the commit message, with **Rescan**, **Stage
+  Changes** (or **Unstage Changes**), **Commit** and **Push** beside it.
+* **Force push**, beside them and in the toolbar Push's menu, makes the Push
+  buttons force the next push, after asking you first. The two are ticked
+  together, it is remembered between runs, and a successful push clears it.
+  `Ctrl+P` always pushes without forcing, and **Remote > Force Push…** always
+  forces.
 
 Forcing uses `--force-with-lease`: git refuses if the remote has commits you have
 not fetched, so you can't overwrite someone else's work without seeing it.
+
+**Branch > Discard All Changes…** puts the branch back as if it had just been
+checked out: every change not committed, staged or not, is undone, new files and
+folders are deleted, and a merge in progress is abandoned. Commits, and files
+git ignores, are kept. It asks first, saying how many files it will put back and
+delete, as it can't be undone.
 
 ## The history
 
 As in `gitk`, the commits of the current branch are listed at the top, newest
 first, with a graph at the left drawing how they branch and merge, and any
 branches and tags at them in brackets. They are read 500 at a time (a setting),
-and more as you scroll to the end.
-If anything is not committed yet, an **Uncommitted changes** row comes first,
-staged, unstaged and untracked together.
+and more as you scroll to the end. If anything is not committed yet, an
+**Uncommitted changes** row comes first, staged, unstaged and untracked together.
 
 Below the commits, choose one to see the files it changed on the left, and its
 message and diff on the right. Choose a file to go to its place in the diff. A
 merge is shown as what it changed against its first parent.
 
+A diff over 4 MiB, of the changes or in the history, is cut off with a note
+saying so.
+
 ### Interactive rebase
 
-Right-click a commit and choose **Rebase from here…** to rewrite it
-and the commits after it. A dialog lists them oldest first, as git applies them,
-each with a dropdown of what to do with it:
+Right-click a commit and choose **Rebase from here…** to rewrite it and the
+commits after it. A dialog lists them oldest first, as git applies them, each
+with a dropdown of what to do with it:
 
 | Action | Does |
 | ------ | ---- |
@@ -83,42 +107,33 @@ each with a dropdown of what to do with it:
 Drag commits into the order to apply them in, one or several at a time. Below
 the list is the chosen commit's message. The list shows only the start of each
 commit's first line, and its tooltip the start of its message, so that long
-messages fit. The message has all of it. The dialog opens at the size it was
-last closed at.
+messages fit; the message below has all of it. The dialog opens at the size it
+was last closed at.
 
 Git needs a clean work tree, so commit or stash your changes first. A range
 holding a merge can't be rebased this way. When the rebase stops, at a commit to
 edit or one that doesn't apply cleanly, the status bar says so and how far it
-has got. Resolve and stage in the changes, then choose **Continue Rebase**
-from the Branch menu. Anything staged at a commit to edit goes into that commit.
+has got. Resolve and stage in the changes, then choose **Continue Rebase** from
+the Branch menu. Anything staged at a commit to edit goes into that commit.
 **Skip Commit** leaves out the commit it stopped at, and **Abort Rebase** puts
 the branch back as it was.
-
-A diff over 4 MiB, of the changes or in the history, is cut off with a note
-saying so.
 
 ## Menus
 
 | Menu   | Items | Shortcuts |
 | ------ | ----- | --------- |
 | File   | Open Repository, Settings, Quit | `Ctrl+O`, `Ctrl+,`, `Ctrl+Q` |
-| Branch | New Branch, Checkout, Rename, Delete, Show History, Merge, Abort Merge, Continue Rebase, Skip Commit, Abort Rebase, Discard All Changes | `Ctrl+N`, `Ctrl+B`, Show History `Ctrl+H`, Merge `Ctrl+M` |
+| Branch | New Branch, Checkout, Rename, Delete, Show History, Merge, Abort Merge, Continue Rebase, Skip Commit, Abort Rebase, Discard All Changes | New Branch `Ctrl+N`, Checkout `Ctrl+B`, Show History `Ctrl+H`, Merge `Ctrl+M` |
 | Commit | Rescan, Stage Changes, Stage Selected, Unstage Selected, Unstage All, Commit | `F5`, `Ctrl+Shift+S`, `Ctrl+S`, `Ctrl+U`, `Ctrl+Shift+U`, `Ctrl+Return` |
 | Remote | Fetch, Pull, Push, Force Push, Add Remote, Rename Remote, Change URL, Remove Remote | Fetch `Ctrl+Shift+F`, Pull `Ctrl+Shift+L`, Push `Ctrl+P`, Force Push `Ctrl+Shift+P` |
 | Help   | About | `Ctrl+I` |
 
-Checkout lists every local branch by name, with the current one chosen. Tick **Include remote
-branches** to fetch and list the remote ones too: checking one out makes a local
-branch that tracks it.
+**Checkout** lists every local branch by name, with the current one chosen. Tick
+**Include remote branches** to fetch and list the remote ones too: checking one
+out makes a local branch that tracks it.
 
 Deleting a branch asks first, and asks again if it has commits that have not been
 merged.
-
-**Branch > Discard All Changes…** puts the branch back as if it had just been
-checked out: every change not committed, staged or not, is undone, new files and
-folders are deleted, and a merge in progress is abandoned. Commits, and files
-git ignores, are kept. It asks first, saying how many files it will put back and
-delete, as it can't be undone.
 
 ## Settings
 
@@ -132,11 +147,10 @@ The **User interface** tab of **File > Settings…** sets:
 - The colours of added lines, removed lines and hunk headers (the grey
   `@@ -1,6 +1,7 @@`), in a table. They start as Solarized's green, red and grey.
 
-The settings are kept in `delta/settings.json` under the system's
-configuration folder (`~/.config` on Linux), along with whether **Force push**
-is ticked, the size of the window and its panes, which are saved when it closes,
-and of the
-interactive rebase dialog.
+The settings are kept in `delta/settings.json` under the system's configuration
+folder (`~/.config` on Linux), along with whether **Force push** is ticked, the
+size of the window and its panes, which are saved when it closes, and the size of
+the interactive rebase dialog.
 
 ## Desktop entry
 
@@ -197,6 +211,7 @@ make build        # builds ./delta
 make run          # builds and runs it
 make install      # installs it in $GOBIN or $(go env GOPATH)/bin, to run from anywhere
 make test         # runs the tests
+make race         # runs the tests with the race detector
 make vet          # runs go vet
 make screenshots  # redraws the pictures in docs/
 make icons        # redraws the macOS icon in packaging/, after the icon changes
@@ -204,6 +219,9 @@ make appimage     # builds the AppImage
 make macos        # builds the macOS app, on a Mac
 make clean        # removes ./delta and build/
 ```
+
+To change the icon, replace `internal/appicon/appicon.png` with another 256×256
+PNG and run `make icons`.
 
 ## Releases
 

@@ -15,9 +15,10 @@ const (
 	unstageText = "Unstage Changes"
 )
 
-// branchTab is the first tab: the unstaged and staged files in a sidebar, and
-// the diff above the message and its buttons, as in git gui.
-type branchTab struct {
+// changesView is what the window shows unless the history is on show: the
+// unstaged and staged files in a sidebar, and the diff above the message and its
+// buttons, as in git gui.
+type changesView struct {
 	page *qt.QWidget
 	// sidebar splits the lists from the rest, lists splits one list from the
 	// other, and editor splits the diff from the message.
@@ -36,65 +37,65 @@ type branchTab struct {
 	updating bool
 }
 
-func newBranchTab(config settings.Settings) *branchTab {
-	t := &branchTab{page: qt.NewQWidget2()}
+func newChangesView(config settings.Settings) *changesView {
+	v := &changesView{page: qt.NewQWidget2()}
 
-	t.unstagedLabel = heading("Unstaged Changes")
-	t.stagedLabel = heading("Staged Changes")
-	t.unstaged = newFileList()
-	t.staged = newFileList()
-	t.lists = newPaneSplitter(qt.Vertical)
-	t.lists.AddWidget(labelled(t.unstagedLabel, t.unstaged.QWidget))
-	t.lists.AddWidget(labelled(t.stagedLabel, t.staged.QWidget))
+	v.unstagedLabel = heading("Unstaged Changes")
+	v.stagedLabel = heading("Staged Changes")
+	v.unstaged = newFileList()
+	v.staged = newFileList()
+	v.lists = newPaneSplitter(qt.Vertical)
+	v.lists.AddWidget(labelled(v.unstagedLabel, v.unstaged.QWidget))
+	v.lists.AddWidget(labelled(v.stagedLabel, v.staged.QWidget))
 
-	t.diffLabel = heading("Diff")
-	t.diffLabel.SetTextFormat(qt.PlainText)
-	t.diff = newDiffView(config.AddedColour, config.RemovedColour, config.HunkColour)
+	v.diffLabel = heading("Diff")
+	v.diffLabel.SetTextFormat(qt.PlainText)
+	v.diff = newDiffView(config.AddedColour, config.RemovedColour, config.HunkColour)
 
-	t.message = qt.NewQPlainTextEdit2()
-	t.message.SetPlaceholderText("Commit message")
+	v.message = qt.NewQPlainTextEdit2()
+	v.message.SetPlaceholderText("Commit message")
 
-	t.rescan = qt.NewQPushButton3("Rescan")
+	v.rescan = qt.NewQPushButton3("Rescan")
 	// The button is as wide as its longer text, so that nothing moves as it
 	// changes between them.
-	t.stage = qt.NewQPushButton3(unstageText)
-	t.stage.SetMinimumWidth(t.stage.SizeHint().Width())
-	t.stage.SetText(stageText)
-	t.commit = qt.NewQPushButton3("Commit")
-	t.push = qt.NewQPushButton3("Push")
-	t.force = qt.NewQCheckBox3("Force push")
+	v.stage = qt.NewQPushButton3(unstageText)
+	v.stage.SetMinimumWidth(v.stage.SizeHint().Width())
+	v.stage.SetText(stageText)
+	v.commit = qt.NewQPushButton3("Commit")
+	v.push = qt.NewQPushButton3("Push")
+	v.force = qt.NewQCheckBox3("Force push")
 	buttons := qt.NewQVBoxLayout2()
 	buttons.SetContentsMargins(0, 0, 0, 0)
-	for _, b := range []*qt.QPushButton{t.rescan, t.stage, t.commit, t.push} {
+	for _, b := range []*qt.QPushButton{v.rescan, v.stage, v.commit, v.push} {
 		buttons.AddWidget(b.QWidget)
 	}
-	buttons.AddWidget(t.force.QWidget)
+	buttons.AddWidget(v.force.QWidget)
 	buttons.AddStretch()
 
 	bottom := qt.NewQWidget2()
 	bottomLayout := qt.NewQHBoxLayout(bottom)
 	bottomLayout.SetContentsMargins(0, 0, 0, 0)
 	bottomLayout.AddLayout(buttons.QLayout)
-	bottomLayout.AddWidget2(t.message.QWidget, 1)
+	bottomLayout.AddWidget2(v.message.QWidget, 1)
 
-	t.editor = newPaneSplitter(qt.Vertical)
-	t.editor.AddWidget(labelled(t.diffLabel, t.diff.QWidget))
-	t.editor.AddWidget(bottom)
+	v.editor = newPaneSplitter(qt.Vertical)
+	v.editor.AddWidget(labelled(v.diffLabel, v.diff.QWidget))
+	v.editor.AddWidget(bottom)
 	// As the window changes size, the diff takes up the difference.
-	t.editor.SetStretchFactor(0, 1)
+	v.editor.SetStretchFactor(0, 1)
 
-	t.sidebar = newPaneSplitter(qt.Horizontal)
-	t.sidebar.AddWidget(t.lists.QWidget)
-	t.sidebar.AddWidget(t.editor.QWidget)
-	t.sidebar.SetStretchFactor(1, 1)
-	for _, s := range []*qt.QSplitter{t.lists, t.editor, t.sidebar} {
+	v.sidebar = newPaneSplitter(qt.Horizontal)
+	v.sidebar.AddWidget(v.lists.QWidget)
+	v.sidebar.AddWidget(v.editor.QWidget)
+	v.sidebar.SetStretchFactor(1, 1)
+	for _, s := range []*qt.QSplitter{v.lists, v.editor, v.sidebar} {
 		s.SetChildrenCollapsible(false)
 	}
 
-	layout := qt.NewQVBoxLayout(t.page)
+	layout := qt.NewQVBoxLayout(v.page)
 	layout.SetContentsMargins(8, 8, 8, 8)
-	layout.AddWidget(t.sidebar.QWidget)
-	return t
+	layout.AddWidget(v.sidebar.QWidget)
+	return v
 }
 
 // newFileList returns a list of changed files. Several can be selected with ctrl
@@ -123,7 +124,7 @@ func newFileList() *qt.QListWidget {
 
 // setList replaces what a list shows, keeping the selection and scroll position.
 // If nothing changed the list is not touched at all.
-func (t *branchTab) setList(list *qt.QListWidget, old, changes []git.Change) {
+func (v *changesView) setList(list *qt.QListWidget, old, changes []git.Change) {
 	if slices.Equal(old, changes) {
 		return
 	}
@@ -134,8 +135,8 @@ func (t *branchTab) setList(list *qt.QListWidget, old, changes []git.Change) {
 		}
 	}
 	scroll := list.VerticalScrollBar().Value()
-	t.updating = true
-	defer func() { t.updating = false }()
+	v.updating = true
+	defer func() { v.updating = false }()
 	list.Clear()
 	for _, c := range changes {
 		item := newChangeItem(c)

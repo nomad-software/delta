@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	qt "github.com/mappu/miqt/qt6"
+	"github.com/mappu/miqt/qt6/mainthread"
 )
 
 // formDialog is a small dialog of labelled fields with OK and Cancel.
@@ -131,4 +132,93 @@ func showError(parent *qt.QWidget, title, text string) {
 	box.SetTextFormat(qt.PlainText)
 	box.OnFinished(func(int) { box.DeleteLater() })
 	box.Open()
+}
+
+// newCheckoutDialog returns the dialog asking which branch to check out, its
+// list of them, and its checkbox: the list has the local branches, with the
+// current one chosen, and the remote ones after them while the checkbox is
+// ticked, each in order of name.
+// OK is enabled only while a branch other than the current one is chosen, as
+// there is nothing to do otherwise. Ticking it the first time fetches, in the
+// background, and lists the remote branches that gives, or, if it fails, says
+// why and lists those already known.
+func newCheckoutDialog(parent *qt.QWidget, current string, local, remote []string, fetch func() ([]string, error)) (*formDialog, *qt.QComboBox, *qt.QCheckBox) {
+	local, remote = byName(local), byName(remote)
+	d := newFormDialog(parent, "Checkout")
+	branch := d.addChoice("Branch", local)
+	branch.SetCurrentIndex(max(branch.FindText(current), 0))
+	d.focus = branch.QWidget
+	withRemote := qt.NewQCheckBox3("Include remote branches")
+	d.form.AddRowWithWidget(withRemote.QWidget)
+	note := qt.NewQLabel2()
+	note.SetTextFormat(qt.PlainText)
+	note.SetWordWrap(true)
+	note.Hide()
+	d.form.AddRowWithWidget(note.QWidget)
+	fetching := false
+	d.fieldsValid = append(d.fieldsValid, func() bool {
+		return !fetching && branch.Count() > 0 && branch.CurrentText() != current
+	})
+	branch.OnCurrentIndexChanged(func(int) { d.check() })
+	fill := func() {
+		chosen := branch.CurrentText()
+		branch.Clear()
+		branch.AddItems(local)
+		if withRemote.IsChecked() {
+			branch.AddItems(remote)
+		}
+		// A branch no longer listed gives way to the current one.
+		at := branch.FindText(chosen)
+		if at < 0 {
+			at = branch.FindText(current)
+		}
+		branch.SetCurrentIndex(max(at, 0))
+		d.check()
+	}
+	fetched := false
+	withRemote.OnToggled(func(on bool) {
+		if !on || fetched {
+			fill()
+			return
+		}
+		fetched, fetching = true, true
+		branch.SetEnabled(false)
+		withRemote.SetEnabled(false)
+		note.SetText("Fetching…")
+		note.Show()
+		d.check()
+		go func() {
+			got, err := fetch()
+			mainthread.Start(func() {
+				if d.finished {
+					return
+				}
+				fetching = false
+				branch.SetEnabled(true)
+				withRemote.SetEnabled(true)
+				switch {
+				case err != nil:
+					note.SetText("Fetching failed, so these are the remote branches as last fetched: " + firstLine(err.Error()))
+				case len(got) == 0:
+					note.SetText("There are no remote branches.")
+					remote = nil
+				default:
+					note.Hide()
+					remote = byName(got)
+				}
+				fill()
+			})
+		}()
+	})
+	d.check()
+	return d, branch, withRemote
+}
+
+// byName returns the names in order, ignoring case.
+func byName(names []string) []string {
+	names = slices.Clone(names)
+	slices.SortStableFunc(names, func(a, b string) int {
+		return strings.Compare(strings.ToLower(a), strings.ToLower(b))
+	})
+	return names
 }

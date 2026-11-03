@@ -41,10 +41,6 @@ func Install(icon []byte) error {
 func install(data, command, class string, icon []byte) error {
 	image := filepath.Join(data, "icons", "hicolor", "256x256", "apps", Name+".png")
 	entryPath := filepath.Join(data, "applications", Name+".desktop")
-	// The icon was 128 pixels once, and is 256 now: the old one is not left.
-	if err := os.Remove(filepath.Join(data, "icons", "hicolor", "128x128", "apps", Name+".png")); err != nil && !os.IsNotExist(err) {
-		return err
-	}
 	return errors.Join(
 		writeIfChanged(image, icon),
 		writeIfChanged(entryPath, []byte(entry(command, class, image))),

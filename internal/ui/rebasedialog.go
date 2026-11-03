@@ -65,7 +65,7 @@ type rebaseDialog struct {
 // or else most of the size of its parent.
 func newRebaseDialog(parent *qt.QWidget, config settings.Settings, commits []git.Commit) *rebaseDialog {
 	d := &rebaseDialog{QDialog: qt.NewQDialog(parent)}
-	d.SetWindowTitle("Interactive Rebase")
+	d.SetWindowTitle(rebaseTitle)
 	switch {
 	case config.RebaseWidth > 0:
 		d.Resize(config.RebaseWidth, config.RebaseHeight)
@@ -221,8 +221,7 @@ func (d *rebaseDialog) run() bool {
 
 // actionName returns how an action is shown.
 func actionName(a git.Action) string {
-	s := string(a)
-	return strings.ToUpper(s[:1]) + s[1:]
+	return upperFirst(string(a))
 }
 
 // showStep shows a step of the plan on its row. A commit dropped is struck out.

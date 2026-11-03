@@ -209,12 +209,6 @@ func (r *Repo) rebaseState() (RebaseState, bool) {
 	return RebaseState{}, false
 }
 
-// gitPath returns the absolute path of a file in the repository's git folder.
-func (r *Repo) gitPath(name string) (string, error) {
-	out, err := r.run("rev-parse", "--path-format=absolute", "--git-path", name)
-	return strings.TrimRight(out, "\n"), err
-}
-
 // Rebasing says whether a rebase is in progress.
 func (r *Repo) Rebasing() bool {
 	_, ok := r.rebaseState()

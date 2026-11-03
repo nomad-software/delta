@@ -130,6 +130,12 @@ func failure(err error, stdout, stderr string) error {
 	return errors.New(said)
 }
 
+// gitPath returns the absolute path of a file in the repository's git folder.
+func (r *Repo) gitPath(name string) (string, error) {
+	out, err := r.run("rev-parse", "--path-format=absolute", "--git-path", name)
+	return strings.TrimRight(out, "\n"), err
+}
+
 // hasCommits says whether HEAD is a commit yet, which on a new branch it is not.
 func (r *Repo) hasCommits() bool {
 	_, err := r.run("rev-parse", "-q", "--verify", "HEAD")

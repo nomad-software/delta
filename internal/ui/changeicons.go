@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"runtime"
-
 	qt "github.com/mappu/miqt/qt6"
 
 	"github.com/nomad-software/delta/internal/git"
@@ -43,34 +41,11 @@ func changeIcon(code byte) *qt.QIcon {
 	if icon := changeIcons[code]; icon != nil {
 		return icon
 	}
-	icon := qt.NewQIcon5(newDotEngine(code))
+	icon := paintedIcon(func(p *qt.QPainter, x, y, side float64, mode qt.QIcon__Mode) {
+		paintDot(p, x, y, side, code, mode)
+	})
 	changeIcons[code] = icon
 	return icon
-}
-
-// newDotEngine returns the engine that draws the circle of the code. Qt asks it
-// for a copy of itself where an icon is changed.
-func newDotEngine(code byte) *qt.QIconEngine {
-	e := qt.NewQIconEngine()
-	e.OnPaint(func(p *qt.QPainter, rect *qt.QRect, mode qt.QIcon__Mode, _ qt.QIcon__State) {
-		paintDot(p, float64(rect.X()), float64(rect.Y()), float64(min(rect.Width(), rect.Height())), code, mode)
-	})
-	// As in newShapeEngine, the pixmap is drawn transparent, and kept until the
-	// next is asked for, as Qt copies it only once this returns.
-	var last *qt.QPixmap
-	e.OnPixmap(func(_ func(*qt.QSize, qt.QIcon__Mode, qt.QIcon__State) *qt.QPixmap, size *qt.QSize, mode qt.QIcon__Mode, _ qt.QIcon__State) *qt.QPixmap {
-		image := qt.NewQImage3(size.Width(), size.Height(), qt.QImage__Format_ARGB32_Premultiplied)
-		defer image.Delete()
-		image.Fill2(qt.Transparent)
-		p := qt.NewQPainter2(image.QPaintDevice)
-		paintDot(p, 0, 0, float64(min(size.Width(), size.Height())), code, mode)
-		p.End()
-		p.Delete()
-		last = qt.QPixmap_FromImage(image)
-		return last
-	})
-	e.OnClone(func() *qt.QIconEngine { return newDotEngine(code) })
-	return e
 }
 
 // paintDot draws the circle of the code in a square of the side at x, y: an
@@ -105,12 +80,10 @@ func paintDot(p *qt.QPainter, x, y, side float64, code byte, mode qt.QIcon__Mode
 
 // dotColour returns a new colour a circle is drawn in, in the mode: its own, on
 // a selected row too, so that what happened to a file shows wherever it is, or
-// that of disabled text where it is disabled.
+// that of disabled text where it is disabled, as the toolbar's icons are.
 func dotColour(name string, mode qt.QIcon__Mode) *qt.QColor {
 	if mode == qt.QIcon__Disabled {
-		palette := qt.QGuiApplication_Palette()
-		defer runtime.KeepAlive(palette)
-		return qt.NewQColor10(palette.Color(qt.QPalette__Disabled, qt.QPalette__WindowText))
+		return iconColour(mode)
 	}
 	return qt.NewQColor6(name)
 }

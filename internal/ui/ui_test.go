@@ -149,7 +149,7 @@ func listCodes(list *qt.QListWidget) []byte {
 }
 
 func (w *Window) idleWith(unstaged, staged int) bool {
-	return !w.busy && w.tab.unstaged.Count() == unstaged && w.tab.staged.Count() == staged
+	return !w.busy && w.changes.unstaged.Count() == unstaged && w.changes.staged.Count() == staged
 }
 
 func TestLayout(t *testing.T) {
@@ -240,12 +240,12 @@ func TestLayout(t *testing.T) {
 		for _, b := range []struct {
 			button *qt.QPushButton
 			text   string
-		}{{w.tab.rescan, "Rescan"}, {w.tab.stage, "Stage Changes"}, {w.tab.commit, "Commit"}, {w.tab.push, "Push"}} {
+		}{{w.changes.rescan, "Rescan"}, {w.changes.stage, "Stage Changes"}, {w.changes.commit, "Commit"}, {w.changes.push, "Push"}} {
 			if b.button.Text() != b.text {
 				t.Errorf("button %q", b.button.Text())
 			}
 		}
-		if w.tab.lists.Widget(0).IsAncestorOf(w.tab.staged.QWidget) || !w.tab.lists.Widget(0).IsAncestorOf(w.tab.unstaged.QWidget) {
+		if w.changes.lists.Widget(0).IsAncestorOf(w.changes.staged.QWidget) || !w.changes.lists.Widget(0).IsAncestorOf(w.changes.unstaged.QWidget) {
 			t.Error("the unstaged list is not above the staged one")
 		}
 	})
@@ -254,14 +254,14 @@ func TestLayout(t *testing.T) {
 func TestPanesLook(t *testing.T) {
 	w := newTestWindow(t, newRepo(t))
 	on(func() {
-		for _, label := range []*qt.QLabel{w.tab.unstagedLabel, w.tab.stagedLabel, w.tab.diffLabel} {
+		for _, label := range []*qt.QLabel{w.changes.unstagedLabel, w.changes.stagedLabel, w.changes.diffLabel} {
 			if !label.Font().Bold() {
 				t.Errorf("%q is not bold", label.Text())
 			}
 		}
 		// Only dots are drawn on a handle, at its centre.
-		handle := w.tab.sidebar.Handle(1)
-		if w.tab.sidebar.HandleWidth() != paneHandleWidth || handle.Width() != paneHandleWidth {
+		handle := w.changes.sidebar.Handle(1)
+		if w.changes.sidebar.HandleWidth() != paneHandleWidth || handle.Width() != paneHandleWidth {
 			t.Errorf("handle is %d wide", handle.Width())
 		}
 		image := handle.Grab().ToImage()
@@ -312,54 +312,54 @@ func TestStageCommitFlow(t *testing.T) {
 	waitFor(t, "two unstaged files", func() bool { return w.idleWith(2, 0) })
 
 	on(func() {
-		if got := listTexts(w.tab.unstaged); !slices.Equal(got, []string{"file", "new"}) || !slices.Equal(listCodes(w.tab.unstaged), []byte{'M', git.Untracked}) {
+		if got := listTexts(w.changes.unstaged); !slices.Equal(got, []string{"file", "new"}) || !slices.Equal(listCodes(w.changes.unstaged), []byte{'M', git.Untracked}) {
 			t.Errorf("unstaged %q", got)
 		}
 		if w.commit.IsEnabled() {
 			t.Error("commit enabled with nothing staged")
 		}
 		// Choosing a file shows its diff.
-		w.tab.unstaged.SetCurrentRow(0)
+		w.changes.unstaged.SetCurrentRow(0)
 	})
-	waitFor(t, "the diff", func() bool { return strings.Contains(w.tab.diff.parsed.Text, "+TWO") })
+	waitFor(t, "the diff", func() bool { return strings.Contains(w.changes.diff.parsed.Text, "+TWO") })
 	on(func() {
-		if w.tab.diffLabel.Text() != "Unstaged: file" {
-			t.Errorf("label %q", w.tab.diffLabel.Text())
+		if w.changes.diffLabel.Text() != "Unstaged: file" {
+			t.Errorf("label %q", w.changes.diffLabel.Text())
 		}
 		// The button stages all that is listed.
-		w.tab.stage.Click()
+		w.changes.stage.Click()
 	})
 	waitFor(t, "all staged", func() bool { return w.idleWith(0, 2) })
 
 	// Choosing a staged file shows the staged diff. Its selection survived.
 	on(func() {
-		w.tab.staged.SetCurrentRow(1)
+		w.changes.staged.SetCurrentRow(1)
 	})
-	waitFor(t, "the staged diff", func() bool { return w.tab.diffLabel.Text() == "Staged: new" })
+	waitFor(t, "the staged diff", func() bool { return w.changes.diffLabel.Text() == "Staged: new" })
 
 	// Selected files are unstaged, and staged again, alone.
 	on(func() { w.unstageSelected.Trigger() })
 	waitFor(t, "one unstaged", func() bool { return w.idleWith(1, 1) })
 	on(func() {
-		w.tab.unstaged.SetCurrentRow(0)
+		w.changes.unstaged.SetCurrentRow(0)
 		w.stageSelected.Trigger()
 	})
 	waitFor(t, "both staged", func() bool { return w.idleWith(0, 2) })
 
 	on(func() {
-		w.tab.message.SetPlainText("  ")
-		if w.tab.commit.IsEnabled() {
+		w.changes.message.SetPlainText("  ")
+		if w.changes.commit.IsEnabled() {
 			t.Error("commit enabled with a blank message")
 		}
-		w.tab.message.SetPlainText("A message")
-		if !w.tab.commit.IsEnabled() {
+		w.changes.message.SetPlainText("A message")
+		if !w.changes.commit.IsEnabled() {
 			t.Error("commit disabled")
 		}
-		w.tab.commit.Click()
+		w.changes.commit.Click()
 	})
 	waitFor(t, "the commit", func() bool { return w.idleWith(0, 0) })
 	on(func() {
-		if w.tab.message.ToPlainText() != "" {
+		if w.changes.message.ToPlainText() != "" {
 			t.Error("the message was not cleared")
 		}
 		if len(w.failures) != 0 {
@@ -379,15 +379,15 @@ func TestStageButtonUnstagesWhenAllStaged(t *testing.T) {
 	w := newTestWindow(t, dir)
 	waitFor(t, "two unstaged", func() bool { return w.idleWith(2, 0) })
 	on(func() {
-		if w.tab.stage.Text() != stageText || !w.tab.stage.IsEnabled() {
-			t.Errorf("button %q, enabled %v", w.tab.stage.Text(), w.tab.stage.IsEnabled())
+		if w.changes.stage.Text() != stageText || !w.changes.stage.IsEnabled() {
+			t.Errorf("button %q, enabled %v", w.changes.stage.Text(), w.changes.stage.IsEnabled())
 		}
-		w.tab.stage.Click()
+		w.changes.stage.Click()
 	})
 	waitFor(t, "all staged", func() bool { return w.idleWith(0, 2) })
 	on(func() {
-		if w.tab.stage.Text() != unstageText || !w.tab.stage.IsEnabled() {
-			t.Errorf("button %q, enabled %v", w.tab.stage.Text(), w.tab.stage.IsEnabled())
+		if w.changes.stage.Text() != unstageText || !w.changes.stage.IsEnabled() {
+			t.Errorf("button %q, enabled %v", w.changes.stage.Text(), w.changes.stage.IsEnabled())
 		}
 		// The toolbar's says the same, and does the same.
 		if w.stageButton.IconText() != "Unstage" || !w.stageButton.IsEnabled() {
@@ -399,13 +399,13 @@ func TestStageButtonUnstagesWhenAllStaged(t *testing.T) {
 
 	// With some of each it stages the rest.
 	on(func() {
-		w.tab.unstaged.SetCurrentRow(0)
+		w.changes.unstaged.SetCurrentRow(0)
 		w.stageSelected.Trigger()
 	})
 	waitFor(t, "one of each", func() bool { return w.idleWith(1, 1) })
 	on(func() {
-		if w.tab.stage.Text() != stageText || w.stageButton.IconText() != "Stage" {
-			t.Errorf("buttons %q, %q", w.tab.stage.Text(), w.stageButton.IconText())
+		if w.changes.stage.Text() != stageText || w.stageButton.IconText() != "Stage" {
+			t.Errorf("buttons %q, %q", w.changes.stage.Text(), w.stageButton.IconText())
 		}
 		w.stageButton.Trigger()
 	})
@@ -413,13 +413,13 @@ func TestStageButtonUnstagesWhenAllStaged(t *testing.T) {
 
 	// With nothing changed there is nothing for it to do.
 	on(func() {
-		w.tab.message.SetPlainText("Message")
+		w.changes.message.SetPlainText("Message")
 		w.commit.Trigger()
 	})
 	waitFor(t, "the commit", func() bool { return w.idleWith(0, 0) })
 	on(func() {
-		if w.tab.stage.Text() != stageText || w.tab.stage.IsEnabled() || w.stageButton.IconText() != "Stage" || w.stageButton.IsEnabled() {
-			t.Errorf("buttons %q, %q, enabled %v, %v", w.tab.stage.Text(), w.stageButton.IconText(), w.tab.stage.IsEnabled(), w.stageButton.IsEnabled())
+		if w.changes.stage.Text() != stageText || w.changes.stage.IsEnabled() || w.stageButton.IconText() != "Stage" || w.stageButton.IsEnabled() {
+			t.Errorf("buttons %q, %q, enabled %v, %v", w.changes.stage.Text(), w.stageButton.IconText(), w.changes.stage.IsEnabled(), w.stageButton.IsEnabled())
 		}
 	})
 }
@@ -437,7 +437,7 @@ func TestFailedCommitKeepsMessage(t *testing.T) {
 	on(func() { w.stageAll.Trigger() })
 	waitFor(t, "one staged", func() bool { return w.idleWith(0, 1) })
 	on(func() {
-		w.tab.message.SetPlainText("Keep me")
+		w.changes.message.SetPlainText("Keep me")
 		w.commit.Trigger()
 	})
 	waitFor(t, "the failure", func() bool { return len(w.failures) == 1 && !w.busy })
@@ -445,7 +445,7 @@ func TestFailedCommitKeepsMessage(t *testing.T) {
 		if !strings.Contains(w.failures[0], "hook says no") {
 			t.Errorf("failure %q", w.failures[0])
 		}
-		if w.tab.message.ToPlainText() != "Keep me" {
+		if w.changes.message.ToPlainText() != "Keep me" {
 			t.Error("the message was lost")
 		}
 	})
@@ -461,7 +461,7 @@ func TestForcePush(t *testing.T) {
 	waitFor(t, "the branch", func() bool { return w.status.Branch == "main" })
 
 	// The first push sets the upstream.
-	on(func() { w.tab.push.Click() })
+	on(func() { w.changes.push.Click() })
 	waitFor(t, "the upstream", func() bool { return w.status.Upstream == "origin/main" })
 
 	writeFile(t, dir, "file", "rewritten\n")
@@ -470,28 +470,28 @@ func TestForcePush(t *testing.T) {
 	waitFor(t, "diverged", func() bool { return w.status.Behind == 1 })
 
 	// Without force it is refused.
-	on(func() { w.tab.push.Click() })
+	on(func() { w.changes.push.Click() })
 	waitFor(t, "the refusal", func() bool { return len(w.failures) == 1 && !w.busy })
 
 	// The option of the toolbar's Push ticks the checkbox, and both buttons
 	// say they force. Saying no does nothing.
 	on(func() {
 		w.forceToggle.Trigger()
-		if !w.tab.force.IsChecked() || w.tab.push.Text() != "Force Push" || w.pushButton.IconText() != "Force Push" {
-			t.Errorf("checkbox %v, buttons %q, %q", w.tab.force.IsChecked(), w.tab.push.Text(), w.pushButton.IconText())
+		if !w.changes.force.IsChecked() || w.changes.push.Text() != "Force Push" || w.pushButton.IconText() != "Force Push" {
+			t.Errorf("checkbox %v, buttons %q, %q", w.changes.force.IsChecked(), w.changes.push.Text(), w.pushButton.IconText())
 		}
 		w.answer = false
-		w.tab.push.Click()
+		w.changes.push.Click()
 		if w.busy || len(w.asked) != 1 {
 			t.Errorf("busy %v, asked %v", w.busy, w.asked)
 		}
 		// Unticking the checkbox unticks the option, and ticking it again
 		// ticks it.
-		w.tab.force.SetChecked(false)
+		w.changes.force.SetChecked(false)
 		if w.forceToggle.IsChecked() || w.pushButton.IconText() != "Push" {
 			t.Errorf("option %v, toolbar %q", w.forceToggle.IsChecked(), w.pushButton.IconText())
 		}
-		w.tab.force.SetChecked(true)
+		w.changes.force.SetChecked(true)
 		if !w.forceToggle.IsChecked() {
 			t.Error("the option is not ticked with the checkbox")
 		}
@@ -501,15 +501,15 @@ func TestForcePush(t *testing.T) {
 	})
 	waitFor(t, "the menu's push to be refused", func() bool { return !w.busy && len(w.failures) == 2 })
 	on(func() {
-		if len(w.asked) != 1 || !w.tab.force.IsChecked() {
-			t.Errorf("asked %q, force ticked %v", w.asked, w.tab.force.IsChecked())
+		if len(w.asked) != 1 || !w.changes.force.IsChecked() {
+			t.Errorf("asked %q, force ticked %v", w.asked, w.changes.force.IsChecked())
 		}
 		w.answer = true
 		w.pushButton.Trigger()
 	})
 	waitFor(t, "the force push", func() bool { return !w.busy && w.status.Behind == 0 && w.status.Ahead == 0 })
 	on(func() {
-		if w.tab.force.IsChecked() || w.forceToggle.IsChecked() || w.tab.push.Text() != "Push" || w.pushButton.IconText() != "Push" {
+		if w.changes.force.IsChecked() || w.forceToggle.IsChecked() || w.changes.push.Text() != "Push" || w.pushButton.IconText() != "Push" {
 			t.Error("force is still on after pushing")
 		}
 		if len(w.asked) != 2 {
@@ -525,7 +525,7 @@ func TestForcePushIsRemembered(t *testing.T) {
 	dir := newRepo(t)
 	w := newTestWindow(t, dir)
 	on(func() {
-		if w.tab.force.IsChecked() || w.forceToggle.IsChecked() {
+		if w.changes.force.IsChecked() || w.forceToggle.IsChecked() {
 			t.Error("force push is ticked to start with")
 		}
 		w.forceToggle.Trigger()
@@ -536,10 +536,10 @@ func TestForcePushIsRemembered(t *testing.T) {
 	}
 	again := newTestWindowAt(t, dir, w.path)
 	on(func() {
-		if !again.tab.force.IsChecked() || !again.forceToggle.IsChecked() || again.pushButton.IconText() != "Force Push" || again.tab.push.Text() != "Force Push" {
-			t.Errorf("checkbox %v, option %v, buttons %q %q", again.tab.force.IsChecked(), again.forceToggle.IsChecked(), again.pushButton.IconText(), again.tab.push.Text())
+		if !again.changes.force.IsChecked() || !again.forceToggle.IsChecked() || again.pushButton.IconText() != "Force Push" || again.changes.push.Text() != "Force Push" {
+			t.Errorf("checkbox %v, option %v, buttons %q %q", again.changes.force.IsChecked(), again.forceToggle.IsChecked(), again.pushButton.IconText(), again.changes.push.Text())
 		}
-		again.tab.force.SetChecked(false)
+		again.changes.force.SetChecked(false)
 		again.Close()
 	})
 	if settings.Load(w.path).ForcePush {
@@ -741,6 +741,40 @@ func TestCheckoutDialog(t *testing.T) {
 	})
 }
 
+// TestCheckoutFetch checks that the checkout dialog's fetch, run in the
+// background, gives the remote branches, has the spinner show it, and notes
+// that it fetched on the main thread, where the window reads it, perhaps while
+// the fetch is still going on: noted in the background, it was a race, which
+// go test -race finds.
+func TestCheckoutFetch(t *testing.T) {
+	dir := newRepo(t)
+	bare := t.TempDir()
+	runGit(t, bare, "init", "-q", "--bare", "-b", "main")
+	runGit(t, dir, "remote", "add", "origin", bare)
+	runGit(t, dir, "push", "-q", "origin", "main")
+	w := newTestWindow(t, dir)
+	waitFor(t, "the status", func() bool { return w.status.Branch == "main" && w.working == 0 })
+	fetched := false
+	var fetch func() ([]string, error)
+	on(func() { fetch = w.checkoutFetch(&fetched) })
+	type answer struct {
+		remote []string
+		err    error
+	}
+	answers := make(chan answer, 1)
+	go func() {
+		remote, err := fetch()
+		answers <- answer{remote, err}
+	}()
+	// The main thread reads it while the fetch may still be going on.
+	waitFor(t, "the fetch to be noted", func() bool { return fetched })
+	got := <-answers
+	if got.err != nil || !slices.Equal(got.remote, []string{"origin/main"}) {
+		t.Errorf("remote %q, %v", got.remote, got.err)
+	}
+	waitFor(t, "the spinner's count", func() bool { return w.working == 0 })
+}
+
 // TestFirstTextFieldHasTheFocus checks that a dialog opens with the cursor in
 // its first field of text, as in New Branch's name, not on OK, which the focus
 // went to as it is made first, nor on a list before it, as in Rename Branch.
@@ -860,21 +894,21 @@ func TestMergePrefillsMessage(t *testing.T) {
 
 	w := newTestWindow(t, dir)
 	waitFor(t, "the merge", func() bool { return w.status.Merging })
-	waitFor(t, "the message", func() bool { return strings.Contains(w.tab.message.ToPlainText(), "Merge branch 'topic'") })
+	waitFor(t, "the message", func() bool { return strings.Contains(w.changes.message.ToPlainText(), "Merge branch 'topic'") })
 	on(func() {
 		if !w.abortMerge.IsEnabled() {
 			t.Error("abort is disabled")
 		}
-		if got := listTexts(w.tab.unstaged); !slices.Equal(got, []string{"file"}) || !slices.Equal(listCodes(w.tab.unstaged), []byte{git.Conflict}) {
+		if got := listTexts(w.changes.unstaged); !slices.Equal(got, []string{"file"}) || !slices.Equal(listCodes(w.changes.unstaged), []byte{git.Conflict}) {
 			t.Errorf("unstaged %q", got)
 		}
-		w.tab.unstaged.SetCurrentRow(0)
+		w.changes.unstaged.SetCurrentRow(0)
 	})
-	waitFor(t, "the conflict's diff", func() bool { return strings.Contains(w.tab.diff.parsed.Text, "<<<<<<<") })
+	waitFor(t, "the conflict's diff", func() bool { return strings.Contains(w.changes.diff.parsed.Text, "<<<<<<<") })
 	on(func() { w.abortMerge.Trigger() })
 	waitFor(t, "the abort", func() bool { return !w.status.Merging && !w.busy })
 	on(func() {
-		if w.tab.message.ToPlainText() != "" {
+		if w.changes.message.ToPlainText() != "" {
 			t.Error("the message was left behind")
 		}
 	})
@@ -1071,14 +1105,14 @@ func TestCodeFontIsApplied(t *testing.T) {
 		s := w.config
 		s.CodeFont, s.CodeFontSize = "Some Font", 21
 		w.applySettings(s)
-		for _, widget := range []*qt.QWidget{w.tab.diff.QWidget, w.history.diff.QWidget, w.tab.message.QWidget} {
+		for _, widget := range []*qt.QWidget{w.changes.diff.QWidget, w.history.diff.QWidget, w.changes.message.QWidget} {
 			font := widget.Font()
 			if font.Family() != "Some Font" || font.PointSize() != 21 {
 				t.Errorf("font %q, %d", font.Family(), font.PointSize())
 			}
 		}
-		want := float64(tabWidth * w.tab.diff.FontMetrics().HorizontalAdvance(" "))
-		if got := w.tab.diff.TabStopDistance(); got != want {
+		want := float64(tabWidth * w.changes.diff.FontMetrics().HorizontalAdvance(" "))
+		if got := w.changes.diff.TabStopDistance(); got != want {
 			t.Errorf("tab is %v wide, not %v", got, want)
 		}
 	})
@@ -1089,7 +1123,7 @@ func TestCodeFontIsApplied(t *testing.T) {
 	// A new window opens with it.
 	again := newTestWindowAt(t, "", w.path)
 	on(func() {
-		if font := again.tab.diff.Font(); font.Family() != "Some Font" || font.PointSize() != 21 {
+		if font := again.changes.diff.Font(); font.Family() != "Some Font" || font.PointSize() != 21 {
 			t.Errorf("reopened with %q, %d", font.Family(), font.PointSize())
 		}
 	})
@@ -1165,14 +1199,14 @@ func TestHistoryButton(t *testing.T) {
 	waitFor(t, "the status", func() bool { return w.idleWith(1, 0) })
 	on(func() {
 		w.showHistory.Trigger()
-		if !w.historyShown() || !w.history.page.IsVisible() || w.tab.page.IsVisible() {
+		if !w.historyShown() || !w.history.page.IsVisible() || w.changes.page.IsVisible() {
 			t.Errorf("history shown %v", w.historyShown())
 		}
 	})
 	waitFor(t, "the commits", func() bool { return w.history.commits.TopLevelItemCount() == 2 })
 	on(func() {
 		w.showHistory.Trigger()
-		if w.historyShown() || !w.tab.page.IsVisible() {
+		if w.historyShown() || !w.changes.page.IsVisible() {
 			t.Errorf("history still shown %v", w.historyShown())
 		}
 	})
@@ -1184,15 +1218,15 @@ func TestSizesAreSaved(t *testing.T) {
 	w := newTestWindow(t, dir)
 	on(func() {
 		w.Resize(1000, 700)
-		w.tab.sidebar.SetSizes([]int{222, 760})
-		w.tab.lists.SetSizes([]int{111, 400})
-		w.tab.editor.SetSizes([]int{333, 250})
+		w.changes.sidebar.SetSizes([]int{222, 760})
+		w.changes.lists.SetSizes([]int{111, 400})
+		w.changes.editor.SetSizes([]int{333, 250})
 	})
 	// The event loop has its turn to lay them out.
 	waitFor(t, "the size", func() bool { return w.Width() == 1000 })
 	var want settings.Settings
 	on(func() {
-		want.Sidebar, want.Lists, want.Editor = panes(w.tab.sidebar), panes(w.tab.lists), panes(w.tab.editor)
+		want.Sidebar, want.Lists, want.Editor = panes(w.changes.sidebar), panes(w.changes.lists), panes(w.changes.editor)
 		w.Close()
 	})
 	got := settings.Load(w.path)
@@ -1208,10 +1242,10 @@ func TestSizesAreSaved(t *testing.T) {
 
 	// A new window opens with them.
 	again := newTestWindowAt(t, dir, w.path)
-	waitFor(t, "the layout", func() bool { return again.tab.sidebar.Sizes()[0] != 0 })
+	waitFor(t, "the layout", func() bool { return again.changes.sidebar.Sizes()[0] != 0 })
 	on(func() {
-		if again.Width() != 1000 || panes(again.tab.sidebar)[0] != 222 {
-			t.Errorf("reopened at %d wide, sidebar %v", again.Width(), panes(again.tab.sidebar))
+		if again.Width() != 1000 || panes(again.changes.sidebar)[0] != 222 {
+			t.Errorf("reopened at %d wide, sidebar %v", again.Width(), panes(again.changes.sidebar))
 		}
 	})
 }
@@ -1229,7 +1263,7 @@ func TestNoRepository(t *testing.T) {
 		if w.repo != nil {
 			t.Fatalf("opened %q", w.repo.Root)
 		}
-		if w.rescan.IsEnabled() || w.push.IsEnabled() || w.tab.commit.IsEnabled() {
+		if w.rescan.IsEnabled() || w.push.IsEnabled() || w.changes.commit.IsEnabled() {
 			t.Error("actions are enabled with no repository")
 		}
 		if err := w.openRepository(outside); err == nil {
@@ -1266,7 +1300,8 @@ func screenshotRepo(t *testing.T) string {
 }
 
 // TestScreenshot draws the window to the path in DELTA_SCREENSHOT, in the
-// theme in DELTA_THEME, showing what DELTA_VIEW says: branch or history.
+// theme in DELTA_THEME, showing what DELTA_VIEW says: the changes, or the
+// history.
 func TestScreenshot(t *testing.T) {
 	path := os.Getenv("DELTA_SCREENSHOT")
 	if path == "" {
@@ -1284,11 +1319,11 @@ func TestScreenshot(t *testing.T) {
 			w.showHistory.SetChecked(true)
 		}
 		applyTheme(os.Getenv("DELTA_THEME"))
-		w.tab.unstaged.SetCurrentRow(0)
-		w.tab.message.SetPlainText("Make the file shout")
+		w.changes.unstaged.SetCurrentRow(0)
+		w.changes.message.SetPlainText("Make the file shout")
 		w.say("")
 	})
-	waitFor(t, "the diff", func() bool { return strings.Contains(w.tab.diff.parsed.Text, "+TWO") })
+	waitFor(t, "the diff", func() bool { return strings.Contains(w.changes.diff.parsed.Text, "+TWO") })
 	time.Sleep(200 * time.Millisecond)
 	on(func() {
 		if !w.Grab().Save(path) {
@@ -1312,7 +1347,7 @@ func historyRepo(t *testing.T, commits int) string {
 }
 
 // treeRow returns the texts of a row of the commits.
-func treeRow(h *historyTab, row int) []string {
+func treeRow(h *historyView, row int) []string {
 	item := h.commits.TopLevelItem(row)
 	return []string{item.Text(colSubject), item.Text(colAuthor), item.Text(colDate), item.Text(colCommit)}
 }
@@ -1469,7 +1504,7 @@ func TestHistoryFollowsChanges(t *testing.T) {
 		}
 	})
 
-	// One made on the other tab shows on coming back.
+	// One made while the changes are on show shows on coming back.
 	writeFile(t, dir, "file", "changed\n")
 	on(func() {
 		w.showHistory.SetChecked(false)
@@ -1479,7 +1514,7 @@ func TestHistoryFollowsChanges(t *testing.T) {
 	on(func() { w.stageAll.Trigger() })
 	waitFor(t, "staged", func() bool { return w.idleWith(0, 1) })
 	on(func() {
-		w.tab.message.SetPlainText("From the tab")
+		w.changes.message.SetPlainText("From the changes")
 		w.commit.Trigger()
 	})
 	waitFor(t, "committed", func() bool { return w.idleWith(0, 0) })
@@ -1489,8 +1524,8 @@ func TestHistoryFollowsChanges(t *testing.T) {
 		}
 		w.showHistory.SetChecked(true)
 	})
-	waitFor(t, "the commit from the tab", func() bool {
-		return h.commits.TopLevelItemCount() == 4 && strings.Contains(treeRow(h, 0)[0], "From the tab")
+	waitFor(t, "the commit from the changes", func() bool {
+		return h.commits.TopLevelItemCount() == 4 && strings.Contains(treeRow(h, 0)[0], "From the changes")
 	})
 }
 
@@ -1723,7 +1758,7 @@ func TestDraggingShowsEachFile(t *testing.T) {
 	}
 	w := newTestWindow(t, dir)
 	waitFor(t, "the files", func() bool { return w.idleWith(3, 0) })
-	list := w.tab.unstaged
+	list := w.changes.unstaged
 	press := func(row int, modifiers qt.KeyboardModifier) {
 		sendMouse(list, qt.QEvent__MouseButtonPress, row, qt.LeftButton, qt.LeftButton, modifiers)
 	}
@@ -1739,16 +1774,16 @@ func TestDraggingShowsEachFile(t *testing.T) {
 		return rows
 	}
 	on(func() { press(0, qt.NoModifier) })
-	waitFor(t, "the first file", func() bool { return strings.Contains(w.tab.diff.parsed.Text, "text of a") })
+	waitFor(t, "the first file", func() bool { return strings.Contains(w.changes.diff.parsed.Text, "text of a") })
 	for row, name := range []string{"a", "b", "c"} {
 		on(func() { sendMouse(list, qt.QEvent__MouseMove, row, qt.NoButton, qt.LeftButton, qt.NoModifier) })
-		waitFor(t, "the file dragged over", func() bool { return strings.Contains(w.tab.diff.parsed.Text, "text of "+name) })
+		waitFor(t, "the file dragged over", func() bool { return strings.Contains(w.changes.diff.parsed.Text, "text of "+name) })
 		on(func() {
 			if got := selected(); !slices.Equal(got, []int{row}) {
 				t.Errorf("over row %d, selected %v", row, got)
 			}
-			if w.tab.diffLabel.Text() != "Unstaged: "+name {
-				t.Errorf("label %q", w.tab.diffLabel.Text())
+			if w.changes.diffLabel.Text() != "Unstaged: "+name {
+				t.Errorf("label %q", w.changes.diffLabel.Text())
 			}
 		})
 	}

@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"strings"
+
 	qt "github.com/mappu/miqt/qt6"
 
 	"github.com/nomad-software/delta/internal/git"
@@ -129,6 +131,14 @@ func explain(c git.Change) string {
 		return "In conflict: stage it once it is resolved"
 	}
 	return ""
+}
+
+// upperFirst returns the text with its first letter a capital.
+func upperFirst(text string) string {
+	if text == "" {
+		return text
+	}
+	return strings.ToUpper(text[:1]) + text[1:]
 }
 
 // heading returns a label for a section.

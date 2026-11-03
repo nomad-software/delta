@@ -22,12 +22,11 @@ type Window struct {
 	config settings.Settings
 	icon   *qt.QIcon
 
-	// views shows the branch's changes, or the history while showHistory is
-	// on.
-	views *qt.QStackedWidget
-	tab   *branchTab
-	// history is the history, shown in place of the changes.
-	history *historyTab
+	// views shows the changes, or the history in their place while
+	// showHistory is on.
+	views   *qt.QStackedWidget
+	changes *changesView
+	history *historyView
 	// toolbar is the bar of buttons under the menus.
 	toolbar *qt.QToolBar
 	// where and said are the status bar's text: what branch is checked out, and
@@ -47,30 +46,33 @@ type Window struct {
 	// rescans and diffs count the requests for each, so that the answer to any
 	// but the latest, which may be about something else by now, is dropped.
 	rescans, diffs int
-
-	// repoOnly are the actions needing only an open repository.
-	repoOnly                                              []*qt.QAction
-	rescan, stageAll, stageSelected, unstageSelected      *qt.QAction
-	unstageAll, commit, push, forcePush, abortMerge, open *qt.QAction
-	newBranchAction, checkoutAction, deleteAction, pull   *qt.QAction
-	showHistory                                           *qt.QAction
-	// stageButton is what the Stage buttons do: stage everything listed, or
-	// unstage it all if it is all staged, as stageIcons, for each, show.
-	stageButton *qt.QAction
-	stageIcons  [2]*qt.QIcon
-	// pushButton is what the Push buttons do: push, forcing it if Force push
-	// is ticked, where the Remote menu's Push, on Ctrl+P, never forces.
-	pushButton *qt.QAction
-	// forceToggle is the toolbar's Push's option to force it, ticked with the
-	// Force push checkbox.
-	forceToggle *qt.QAction
-	// spinner is the toolbar's sign of work going on, at its right, and working
-	// how many pieces of work are going on in the background.
-	spinner *spinner
+	// working is how many pieces of work are going on in the background, which
+	// spinner, at the toolbar's right, shows.
 	working int
-	// discard undoes everything not committed.
-	discard                                 *qt.QAction
-	continueRebase, skipRebase, abortRebase *qt.QAction
+	spinner *spinner
+
+	// The menus' actions, many of them the toolbar's too. repoOnly are those
+	// needing only an open repository.
+	repoOnly []*qt.QAction
+	open     *qt.QAction
+	// The Branch menu's.
+	newBranchAction, checkoutAction, deleteAction, showHistory   *qt.QAction
+	abortMerge, continueRebase, skipRebase, abortRebase, discard *qt.QAction
+	// The Commit menu's.
+	rescan, stageAll, stageSelected, unstageSelected, unstageAll, commit *qt.QAction
+	// The Remote menu's.
+	pull, push, forcePush *qt.QAction
+
+	// What the buttons do, where it is not a menu's action. stageButton stages
+	// everything listed, or unstages it all if it is all staged, as stageIcons,
+	// for each, show. pushButton pushes, forcing it if Force push is ticked, as
+	// the Remote menu's Push, on Ctrl+P, never does. forceToggle is the
+	// toolbar's Push's option to force it, ticked with the Force push checkbox.
+	stageButton, pushButton, forceToggle *qt.QAction
+	stageIcons                           [2]*qt.QIcon
+	// unstaging says that the Stage buttons are Unstage, as they are while
+	// everything is staged.
+	unstaging bool
 
 	// confirm asks before doing what can't be taken back, and failed tells of a
 	// failure. Tests replace them.
@@ -92,10 +94,10 @@ func NewWindow(path string) *Window {
 	qt.QGuiApplication_SetWindowIcon(w.icon)
 	w.Resize(w.config.Width, w.config.Height)
 
-	w.tab = newBranchTab(w.config)
-	w.history = newHistoryTab(w.config)
+	w.changes = newChangesView(w.config)
+	w.history = newHistoryView(w.config)
 	w.views = qt.NewQStackedWidget2()
-	w.views.AddWidget(w.tab.page)
+	w.views.AddWidget(w.changes.page)
 	w.views.AddWidget(w.history.page)
 	w.SetCentralWidget(w.views.QWidget)
 	w.makeStatusBar()
@@ -106,7 +108,7 @@ func NewWindow(path string) *Window {
 	w.connect()
 	w.connectHistory()
 	// Once joined up, so that the toolbar's option and the buttons follow.
-	w.tab.force.SetChecked(w.config.ForcePush)
+	w.changes.force.SetChecked(w.config.ForcePush)
 	w.showTitle()
 	w.updateActions()
 
@@ -127,9 +129,9 @@ func (w *Window) Start(argument string) {
 		w.Show()
 	}
 	// The sizes are taken as they stand only once the window has its own.
-	setPanes(w.tab.sidebar, w.config.Sidebar)
-	setPanes(w.tab.lists, w.config.Lists)
-	setPanes(w.tab.editor, w.config.Editor)
+	setPanes(w.changes.sidebar, w.config.Sidebar)
+	setPanes(w.changes.lists, w.config.Lists)
+	setPanes(w.changes.editor, w.config.Editor)
 
 	if argument != "" {
 		if err := w.openRepository(argument); err != nil {
@@ -193,11 +195,10 @@ func (w *Window) say(message string) {
 	w.said.SetText(message)
 }
 
-// makeToolBar makes the bar of large buttons under the menus, as apemail's,
-// each the action of a menu, but History, which shows the history in place of
-// the changes while it is on.
+// makeToolBar makes the bar of large buttons under the menus, as apemail's: the
+// menus' actions, but Stage and Push, whose actions are those of the buttons
+// beside the message too, and the spinner at the right.
 func (w *Window) makeToolBar() {
-
 	for a, shape := range map[*qt.QAction]iconShape{
 		w.newBranchAction: newBranchShape, w.checkoutAction: checkoutShape, w.deleteAction: deleteShape,
 		w.rescan: rescanShape, w.pull: pullShape, w.push: pushShape, w.pushButton: pushShape, w.showHistory: historyShape,
@@ -242,7 +243,7 @@ func (w *Window) makeToolBar() {
 	// the Remote menu is left as it is.
 	w.forceToggle = qt.NewQAction5("Force push", w.QObject)
 	w.forceToggle.SetCheckable(true)
-	w.forceToggle.OnToggled(w.tab.force.SetChecked)
+	w.forceToggle.OnToggled(w.changes.force.SetChecked)
 	push := qt.UnsafeNewQToolButton(w.toolbar.WidgetForAction(w.pushButton).UnsafePointer())
 	pushMenu := qt.NewQMenu(push.QWidget)
 	pushMenu.AddAction(w.forceToggle)
@@ -314,10 +315,10 @@ func (w *Window) makeMenus() {
 	commit.AddSeparator()
 	w.stageAll = w.action(commit, "&Stage Changes", "Ctrl+Shift+S", func() { w.stageChanges(w.status.Unstaged) })
 	w.stageSelected = w.action(commit, "Stage Se&lected", "Ctrl+S", func() {
-		w.stageChanges(selection(w.tab.unstaged, w.status.Unstaged))
+		w.stageChanges(selection(w.changes.unstaged, w.status.Unstaged))
 	})
 	w.unstageSelected = w.action(commit, "&Unstage Selected", "Ctrl+U", func() {
-		w.unstageChanges(selection(w.tab.staged, w.status.Staged))
+		w.unstageChanges(selection(w.changes.staged, w.status.Staged))
 	})
 	w.unstageAll = w.action(commit, "Unstage &All", "Ctrl+Shift+U", func() { w.unstageChanges(w.status.Staged) })
 	commit.AddSeparator()
@@ -337,7 +338,7 @@ func (w *Window) makeMenus() {
 	w.repoOnly = append(w.repoOnly, fetch, w.pull)
 	w.push = w.action(remote, "&Push", "Ctrl+P", func() { w.pushBranch(false) })
 	w.pushButton = qt.NewQAction5("Push", w.QObject)
-	w.pushButton.OnTriggered(func() { w.pushBranch(w.tab.force.IsChecked()) })
+	w.pushButton.OnTriggered(func() { w.pushBranch(w.changes.force.IsChecked()) })
 	w.forcePush = w.action(remote, "&Force Push…", "Ctrl+Shift+P", func() { w.pushBranch(true) })
 	remote.AddSeparator()
 	w.repoOnly = append(w.repoOnly,
@@ -351,33 +352,33 @@ func (w *Window) makeMenus() {
 	w.action(help, "&About", "Ctrl+I", func() { newAboutDialog(w.QWidget, w.icon).Open() })
 }
 
-// connect joins the widgets of the tab to what they do.
+// connect joins the widgets of the changes to what they do.
 func (w *Window) connect() {
-	t := w.tab
-	t.rescan.OnClicked(w.rescan.Trigger)
-	t.stage.OnClicked(w.stageButton.Trigger)
-	t.commit.OnClicked(w.commit.Trigger)
-	t.push.OnClicked(w.pushButton.Trigger)
-	t.force.OnToggled(func(on bool) {
+	v := w.changes
+	v.rescan.OnClicked(w.rescan.Trigger)
+	v.stage.OnClicked(w.stageButton.Trigger)
+	v.commit.OnClicked(w.commit.Trigger)
+	v.push.OnClicked(w.pushButton.Trigger)
+	v.force.OnToggled(func(on bool) {
 		w.forceToggle.SetChecked(on)
 		text := "Push"
 		if on {
 			text = "Force Push"
 		}
-		t.push.SetText(text)
+		v.push.SetText(text)
 		w.pushButton.SetIconText(text)
 	})
-	t.message.OnTextChanged(w.updateActions)
+	v.message.OnTextChanged(w.updateActions)
 
-	t.unstaged.OnItemSelectionChanged(func() { w.selectionChanged(t.unstaged, t.staged) })
-	t.staged.OnItemSelectionChanged(func() { w.selectionChanged(t.staged, t.unstaged) })
-	t.unstaged.OnItemDoubleClicked(func(item *qt.QListWidgetItem) {
-		if row := t.unstaged.Row(item); !w.busy && row < len(w.status.Unstaged) {
+	v.unstaged.OnItemSelectionChanged(func() { w.selectionChanged(v.unstaged, v.staged) })
+	v.staged.OnItemSelectionChanged(func() { w.selectionChanged(v.staged, v.unstaged) })
+	v.unstaged.OnItemDoubleClicked(func(item *qt.QListWidgetItem) {
+		if row := v.unstaged.Row(item); !w.busy && row < len(w.status.Unstaged) {
 			w.stageChanges(w.status.Unstaged[row : row+1])
 		}
 	})
-	t.staged.OnItemDoubleClicked(func(item *qt.QListWidgetItem) {
-		if row := t.staged.Row(item); !w.busy && row < len(w.status.Staged) {
+	v.staged.OnItemDoubleClicked(func(item *qt.QListWidgetItem) {
+		if row := v.staged.Row(item); !w.busy && row < len(w.status.Staged) {
 			w.unstageChanges(w.status.Staged[row : row+1])
 		}
 	})
@@ -386,14 +387,14 @@ func (w *Window) connect() {
 // selectionChanged shows the diff of what was chosen in a list. Only one list
 // has a selection at a time, so that it is clear which diff is shown.
 func (w *Window) selectionChanged(list, other *qt.QListWidget) {
-	t := w.tab
-	if t.updating {
+	v := w.changes
+	if v.updating {
 		return
 	}
 	if len(list.SelectedItems()) > 0 && len(other.SelectedItems()) > 0 {
-		t.updating = true
+		v.updating = true
 		other.ClearSelection()
-		t.updating = false
+		v.updating = false
 	}
 	w.updateActions()
 	w.showDiff()
@@ -407,18 +408,18 @@ func (w *Window) allStaged() bool {
 
 // updateActions enables what can be done now, in the menus and buttons alike.
 func (w *Window) updateActions() {
-	t := w.tab
+	v := w.changes
 	idle := w.repo != nil && !w.busy
 	for _, a := range w.repoOnly {
 		a.SetEnabled(idle)
 	}
-	message := strings.TrimSpace(t.message.ToPlainText()) != ""
+	message := strings.TrimSpace(v.message.ToPlainText()) != ""
 	w.open.SetEnabled(!w.busy)
 	w.showHistory.SetEnabled(w.repo != nil)
 	w.rescan.SetEnabled(idle)
 	w.stageAll.SetEnabled(idle && len(w.status.Unstaged) > 0)
-	w.stageSelected.SetEnabled(idle && len(t.unstaged.SelectedItems()) > 0)
-	w.unstageSelected.SetEnabled(idle && len(t.staged.SelectedItems()) > 0)
+	w.stageSelected.SetEnabled(idle && len(v.unstaged.SelectedItems()) > 0)
+	w.unstageSelected.SetEnabled(idle && len(v.staged.SelectedItems()) > 0)
 	w.unstageAll.SetEnabled(idle && len(w.status.Staged) > 0)
 	// A merge can be committed with nothing staged, when its result is the
 	// same as the current branch.
@@ -433,7 +434,7 @@ func (w *Window) updateActions() {
 		a.SetEnabled(idle && w.status.Rebasing)
 	}
 
-	t.rescan.SetEnabled(w.rescan.IsEnabled())
+	v.rescan.SetEnabled(w.rescan.IsEnabled())
 	// Both Stage buttons unstage instead when everything is staged.
 	unstage := w.allStaged()
 	if unstage {
@@ -441,20 +442,21 @@ func (w *Window) updateActions() {
 	} else {
 		w.stageButton.SetEnabled(w.stageAll.IsEnabled())
 	}
-	if (w.stageButton.IconText() == "Unstage") != unstage {
+	if unstage != w.unstaging {
+		w.unstaging = unstage
 		text, icon := stageText, w.stageIcons[0]
 		if unstage {
 			text, icon = unstageText, w.stageIcons[1]
 		}
-		t.stage.SetText(text)
+		v.stage.SetText(text)
 		w.stageButton.SetText(text)
 		w.stageButton.SetIconText(strings.Fields(text)[0])
 		w.stageButton.SetIcon(icon)
 	}
-	t.stage.SetEnabled(w.stageButton.IsEnabled())
-	t.commit.SetEnabled(w.commit.IsEnabled())
-	t.push.SetEnabled(w.pushButton.IsEnabled())
-	t.force.SetEnabled(idle)
+	v.stage.SetEnabled(w.stageButton.IsEnabled())
+	v.commit.SetEnabled(w.commit.IsEnabled())
+	v.push.SetEnabled(w.pushButton.IsEnabled())
+	v.force.SetEnabled(idle)
 	w.forceToggle.SetEnabled(idle)
 }
 
@@ -497,7 +499,7 @@ func (w *Window) openRepository(dir string) error {
 	w.repo = r
 	w.applyStatus(git.Status{})
 	w.clearHistory()
-	w.tab.message.Clear()
+	w.changes.message.Clear()
 	w.mergeFilled = false
 	w.say("Opened " + r.Root)
 	w.rescanRepository()
@@ -552,8 +554,8 @@ func (w *Window) rescanRepository() {
 				w.mergeFilled = false
 			} else if !w.mergeFilled {
 				w.mergeFilled = true
-				if strings.TrimSpace(w.tab.message.ToPlainText()) == "" {
-					w.tab.message.SetPlainText(mergeMessage)
+				if strings.TrimSpace(w.changes.message.ToPlainText()) == "" {
+					w.changes.message.SetPlainText(mergeMessage)
 				}
 			}
 		})
@@ -562,13 +564,13 @@ func (w *Window) rescanRepository() {
 
 // applyStatus shows the status.
 func (w *Window) applyStatus(s git.Status) {
-	t := w.tab
+	v := w.changes
 	old := w.status
 	w.status = s
-	t.setList(t.unstaged, old.Unstaged, s.Unstaged)
-	t.setList(t.staged, old.Staged, s.Staged)
-	t.unstagedLabel.SetText(fmt.Sprintf("Unstaged Changes (%d)", len(s.Unstaged)))
-	t.stagedLabel.SetText(fmt.Sprintf("Staged Changes (%d)", len(s.Staged)))
+	v.setList(v.unstaged, old.Unstaged, s.Unstaged)
+	v.setList(v.staged, old.Staged, s.Staged)
+	v.unstagedLabel.SetText(fmt.Sprintf("Unstaged Changes (%d)", len(s.Unstaged)))
+	v.stagedLabel.SetText(fmt.Sprintf("Staged Changes (%d)", len(s.Staged)))
 	w.showTitle()
 	w.updateActions()
 	w.showDiff()
@@ -577,17 +579,17 @@ func (w *Window) applyStatus(s git.Status) {
 // showDiff shows, in the background, the diff of the file chosen in a list: the
 // current one if it is among those selected, or else the first.
 func (w *Window) showDiff() {
-	t := w.tab
-	list, changes, staged := t.unstaged, w.status.Unstaged, false
+	v := w.changes
+	list, changes, staged := v.unstaged, w.status.Unstaged, false
 	if len(list.SelectedItems()) == 0 {
-		list, changes, staged = t.staged, w.status.Staged, true
+		list, changes, staged = v.staged, w.status.Staged, true
 	}
 	chosen := selection(list, changes)
 	w.diffs++
 	request := w.diffs
 	if len(chosen) == 0 || w.repo == nil {
-		t.diffLabel.SetText("Diff")
-		t.diff.show("")
+		v.diffLabel.SetText("Diff")
+		v.diff.show("")
 		return
 	}
 	change := chosen[0]
@@ -609,12 +611,12 @@ func (w *Window) showDiff() {
 			if request != w.diffs {
 				return
 			}
-			t.diffLabel.SetText(side + ": " + change.Path)
+			v.diffLabel.SetText(side + ": " + change.Path)
 			if err != nil {
-				t.diff.show(err.Error())
+				v.diff.show(err.Error())
 				return
 			}
-			t.diff.show(text)
+			v.diff.show(text)
 		})
 	}()
 }
@@ -633,7 +635,7 @@ func (w *Window) applySettings(s settings.Settings) {
 	}
 	// It is how many are read from the next read on.
 	w.history.pageSize = s.HistoryPageSize
-	w.tab.diff.setColours(s.AddedColour, s.RemovedColour, s.HunkColour)
+	w.changes.diff.setColours(s.AddedColour, s.RemovedColour, s.HunkColour)
 	w.history.diff.setColours(s.AddedColour, s.RemovedColour, s.HunkColour)
 	w.applyCodeFont()
 	w.saveSettings()
@@ -643,9 +645,9 @@ func (w *Window) applySettings(s settings.Settings) {
 func (w *Window) applyCodeFont() {
 	font := codeFont(w.config.CodeFont, w.config.CodeFontSize)
 	defer font.Delete()
-	w.tab.diff.setCodeFont(font)
+	w.changes.diff.setCodeFont(font)
 	w.history.diff.setCodeFont(font)
-	w.tab.message.SetFont(font)
+	w.changes.message.SetFont(font)
 }
 
 // saveSettings saves the settings with the window and panes as they are now.
@@ -655,11 +657,11 @@ func (w *Window) saveSettings() {
 		w.config.Width, w.config.Height = geometry.Width(), geometry.Height()
 	}
 	w.config.Maximized = w.IsMaximized()
-	w.config.ForcePush = w.tab.force.IsChecked()
+	w.config.ForcePush = w.changes.force.IsChecked()
 	if w.IsVisible() {
-		w.config.Sidebar = panes(w.tab.sidebar)
-		w.config.Lists = panes(w.tab.lists)
-		w.config.Editor = panes(w.tab.editor)
+		w.config.Sidebar = panes(w.changes.sidebar)
+		w.config.Lists = panes(w.changes.lists)
+		w.config.Editor = panes(w.changes.editor)
 		// Panes never shown have no sizes of their own yet.
 		if w.history.sized {
 			w.config.History = panes(w.history.split)

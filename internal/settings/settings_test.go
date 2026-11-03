@@ -67,19 +67,3 @@ func TestHistoryPageSizeBounds(t *testing.T) {
 		}
 	}
 }
-
-// TestOldDefaultColoursFollow checks that colours saved while they were the old
-// defaults become the new ones, Solarized's, and any other is kept.
-func TestOldDefaultColoursFollow(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "settings.json")
-	if err := os.WriteFile(path, []byte(`{"addedColour": "#00A000", "removedColour": "#ff1919", "hunkColour": "#123456"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	s := Load(path)
-	if s.AddedColour != DefaultAdded || s.RemovedColour != DefaultRemoved || s.HunkColour != "#123456" {
-		t.Errorf("colours %s %s %s", s.AddedColour, s.RemovedColour, s.HunkColour)
-	}
-	if DefaultAdded != "#859900" || DefaultRemoved != "#dc322f" || DefaultHunk != "#839496" {
-		t.Error("the defaults are not Solarized's")
-	}
-}

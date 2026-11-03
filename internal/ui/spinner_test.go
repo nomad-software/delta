@@ -84,7 +84,7 @@ func TestWorkPairs(t *testing.T) {
 			w.showDiff()
 			w.loadHistory()
 		}
-		w.tab.unstaged.SetCurrentRow(0)
+		w.changes.unstaged.SetCurrentRow(0)
 	})
 	waitFor(t, "everything to be done", func() bool { return w.working == 0 && !w.history.loading })
 	on(func() {

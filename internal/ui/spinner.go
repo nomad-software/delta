@@ -78,29 +78,23 @@ func (s *spinner) spinning() bool {
 	return s.frames.IsActive()
 }
 
-// paint draws the arc where it has turned to, in the colour of the text, at the
-// screen's own resolution.
+// paint draws the arc where it has turned to, as the toolbar's icons are drawn,
+// at the screen's own resolution.
 func (s *spinner) paint() {
 	ratio := s.DevicePixelRatioF()
-	side := int(math.Ceil(toolIconSize * ratio))
-	image := qt.NewQImage3(side, side, qt.QImage__Format_ARGB32_Premultiplied)
+	side := math.Ceil(toolIconSize * ratio)
+	image := qt.NewQImage3(int(side), int(side), qt.QImage__Format_ARGB32_Premultiplied)
 	defer image.Delete()
 	image.Fill2(qt.Transparent)
 	p := qt.NewQPainter2(image.QPaintDevice)
-	p.SetRenderHint(qt.QPainter__Antialiasing)
-	p.Scale(float64(side)/iconGrid, float64(side)/iconGrid)
-	colour := iconColour(qt.QIcon__Normal)
-	brush := qt.NewQBrush3(colour)
-	pen := qt.NewQPen8(brush, iconStroke, qt.SolidLine, qt.RoundCap, qt.RoundJoin)
-	p.SetPenWithPen(pen)
-	// Qt's angles are in sixteenths of a degree, anticlockwise, so it turns
-	// clockwise as the angle grows.
-	p.DrawArc3(4, 4, 16, 16, -s.angle*16, spinnerArc*16)
+	// Qt's angles go anticlockwise, so it turns clockwise as the angle grows.
+	start := float64(-s.angle)
+	paintShape(p, 0, 0, side, func(path *qt.QPainterPath) {
+		path.ArcMoveTo2(4, 4, 16, 16, start)
+		path.ArcTo2(4, 4, 16, 16, start, spinnerArc)
+	}, qt.QIcon__Normal)
 	p.End()
 	p.Delete()
-	pen.Delete()
-	brush.Delete()
-	colour.Delete()
 	pixmap := qt.QPixmap_FromImage(image)
 	pixmap.SetDevicePixelRatio(ratio)
 	s.icon.SetPixmap(pixmap)

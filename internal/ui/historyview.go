@@ -13,8 +13,11 @@ import (
 	"github.com/nomad-software/delta/internal/settings"
 )
 
-// historyView is where the history is among the window's views.
-const historyView = 1
+// Where the changes and the history are among the window's views.
+const (
+	changesIndex = iota
+	historyIndex
+)
 
 // The columns of the list of commits.
 const (
@@ -25,9 +28,10 @@ const (
 	colCommit
 )
 
-// historyTab is the second tab, as in gitk: the commits above, and below them
-// the files of the commit chosen beside its diff.
-type historyTab struct {
+// historyView is the history, shown in place of the changes while History is
+// on, as in gitk: the commits above, and below them the files of the commit
+// chosen beside its diff.
+type historyView struct {
 	page *qt.QWidget
 	// split divides the commits from what is below them, and detail the files
 	// from the diff.
@@ -55,7 +59,7 @@ type historyTab struct {
 	// some are being read.
 	more, loading bool
 	// stale says that the repository may have changed since it was read, and
-	// sized that the tab has been on show, so that its panes have sizes.
+	// sized that it has been on show, so that its panes have sizes.
 	stale, sized bool
 	// updating says that the program is changing a list, so that its selection
 	// changing means nothing.
@@ -65,8 +69,8 @@ type historyTab struct {
 	logs, details int
 }
 
-func newHistoryTab(config settings.Settings) *historyTab {
-	h := &historyTab{page: qt.NewQWidget2(), pageSize: config.HistoryPageSize, stale: true}
+func newHistoryView(config settings.Settings) *historyView {
+	h := &historyView{page: qt.NewQWidget2(), pageSize: config.HistoryPageSize, stale: true}
 
 	h.commits = qt.NewQTreeWidget2()
 	h.commits.SetHeaderLabels([]string{"Graph", "Subject", "Author", "Date", "Commit"})
@@ -114,7 +118,7 @@ func newHistoryTab(config settings.Settings) *historyTab {
 	return h
 }
 
-// connectHistory joins the widgets of the tab to what they do.
+// connectHistory joins the widgets of the history to what they do.
 func (w *Window) connectHistory() {
 	h := w.history
 	h.commits.OnItemSelectionChanged(func() {
@@ -155,10 +159,10 @@ func (w *Window) connectHistory() {
 func (w *Window) setHistoryShown(on bool) {
 	h := w.history
 	if !on {
-		w.views.SetCurrentIndex(0)
+		w.views.SetCurrentIndex(changesIndex)
 		return
 	}
-	w.views.SetCurrentIndex(historyView)
+	w.views.SetCurrentIndex(historyIndex)
 	// Sizes are only taken as they stand once the panes are on show.
 	if !h.sized {
 		h.sized = true
@@ -172,7 +176,7 @@ func (w *Window) setHistoryShown(on bool) {
 
 // historyShown says whether the history is on show.
 func (w *Window) historyShown() bool {
-	return w.views.CurrentIndex() == historyView
+	return w.views.CurrentIndex() == historyIndex
 }
 
 // commitMenu returns the menu of a commit in the history, which rebases from it.
@@ -188,7 +192,7 @@ func (w *Window) commitMenu(c git.Commit) *qt.QMenu {
 // jumpToFile scrolls the diff to the file on a row of the files, of which the
 // first is the commit's message, at the top. The diffs are in the order of the
 // files. A file past where a large diff was cut off has nowhere to go.
-func (h *historyTab) jumpToFile(row int) {
+func (h *historyView) jumpToFile(row int) {
 	if row < 0 {
 		return
 	}
@@ -303,7 +307,7 @@ func (w *Window) loadMoreHistory() {
 }
 
 // committed returns how many real commits have been read.
-func (h *historyTab) committed() int {
+func (h *historyView) committed() int {
 	if len(h.list) > 0 && h.list[0].Hash == git.Uncommitted {
 		return len(h.list) - 1
 	}
@@ -311,14 +315,14 @@ func (h *historyTab) committed() int {
 }
 
 // setLayout starts the graph again with the commits.
-func (h *historyTab) setLayout(commits []git.Commit) {
+func (h *historyView) setLayout(commits []git.Commit) {
 	h.layout = &graph.Layout{}
 	h.graph.rows = nil
 	h.extendGraph(commits)
 }
 
 // extendGraph adds the commits to the graph, with room for what they need.
-func (h *historyTab) extendGraph(commits []git.Commit) {
+func (h *historyView) extendGraph(commits []git.Commit) {
 	for _, c := range commits {
 		h.graph.rows = append(h.graph.rows, h.layout.Add(c.Hash, c.Parents))
 	}
@@ -399,7 +403,7 @@ func formatDate(t time.Time) string {
 }
 
 // chosen returns the commit chosen, or nil.
-func (h *historyTab) chosen() *git.Commit {
+func (h *historyView) chosen() *git.Commit {
 	selected := h.commits.SelectedItems()
 	if len(selected) == 0 {
 		return nil
@@ -461,7 +465,7 @@ func (w *Window) showCommit() {
 // setFiles shows the files of a commit, under a row with the text first, which
 // goes to the top of the diff. Nil changes clear the list, where an empty list is
 // a commit that changed nothing.
-func (h *historyTab) setFiles(changes []git.Change, first string) {
+func (h *historyView) setFiles(changes []git.Change, first string) {
 	h.updating = true
 	defer func() { h.updating = false }()
 	h.files.Clear()

@@ -78,13 +78,13 @@ func (w *Window) unstageChanges(changes []git.Change) {
 // commitChanges commits the index, and clears the message if that works.
 func (w *Window) commitChanges() {
 	r := w.repo
-	message := w.tab.message.ToPlainText()
+	message := w.changes.message.ToPlainText()
 	if strings.TrimSpace(message) == "" {
 		return
 	}
 	w.run("Commit", func() (string, error) { return r.Commit(message) }, func(err error) {
 		if err == nil {
-			w.tab.message.Clear()
+			w.changes.message.Clear()
 		}
 	})
 }
@@ -118,7 +118,7 @@ func (w *Window) pushBranch(force bool) {
 	w.run(name, func() (string, error) { return r.Push(remote, force) }, func(err error) {
 		// Forcing is for one push at a time, not a state to be left in.
 		if err == nil {
-			w.tab.force.SetChecked(false)
+			w.changes.force.SetChecked(false)
 		}
 	})
 }
@@ -199,20 +199,8 @@ func (w *Window) checkoutBranch() {
 		w.failed("Checkout", "There are no branches yet.")
 		return
 	}
-	r := w.repo
 	fetched := false
-	// It is called in the background, and the spinner shows it.
-	fetch := func() ([]string, error) {
-		mainthread.Wait(w.beginWork)
-		defer mainthread.Start(w.endWork)
-		fetched = true
-		if _, err := r.Fetch(); err != nil {
-			return nil, err
-		}
-		_, remote, err := r.Branches()
-		return remote, err
-	}
-	d, branch, _ := newCheckoutDialog(w.QWidget, w.status.Branch, local, remote, fetch)
+	d, branch, _ := newCheckoutDialog(w.QWidget, w.status.Branch, local, remote, w.checkoutFetch(&fetched))
 	if d.run() {
 		name := branch.CurrentText()
 		w.checkout(name, !slices.Contains(local, name))
@@ -222,93 +210,24 @@ func (w *Window) checkoutBranch() {
 	}
 }
 
-// newCheckoutDialog returns the dialog asking which branch to check out, its
-// list of them, and its checkbox: the list has the local branches, with the
-// current one chosen, and the remote ones after them while the checkbox is
-// ticked, each in order of name.
-// OK is enabled only while a branch other than the current one is chosen, as
-// there is nothing to do otherwise. Ticking it the first time fetches, in the
-// background, and lists the remote branches that gives, or, if it fails, says
-// why and lists those already known.
-func newCheckoutDialog(parent *qt.QWidget, current string, local, remote []string, fetch func() ([]string, error)) (*formDialog, *qt.QComboBox, *qt.QCheckBox) {
-	local, remote = byName(local), byName(remote)
-	d := newFormDialog(parent, "Checkout")
-	branch := d.addChoice("Branch", local)
-	branch.SetCurrentIndex(max(branch.FindText(current), 0))
-	d.focus = branch.QWidget
-	withRemote := qt.NewQCheckBox3("Include remote branches")
-	d.form.AddRowWithWidget(withRemote.QWidget)
-	note := qt.NewQLabel2()
-	note.SetTextFormat(qt.PlainText)
-	note.SetWordWrap(true)
-	note.Hide()
-	d.form.AddRowWithWidget(note.QWidget)
-	fetching := false
-	d.fieldsValid = append(d.fieldsValid, func() bool {
-		return !fetching && branch.Count() > 0 && branch.CurrentText() != current
-	})
-	branch.OnCurrentIndexChanged(func(int) { d.check() })
-	fill := func() {
-		chosen := branch.CurrentText()
-		branch.Clear()
-		branch.AddItems(local)
-		if withRemote.IsChecked() {
-			branch.AddItems(remote)
+// checkoutFetch returns what fetches for the checkout dialog, in the background,
+// and gives the remote branches after it, noting that it has in fetched. Both
+// that and the spinner's count are only touched on the main thread, as the
+// window reads them there, perhaps while the fetch is still going on.
+func (w *Window) checkoutFetch(fetched *bool) func() ([]string, error) {
+	r := w.repo
+	return func() ([]string, error) {
+		mainthread.Wait(func() {
+			*fetched = true
+			w.beginWork()
+		})
+		defer mainthread.Start(w.endWork)
+		if _, err := r.Fetch(); err != nil {
+			return nil, err
 		}
-		// A branch no longer listed gives way to the current one.
-		at := branch.FindText(chosen)
-		if at < 0 {
-			at = branch.FindText(current)
-		}
-		branch.SetCurrentIndex(max(at, 0))
-		d.check()
+		_, remote, err := r.Branches()
+		return remote, err
 	}
-	fetched := false
-	withRemote.OnToggled(func(on bool) {
-		if !on || fetched {
-			fill()
-			return
-		}
-		fetched, fetching = true, true
-		branch.SetEnabled(false)
-		withRemote.SetEnabled(false)
-		note.SetText("Fetching…")
-		note.Show()
-		d.check()
-		go func() {
-			got, err := fetch()
-			mainthread.Start(func() {
-				if d.finished {
-					return
-				}
-				fetching = false
-				branch.SetEnabled(true)
-				withRemote.SetEnabled(true)
-				switch {
-				case err != nil:
-					note.SetText("Fetching failed, so these are the remote branches as last fetched: " + firstLine(err.Error()))
-				case len(got) == 0:
-					note.SetText("There are no remote branches.")
-					remote = nil
-				default:
-					note.Hide()
-					remote = byName(got)
-				}
-				fill()
-			})
-		}()
-	})
-	d.check()
-	return d, branch, withRemote
-}
-
-// byName returns the names in order, ignoring case.
-func byName(names []string) []string {
-	names = slices.Clone(names)
-	slices.SortStableFunc(names, func(a, b string) int {
-		return strings.Compare(strings.ToLower(a), strings.ToLower(b))
-	})
-	return names
 }
 
 // checkout switches to a branch.
@@ -407,7 +326,7 @@ func (w *Window) doAbortMerge() {
 	}
 	w.run("Abort Merge", r.AbortMerge, func(err error) {
 		if err == nil {
-			w.tab.message.Clear()
+			w.changes.message.Clear()
 		}
 	})
 }
@@ -481,11 +400,15 @@ func (w *Window) removeRemote() {
 	w.run("Remove Remote", func() (string, error) { return r.RemoveRemote(name) }, nil)
 }
 
+// rebaseTitle names an interactive rebase, in its questions and what is said of
+// it.
+const rebaseTitle = "Interactive Rebase"
+
 // rebaseFrom asks how to rewrite the commits from the one given up to HEAD, and
 // rewrites them. Git needs a clean work tree for that, and no merge or rebase
 // already going.
 func (w *Window) rebaseFrom(c git.Commit) {
-	const title = "Interactive Rebase"
+	const title = rebaseTitle
 	r := w.repo
 	if r == nil || w.busy || c.Hash == git.Uncommitted {
 		return
@@ -533,10 +456,10 @@ func (w *Window) startRebase(base string, steps []git.Step) {
 			dropped++
 		}
 	}
-	if dropped > 0 && !w.confirm("Interactive Rebase", fmt.Sprintf("Drop %d of the commits? Their changes will be lost from the branch.", dropped)) {
+	if dropped > 0 && !w.confirm(rebaseTitle, fmt.Sprintf("Drop %d of the commits? Their changes will be lost from the branch.", dropped)) {
 		return
 	}
-	w.rebaseStep("Interactive Rebase", func() (string, error) { return r.Rebase(base, steps) })
+	w.rebaseStep(rebaseTitle, func() (string, error) { return r.Rebase(base, steps) })
 }
 
 // rebaseStep runs a command of a rebase as background does, and says where the
@@ -613,14 +536,6 @@ func plural(n int, name string) string {
 		return "1 " + name
 	}
 	return fmt.Sprintf("%d %ss", n, name)
-}
-
-// upperFirst returns the text with its first letter a capital.
-func upperFirst(text string) string {
-	if text == "" {
-		return text
-	}
-	return strings.ToUpper(text[:1]) + text[1:]
 }
 
 // doAbortRebase abandons the rebase in progress once that is confirmed.
