@@ -21,8 +21,8 @@ vet:
 
 # Draws the window into docs/.
 screenshots:
-	DELTA_THEME=dark DELTA_TAB=branch DELTA_SCREENSHOT=$(CURDIR)/docs/branch.png go test -count=1 -run '^TestScreenshot$$' ./internal/ui/
-	DELTA_THEME=dark DELTA_TAB=history DELTA_SCREENSHOT=$(CURDIR)/docs/history.png go test -count=1 -run '^TestScreenshot$$' ./internal/ui/
+	DELTA_THEME=dark DELTA_VIEW=branch DELTA_SCREENSHOT=$(CURDIR)/docs/branch.png go test -count=1 -run '^TestScreenshot$$' ./internal/ui/
+	DELTA_THEME=dark DELTA_VIEW=history DELTA_SCREENSHOT=$(CURDIR)/docs/history.png go test -count=1 -run '^TestScreenshot$$' ./internal/ui/
 
 # Draws the icons kept for packaging. A test says when this has not been run
 # since the code that draws them changed.

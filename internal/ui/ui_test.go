@@ -137,8 +137,29 @@ func (w *Window) idleWith(unstaged, staged int) bool {
 func TestLayout(t *testing.T) {
 	w := newTestWindow(t, newRepo(t))
 	on(func() {
-		if w.tabs.Count() != 2 || w.tabs.TabText(0) != "Branch" || w.tabs.TabText(historyTabIndex) != "History" {
-			t.Errorf("tabs: %d, first %q", w.tabs.Count(), w.tabs.TabText(0))
+		// The toolbar is apemail's size, with its buttons in groups.
+		var buttons []string
+		for _, a := range w.toolbar.Actions() {
+			if a.IsSeparator() {
+				buttons = append(buttons, "|")
+				continue
+			}
+			buttons = append(buttons, a.IconText())
+			if width := w.toolbar.WidgetForAction(a).MinimumWidth(); width != toolButtonWidth {
+				t.Errorf("%q is at least %d wide", a.IconText(), width)
+			}
+			if a.Icon().IsNull() {
+				t.Errorf("%q has no icon", a.IconText())
+			}
+		}
+		if want := []string{"New Branch", "Checkout", "Delete", "|", "Pull", "Push", "|", "History"}; !slices.Equal(buttons, want) {
+			t.Errorf("buttons %q", buttons)
+		}
+		if size := w.toolbar.IconSize(); size.Width() != 32 || size.Height() != 32 || w.toolbar.ToolButtonStyle() != qt.ToolButtonTextUnderIcon || w.toolbar.IsMovable() {
+			t.Errorf("toolbar of %dx%d, style %v", size.Width(), size.Height(), w.toolbar.ToolButtonStyle())
+		}
+		if !w.showHistory.IsCheckable() || w.showHistory.IsChecked() || w.historyShown() {
+			t.Error("the history is shown to start with, or can't be")
 		}
 		var menus []string
 		for _, a := range w.MenuBar().Actions() {
@@ -774,22 +795,24 @@ func TestColourTable(t *testing.T) {
 	})
 }
 
-func TestTabKeys(t *testing.T) {
+// TestHistoryButton checks that the History button shows the history in place
+// of the changes, and the changes again.
+func TestHistoryButton(t *testing.T) {
 	dir := newRepo(t)
 	writeFile(t, dir, "file", "changed\n")
 	w := newTestWindow(t, dir)
 	waitFor(t, "the status", func() bool { return w.idleWith(1, 0) })
 	on(func() {
-		if len(w.tabKeys) != 2 || w.tabKeys[0].Key().ToString() != "Ctrl+1" || w.tabKeys[1].Key().ToString() != "Ctrl+2" {
-			t.Fatalf("keys %v", w.tabKeys)
+		w.showHistory.Trigger()
+		if !w.historyShown() || !w.history.page.IsVisible() || w.tab.page.IsVisible() {
+			t.Errorf("history shown %v", w.historyShown())
 		}
-		w.tabKeys[1].Activated()
-		if w.tabs.CurrentIndex() != historyTabIndex {
-			t.Errorf("on tab %d", w.tabs.CurrentIndex())
-		}
-		w.tabKeys[0].Activated()
-		if w.tabs.CurrentIndex() != 0 {
-			t.Errorf("on tab %d", w.tabs.CurrentIndex())
+	})
+	waitFor(t, "the commits", func() bool { return w.history.commits.TopLevelItemCount() == 2 })
+	on(func() {
+		w.showHistory.Trigger()
+		if w.historyShown() || !w.tab.page.IsVisible() {
+			t.Errorf("history still shown %v", w.historyShown())
 		}
 	})
 }
@@ -880,7 +903,7 @@ func screenshotRepo(t *testing.T) string {
 }
 
 // TestScreenshot draws the window to the path in DELTA_SCREENSHOT, in the
-// theme in DELTA_THEME, on the tab DELTA_TAB says.
+// theme in DELTA_THEME, showing what DELTA_VIEW says: branch or history.
 func TestScreenshot(t *testing.T) {
 	path := os.Getenv("DELTA_SCREENSHOT")
 	if path == "" {
@@ -894,8 +917,8 @@ func TestScreenshot(t *testing.T) {
 	w := newTestWindow(t, dir)
 	waitFor(t, "the files", func() bool { return w.idleWith(2, 1) })
 	on(func() {
-		if os.Getenv("DELTA_TAB") == "history" {
-			w.tabs.SetCurrentIndex(historyTabIndex)
+		if os.Getenv("DELTA_VIEW") == "history" {
+			w.showHistory.SetChecked(true)
 		}
 		applyTheme(os.Getenv("DELTA_THEME"))
 		w.tab.unstaged.SetCurrentRow(0)
@@ -931,33 +954,29 @@ func treeRow(h *historyTab, row int) []string {
 	return []string{item.Text(colSubject), item.Text(colAuthor), item.Text(colDate), item.Text(colCommit)}
 }
 
-func TestStartsOnHistoryWithNothingToCommit(t *testing.T) {
+// TestStartsOnTheChanges checks that the history is not shown by itself, even
+// with nothing to commit, until it is asked for.
+func TestStartsOnTheChanges(t *testing.T) {
 	dir := historyRepo(t, 1)
 	w := newTestWindow(t, dir)
-	waitFor(t, "the history tab", func() bool { return w.tabs.CurrentIndex() == historyTabIndex })
-	waitFor(t, "the commits", func() bool { return w.history.commits.TopLevelItemCount() == 2 })
-
-	// It is only on starting: going back and rescanning stays on the branch tab.
-	on(func() {
-		w.tabs.SetCurrentIndex(0)
-		w.rescan.Trigger()
-	})
-	// There is nothing to see of a rescan that changes nothing, so it has a moment.
+	waitFor(t, "the status", func() bool { return w.status.Branch == "main" && !w.busy })
 	time.Sleep(100 * time.Millisecond)
 	on(func() {
-		if w.tabs.CurrentIndex() != 0 {
-			t.Errorf("on tab %d after a rescan", w.tabs.CurrentIndex())
+		if w.historyShown() || w.showHistory.IsChecked() {
+			t.Error("the history is shown")
+		}
+		if w.history.commits.TopLevelItemCount() != 0 {
+			t.Error("the history was read before it was on show")
 		}
 		w.Close()
 	})
-
-	// The branch tab's panes, out of sight, are saved as they were.
-	if got, want := settings.Load(w.path), settings.Defaults(); got.Lists[0] <= 0 || got.Sidebar[0] != want.Sidebar[0] {
-		t.Errorf("panes saved as %v, %v", got.Sidebar, got.Lists)
+	// The panes of the history, never shown, are saved as they were.
+	if got, want := settings.Load(w.path), settings.Defaults(); got.History != want.History {
+		t.Errorf("history panes saved as %v", got.History)
 	}
 }
 
-func TestStaysOnBranchWithChanges(t *testing.T) {
+func TestChangesShownWithChanges(t *testing.T) {
 	for name, change := range map[string]func(t *testing.T, dir string){
 		"unstaged":  func(t *testing.T, dir string) { writeFile(t, dir, "file", "changed\n") },
 		"untracked": func(t *testing.T, dir string) { writeFile(t, dir, "new", "new\n") },
@@ -972,8 +991,8 @@ func TestStaysOnBranchWithChanges(t *testing.T) {
 			w := newTestWindow(t, dir)
 			waitFor(t, "the status", func() bool { return w.status.Branch == "main" })
 			on(func() {
-				if w.tabs.CurrentIndex() != 0 {
-					t.Errorf("on tab %d", w.tabs.CurrentIndex())
+				if w.historyShown() {
+					t.Error("the history is shown")
 				}
 				if w.history.commits.TopLevelItemCount() != 0 {
 					t.Error("the history was read before it was on show")
@@ -983,7 +1002,7 @@ func TestStaysOnBranchWithChanges(t *testing.T) {
 	}
 }
 
-func TestOpeningAnotherRepositoryStaysOnTheTab(t *testing.T) {
+func TestOpeningAnotherRepositoryStaysOnTheChanges(t *testing.T) {
 	dirty := newRepo(t)
 	writeFile(t, dirty, "file", "changed\n")
 	clean := newRepo(t)
@@ -996,8 +1015,8 @@ func TestOpeningAnotherRepositoryStaysOnTheTab(t *testing.T) {
 	})
 	waitFor(t, "the other repository", func() bool { return w.idleWith(0, 0) && w.status.Branch == "main" })
 	on(func() {
-		if w.tabs.CurrentIndex() != 0 {
-			t.Errorf("on tab %d", w.tabs.CurrentIndex())
+		if w.historyShown() {
+			t.Error("the history is shown")
 		}
 	})
 }
@@ -1015,7 +1034,7 @@ func TestHistoryShowsCommits(t *testing.T) {
 		if !h.page.IsAncestorOf(h.commits.QWidget) || !h.split.IsAncestorOf(h.files.QWidget) || !h.detail.IsAncestorOf(h.diff.QWidget) {
 			t.Error("the panes are not in place")
 		}
-		w.tabs.SetCurrentIndex(historyTabIndex)
+		w.showHistory.SetChecked(true)
 	})
 	waitFor(t, "the commits", func() bool { return h.commits.TopLevelItemCount() == 2 })
 	// The newest is chosen, and its files and diff shown.
@@ -1066,7 +1085,7 @@ func TestHistoryFollowsChanges(t *testing.T) {
 	dir := historyRepo(t, 1)
 	w := newTestWindow(t, dir)
 	h := w.history
-	on(func() { w.tabs.SetCurrentIndex(historyTabIndex) })
+	on(func() { w.showHistory.SetChecked(true) })
 	waitFor(t, "the commits", func() bool { return h.commits.TopLevelItemCount() == 2 })
 	waitFor(t, "the choice", func() bool { return h.chosen() != nil })
 	var kept string
@@ -1090,7 +1109,7 @@ func TestHistoryFollowsChanges(t *testing.T) {
 	// One made on the other tab shows on coming back.
 	writeFile(t, dir, "file", "changed\n")
 	on(func() {
-		w.tabs.SetCurrentIndex(0)
+		w.showHistory.SetChecked(false)
 		w.rescan.Trigger()
 	})
 	waitFor(t, "the change", func() bool { return w.idleWith(1, 0) })
@@ -1105,7 +1124,7 @@ func TestHistoryFollowsChanges(t *testing.T) {
 		if h.commits.TopLevelItemCount() != 3 {
 			t.Error("the history was read while not on show")
 		}
-		w.tabs.SetCurrentIndex(historyTabIndex)
+		w.showHistory.SetChecked(true)
 	})
 	waitFor(t, "the commit from the tab", func() bool {
 		return h.commits.TopLevelItemCount() == 4 && strings.Contains(treeRow(h, 0)[0], "From the tab")
@@ -1120,7 +1139,7 @@ func TestHistoryShowsUncommittedChanges(t *testing.T) {
 	h := w.history
 	on(func() {
 		h.pageSize = 2
-		w.tabs.SetCurrentIndex(historyTabIndex)
+		w.showHistory.SetChecked(true)
 	})
 	// It comes first and is chosen, on top of the first page of real commits.
 	waitFor(t, "the rows", func() bool { return h.commits.TopLevelItemCount() == 3 && !h.loading })
@@ -1170,7 +1189,7 @@ func TestHistoryReadsMoreAtTheEnd(t *testing.T) {
 	h := w.history
 	on(func() {
 		h.pageSize = 2
-		w.tabs.SetCurrentIndex(historyTabIndex)
+		w.showHistory.SetChecked(true)
 	})
 	waitFor(t, "the first page", func() bool { return h.commits.TopLevelItemCount() == 2 && !h.loading })
 	for _, want := range []int{4, 5} {
@@ -1209,7 +1228,7 @@ func TestGraphIsDrawn(t *testing.T) {
 	h := w.history
 	on(func() {
 		applyTheme(settings.ThemeLight)
-		w.tabs.SetCurrentIndex(historyTabIndex)
+		w.showHistory.SetChecked(true)
 	})
 	waitFor(t, "the commits", func() bool { return h.commits.TopLevelItemCount() == 4 })
 	on(func() {
@@ -1219,7 +1238,10 @@ func TestGraphIsDrawn(t *testing.T) {
 		if got, want := h.commits.Header().SectionSize(colGraph), graphWidth(2); got != want {
 			t.Errorf("column %d wide, not %d", got, want)
 		}
-		// The merge's node shows, in the colour of its lane, in a row with room.
+		// The merge's node shows, in the colour of its lane, in a row with room,
+		// with the list not focused, as the highlight of its current row would
+		// show through.
+		h.files.SetFocus()
 		h.commits.ClearSelection()
 		item := h.commits.TopLevelItem(0)
 		rect := h.commits.VisualItemRect(item)
@@ -1241,7 +1263,7 @@ func TestHistoryOfEmptyAndOtherRepository(t *testing.T) {
 	runGit(t, empty, "init", "-b", "main")
 	w := newTestWindow(t, dir)
 	h := w.history
-	on(func() { w.tabs.SetCurrentIndex(historyTabIndex) })
+	on(func() { w.showHistory.SetChecked(true) })
 	waitFor(t, "the commits", func() bool { return h.files.Count() == 2 })
 	on(func() {
 		if err := w.openRepository(empty); err != nil {
@@ -1265,7 +1287,7 @@ func TestHistoryPanesAreSaved(t *testing.T) {
 
 	again := newTestWindowAt(t, dir, w.path)
 	on(func() {
-		again.tabs.SetCurrentIndex(historyTabIndex)
+		again.showHistory.SetChecked(true)
 		again.history.split.SetSizes([]int{200, 450})
 		again.history.detail.SetSizes([]int{150, 900})
 	})

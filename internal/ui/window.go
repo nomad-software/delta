@@ -22,12 +22,14 @@ type Window struct {
 	config settings.Settings
 	icon   *qt.QIcon
 
-	tabs *qt.QTabWidget
-	tab  *branchTab
-	// tabKeys are the shortcuts to each tab, in order.
-	tabKeys []*qt.QShortcut
-	// history is the second tab.
+	// views shows the branch's changes, or the history while showHistory is
+	// on.
+	views *qt.QStackedWidget
+	tab   *branchTab
+	// history is the history, shown in place of the changes.
 	history *historyTab
+	// toolbar is the bar of buttons under the menus.
+	toolbar *qt.QToolBar
 	// where and said are the status bar's text: what branch is checked out, and
 	// what last happened.
 	where, said *qt.QLabel
@@ -38,9 +40,6 @@ type Window struct {
 	// mergeFilled says that the message git prepared for the merge in progress
 	// has been offered.
 	mergeFilled bool
-	// choosingTab says that the first status read since starting decides which
-	// tab to be on.
-	choosingTab bool
 
 	// busy says that a git command that changes something is running, during
 	// which no other can be started.
@@ -53,6 +52,8 @@ type Window struct {
 	repoOnly                                              []*qt.QAction
 	rescan, stageAll, stageSelected, unstageSelected      *qt.QAction
 	unstageAll, commit, push, forcePush, abortMerge, open *qt.QAction
+	newBranchAction, checkoutAction, deleteAction, pull   *qt.QAction
+	showHistory                                           *qt.QAction
 	continueRebase, skipRebase, abortRebase               *qt.QAction
 
 	// confirm asks before doing what can't be taken back, and failed tells of a
@@ -76,15 +77,15 @@ func NewWindow(path string) *Window {
 	w.Resize(w.config.Width, w.config.Height)
 
 	w.tab = newBranchTab(w.config)
-	w.tabs = qt.NewQTabWidget2()
-	w.tabs.AddTab(w.tab.page, "Branch")
 	w.history = newHistoryTab(w.config)
-	w.tabs.AddTab(w.history.page, "History")
-	w.SetCentralWidget(w.tabs.QWidget)
+	w.views = qt.NewQStackedWidget2()
+	w.views.AddWidget(w.tab.page)
+	w.views.AddWidget(w.history.page)
+	w.SetCentralWidget(w.views.QWidget)
 	w.makeStatusBar()
 
 	w.makeMenus()
-	w.makeTabKeys()
+	w.makeToolBar()
 	w.applyCodeFont()
 	w.connect()
 	w.connectHistory()
@@ -111,7 +112,6 @@ func (w *Window) Start(argument string) {
 	setPanes(w.tab.lists, w.config.Lists)
 	setPanes(w.tab.editor, w.config.Editor)
 
-	w.choosingTab = true
 	if argument != "" {
 		if err := w.openRepository(argument); err != nil {
 			w.failed("Open Repository", err.Error())
@@ -160,15 +160,43 @@ func (w *Window) say(message string) {
 	w.said.SetText(message)
 }
 
-// makeTabKeys makes the shortcuts to each tab: Ctrl+1 to the first, and so on.
-func (w *Window) makeTabKeys() {
-	for i := range w.tabs.Count() {
-		sequence := qt.NewQKeySequence2(fmt.Sprintf("Ctrl+%d", i+1))
-		defer sequence.Delete()
-		shortcut := qt.NewQShortcut2(sequence, w.QObject)
-		shortcut.OnActivated(func() { w.tabs.SetCurrentIndex(i) })
-		w.tabKeys = append(w.tabKeys, shortcut)
+// makeToolBar makes the bar of large buttons under the menus, as apemail's,
+// each the action of a menu, but History, which shows the history in place of
+// the changes while it is on.
+func (w *Window) makeToolBar() {
+	w.showHistory = qt.NewQAction5("History", w.QObject)
+	w.showHistory.SetCheckable(true)
+	w.showHistory.SetToolTip("Show the history in place of the changes")
+	w.showHistory.OnToggled(w.setHistoryShown)
+
+	for a, shape := range map[*qt.QAction]iconShape{
+		w.newBranchAction: newBranchShape, w.checkoutAction: checkoutShape, w.deleteAction: deleteShape,
+		w.pull: pullShape, w.push: pushShape, w.showHistory: historyShape,
+	} {
+		icon := toolIcon(shape)
+		a.SetIcon(icon)
+		icon.Delete()
 	}
+	// The buttons are named without the ellipsis of their menu items.
+	w.newBranchAction.SetIconText("New Branch")
+	w.checkoutAction.SetIconText("Checkout")
+	w.deleteAction.SetIconText("Delete")
+
+	w.toolbar = qt.NewQToolBar4("Buttons", w.QWidget)
+	w.toolbar.SetMovable(false)
+	w.toolbar.SetToolButtonStyle(qt.ToolButtonTextUnderIcon)
+	size := qt.NewQSize2(toolIconSize, toolIconSize)
+	defer size.Delete()
+	w.toolbar.SetIconSize(size)
+	for _, a := range []*qt.QAction{w.newBranchAction, w.checkoutAction, w.deleteAction, nil, w.pull, w.push, nil, w.showHistory} {
+		if a == nil {
+			w.toolbar.AddSeparator()
+			continue
+		}
+		w.toolbar.QWidget.AddAction(a)
+		w.toolbar.WidgetForAction(a).SetMinimumWidth(toolButtonWidth)
+	}
+	w.AddToolBar(qt.TopToolBarArea, w.toolbar)
 }
 
 // action adds an action of the window to a menu.
@@ -195,12 +223,11 @@ func (w *Window) makeMenus() {
 	w.action(file, "&Quit", "Ctrl+Q", func() { w.Close() })
 
 	branch := bar.AddMenuWithTitle("&Branch")
-	w.repoOnly = append(w.repoOnly,
-		w.action(branch, "&New Branch…", "Ctrl+N", w.newBranch),
-		w.action(branch, "&Checkout…", "Ctrl+B", w.checkoutBranch),
-		w.action(branch, "&Rename…", "", w.renameBranch),
-		w.action(branch, "&Delete…", "", w.deleteBranch),
-	)
+	w.newBranchAction = w.action(branch, "&New Branch…", "Ctrl+N", w.newBranch)
+	w.checkoutAction = w.action(branch, "&Checkout…", "Ctrl+B", w.checkoutBranch)
+	rename := w.action(branch, "&Rename…", "", w.renameBranch)
+	w.deleteAction = w.action(branch, "&Delete…", "", w.deleteBranch)
+	w.repoOnly = append(w.repoOnly, w.newBranchAction, w.checkoutAction, rename, w.deleteAction)
 	branch.AddSeparator()
 	w.repoOnly = append(w.repoOnly, w.action(branch, "&Merge…", "Ctrl+M", w.mergeBranch))
 	w.abortMerge = w.action(branch, "&Abort Merge", "", w.doAbortMerge)
@@ -226,10 +253,9 @@ func (w *Window) makeMenus() {
 	w.forcePush = w.action(commit, "&Force Push…", "Ctrl+Shift+P", func() { w.pushBranch(true) })
 
 	remote := bar.AddMenuWithTitle("&Remote")
-	w.repoOnly = append(w.repoOnly,
-		w.action(remote, "&Fetch", "Ctrl+Shift+F", func() { w.run("Fetch", w.repo.Fetch, nil) }),
-		w.action(remote, "Pu&ll", "Ctrl+Shift+L", func() { w.run("Pull", w.repo.Pull, nil) }),
-	)
+	fetch := w.action(remote, "&Fetch", "Ctrl+Shift+F", func() { w.run("Fetch", w.repo.Fetch, nil) })
+	w.pull = w.action(remote, "Pu&ll", "Ctrl+Shift+L", func() { w.run("Pull", w.repo.Pull, nil) })
+	w.repoOnly = append(w.repoOnly, fetch, w.pull)
 	remote.AddAction(w.push)
 	remote.AddAction(w.forcePush)
 	remote.AddSeparator()
@@ -311,6 +337,7 @@ func (w *Window) updateActions() {
 	}
 	message := strings.TrimSpace(t.message.ToPlainText()) != ""
 	w.open.SetEnabled(!w.busy)
+	w.showHistory.SetEnabled(w.repo != nil)
 	w.rescan.SetEnabled(idle)
 	w.stageAll.SetEnabled(idle && len(w.status.Unstaged) > 0)
 	w.stageSelected.SetEnabled(idle && len(t.unstaged.SelectedItems()) > 0)
@@ -388,7 +415,6 @@ func (w *Window) openRepository(dir string) error {
 
 // chooseRepository asks for a repository to open.
 func (w *Window) chooseRepository() {
-	w.choosingTab = false
 	dir := qt.QFileDialog_GetExistingDirectory3(w.QWidget, "Open Repository", w.config.Repository)
 	if dir == "" {
 		return
@@ -418,12 +444,10 @@ func (w *Window) rescanRepository() {
 				return
 			}
 			if err != nil {
-				w.choosingTab = false
 				w.say("Rescan failed: " + firstLine(err.Error()))
 				return
 			}
 			w.applyStatus(s)
-			w.chooseTab(s)
 			// The message git prepared for a merge is offered once, and not
 			// again if it is cleared.
 			if !s.Merging {
@@ -436,19 +460,6 @@ func (w *Window) rescanRepository() {
 			}
 		})
 	}()
-}
-
-// chooseTab goes to the history on starting in a repository with nothing to
-// commit and no merge or rebase to finish, as there is nothing to do on the
-// branch tab.
-func (w *Window) chooseTab(s git.Status) {
-	if !w.choosingTab {
-		return
-	}
-	w.choosingTab = false
-	if len(s.Unstaged) == 0 && len(s.Staged) == 0 && !s.Merging && !s.Rebasing {
-		w.tabs.SetCurrentIndex(historyTabIndex)
-	}
 }
 
 // applyStatus shows the status.

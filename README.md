@@ -1,13 +1,13 @@
 # <img src="packaging/delta.png" alt="" width="40" height="40"> Delta
 
 A graphical user interface for git, in the spirit of `git gui` and `gitk`.
-Stage and commit on one tab, and browse the history as a graph on another. It is
+Stage and commit your changes, and browse the history as a graph. It is
 written in Go with Qt 6, through the [miqt](https://github.com/mappu/miqt)
 bindings, and runs on Linux and macOS.
 
-![The History tab of Delta](docs/history.png)
+![The history in Delta](docs/history.png)
 
-![The Branch tab of Delta](docs/branch.png)
+![The changes in Delta](docs/branch.png)
 
 ## Running
 
@@ -19,10 +19,11 @@ It opens the repository holding the folder given. Without one, it opens the
 repository the current folder is in, or else the one last open. You can open
 another from **File > Open Repository…**.
 
-It starts on the History tab if the repository has nothing to commit and no
-merge or rebase to finish, and otherwise on the Branch tab.
+It starts on the changes. A toolbar under the menus has **New Branch**,
+**Checkout** and **Delete**, then **Pull** and **Push**, then **History**, which
+shows the history in place of the changes until it is pressed again.
 
-## The Branch tab
+## The changes
 
 * **Unstaged Changes** and **Staged Changes**, in the sidebar, list the changed
   files, each with a letter for what happened to it: `M` modified, `A` added,
@@ -43,7 +44,7 @@ merge or rebase to finish, and otherwise on the Branch tab.
 Forcing uses `--force-with-lease`: git refuses if the remote has commits you have
 not fetched, so you can't overwrite someone else's work without seeing it.
 
-## The History tab
+## The history
 
 As in `gitk`, the commits of the current branch are listed at the top, newest
 first, with a graph at the left drawing how they branch and merge, and any
@@ -79,16 +80,15 @@ last closed at.
 Git needs a clean work tree, so commit or stash your changes first. A range
 holding a merge can't be rebased this way. When the rebase stops, at a commit to
 edit or one that doesn't apply cleanly, the status bar says so and how far it
-has got. Resolve and stage on the Branch tab, then choose **Continue Rebase**
+has got. Resolve and stage in the changes, then choose **Continue Rebase**
 from the Branch menu. Anything staged at a commit to edit goes into that commit.
 **Skip Commit** leaves out the commit it stopped at, and **Abort Rebase** puts
 the branch back as it was.
 
-A diff over 4 MiB, on either tab, is cut off with a note saying so.
+A diff over 4 MiB, of the changes or in the history, is cut off with a note
+saying so.
 
 ## Menus
-
-`Ctrl+1` and `Ctrl+2` go to the Branch and History tabs.
 
 | Menu   | Items | Shortcuts |
 | ------ | ----- | --------- |
@@ -113,7 +113,7 @@ The **User interface** tab of **File > Settings…** sets:
 
 The settings are kept in `delta/settings.json` under the system's
 configuration folder (`~/.config` on Linux), along with the size of the window
-and the panes of both tabs, which are saved when it closes, and of the
+and its panes, which are saved when it closes, and of the
 interactive rebase dialog.
 
 ## Desktop entry

@@ -13,8 +13,8 @@ import (
 	"github.com/nomad-software/delta/internal/settings"
 )
 
-// historyTabIndex is where the history tab is among the window's tabs.
-const historyTabIndex = 1
+// historyView is where the history is among the window's views.
+const historyView = 1
 
 // historyPageSize is how many commits are read at a time.
 const historyPageSize = 500
@@ -119,20 +119,6 @@ func newHistoryTab(config settings.Settings) *historyTab {
 // connectHistory joins the widgets of the tab to what they do.
 func (w *Window) connectHistory() {
 	h := w.history
-	w.tabs.OnCurrentChanged(func(index int) {
-		if index != historyTabIndex {
-			return
-		}
-		// Sizes are only taken as they stand once the panes are on show.
-		if !h.sized {
-			h.sized = true
-			setPanes(h.split, w.config.History)
-			setPanes(h.detail, w.config.HistoryDetail)
-		}
-		if h.stale {
-			w.loadHistory()
-		}
-	})
 	h.commits.OnItemSelectionChanged(func() {
 		if !h.updating {
 			w.showCommit()
@@ -166,6 +152,31 @@ func (w *Window) connectHistory() {
 	h.files.OnItemClicked(func(item *qt.QListWidgetItem) { jump(h.files.Row(item)) })
 }
 
+// setHistoryShown shows the history in place of the changes, or the changes
+// again, as the History button says.
+func (w *Window) setHistoryShown(on bool) {
+	h := w.history
+	if !on {
+		w.views.SetCurrentIndex(0)
+		return
+	}
+	w.views.SetCurrentIndex(historyView)
+	// Sizes are only taken as they stand once the panes are on show.
+	if !h.sized {
+		h.sized = true
+		setPanes(h.split, w.config.History)
+		setPanes(h.detail, w.config.HistoryDetail)
+	}
+	if h.stale {
+		w.loadHistory()
+	}
+}
+
+// historyShown says whether the history is on show.
+func (w *Window) historyShown() bool {
+	return w.views.CurrentIndex() == historyView
+}
+
 // commitMenu returns the menu of a commit in the history, which rebases from it.
 // The uncommitted changes are not a commit to rebase from.
 func (w *Window) commitMenu(c git.Commit) *qt.QMenu {
@@ -196,7 +207,7 @@ func (h *historyTab) jumpToFile(row int) {
 // again if the history is on show.
 func (w *Window) markHistoryStale() {
 	w.history.stale = true
-	if w.tabs.CurrentIndex() == historyTabIndex {
+	if w.historyShown() {
 		w.loadHistory()
 	}
 }
