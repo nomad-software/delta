@@ -88,6 +88,7 @@ func newHistoryTab(config settings.Settings) *historyTab {
 	h.fileLabel = heading("Files")
 	h.files = qt.NewQListWidget2()
 	h.files.SetUniformItemSizes(true)
+	setChangeIconSize(h.files)
 
 	h.diffLabel = heading("Diff")
 	h.diffLabel.SetTextFormat(qt.PlainText)
@@ -463,10 +464,11 @@ func (h *historyTab) setFiles(changes []git.Change, first string) {
 		return
 	}
 	h.fileLabel.SetText(fmt.Sprintf("Files (%d)", len(changes)))
-	h.files.AddItem(first)
+	// It has a blank in place of a circle, to line up with the files.
+	top := qt.NewQListWidgetItem2(first)
+	top.SetIcon(changeIcon(0))
+	h.files.AddItemWithItem(top)
 	for _, c := range changes {
-		item := qt.NewQListWidgetItem2(describe(c))
-		item.SetToolTip(explain(c))
-		h.files.AddItemWithItem(item)
+		h.files.AddItemWithItem(newChangeItem(c))
 	}
 }

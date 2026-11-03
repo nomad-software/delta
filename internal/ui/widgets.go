@@ -83,12 +83,29 @@ func panes(s *qt.QSplitter) settings.Panes {
 	return settings.Panes{sizes[0], sizes[1]}
 }
 
-// describe returns the text of a change in a list.
+// describe returns the text of a change in a list: its path, after the one it
+// was renamed or copied from. What happened to it is its icon (changeIcon).
 func describe(c git.Change) string {
 	if c.OldPath != "" {
-		return string(c.Code) + "  " + c.OldPath + " → " + c.Path
+		return c.OldPath + " → " + c.Path
 	}
-	return string(c.Code) + "  " + c.Path
+	return c.Path
+}
+
+// newChangeItem returns the row of a list showing a change: its circle, its
+// path, and what happened to it in words when the pointer is over it.
+func newChangeItem(c git.Change) *qt.QListWidgetItem {
+	item := qt.NewQListWidgetItem2(describe(c))
+	item.SetIcon(changeIcon(c.Code))
+	item.SetToolTip(explain(c))
+	return item
+}
+
+// setChangeIconSize gives a list's icons the size of the circles of changes.
+func setChangeIconSize(list *qt.QListWidget) {
+	size := qt.NewQSize2(changeDotSize, changeDotSize)
+	defer size.Delete()
+	list.SetIconSize(size)
 }
 
 // explain returns what the code of a change means.

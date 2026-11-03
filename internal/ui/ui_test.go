@@ -131,6 +131,23 @@ func listTexts(list *qt.QListWidget) []string {
 	return texts
 }
 
+// listCodes returns the codes of changes the icons of a list's rows stand for,
+// 0 for a blank.
+func listCodes(list *qt.QListWidget) []byte {
+	var codes []byte
+	for i := range list.Count() {
+		key := list.Item(i).Icon().CacheKey()
+		code := byte('!')
+		for c, icon := range changeIcons {
+			if icon.CacheKey() == key {
+				code = c
+			}
+		}
+		codes = append(codes, code)
+	}
+	return codes
+}
+
 func (w *Window) idleWith(unstaged, staged int) bool {
 	return !w.busy && w.tab.unstaged.Count() == unstaged && w.tab.staged.Count() == staged
 }
@@ -291,7 +308,7 @@ func TestStageCommitFlow(t *testing.T) {
 	waitFor(t, "two unstaged files", func() bool { return w.idleWith(2, 0) })
 
 	on(func() {
-		if got := listTexts(w.tab.unstaged); !slices.Equal(got, []string{"M  file", "?  new"}) {
+		if got := listTexts(w.tab.unstaged); !slices.Equal(got, []string{"file", "new"}) || !slices.Equal(listCodes(w.tab.unstaged), []byte{'M', git.Untracked}) {
 			t.Errorf("unstaged %q", got)
 		}
 		if w.commit.IsEnabled() {
@@ -844,7 +861,7 @@ func TestMergePrefillsMessage(t *testing.T) {
 		if !w.abortMerge.IsEnabled() {
 			t.Error("abort is disabled")
 		}
-		if got := listTexts(w.tab.unstaged); !slices.Equal(got, []string{"U  file"}) {
+		if got := listTexts(w.tab.unstaged); !slices.Equal(got, []string{"file"}) || !slices.Equal(listCodes(w.tab.unstaged), []byte{git.Conflict}) {
 			t.Errorf("unstaged %q", got)
 		}
 		w.tab.unstaged.SetCurrentRow(0)
@@ -1385,7 +1402,7 @@ func TestHistoryShowsCommits(t *testing.T) {
 		if row := treeRow(h, 0); !strings.Contains(row[0], "Two files") || !strings.Contains(row[0], "main") || row[1] != "Test" || row[2] == "" || row[3] == "" {
 			t.Errorf("row %q", row)
 		}
-		if got := listTexts(h.files); !slices.Equal(got, []string{"Commit message", "A  a", "A  b"}) {
+		if got := listTexts(h.files); !slices.Equal(got, []string{"Commit message", "a", "b"}) || !slices.Equal(listCodes(h.files), []byte{0, 'A', 'A'}) {
 			t.Errorf("files %q", got)
 		}
 		if !strings.Contains(h.diff.parsed.Text, "The body") || !strings.Contains(h.diff.parsed.Text, "+b") {
@@ -1493,7 +1510,7 @@ func TestHistoryShowsUncommittedChanges(t *testing.T) {
 		if !h.commits.TopLevelItem(0).Font(colSubject).Italic() {
 			t.Error("it is not in italics")
 		}
-		if got := listTexts(h.files); !slices.Equal(got, []string{"All changes", "M  file", "?  untracked"}) {
+		if got := listTexts(h.files); !slices.Equal(got, []string{"All changes", "file", "untracked"}) || !slices.Equal(listCodes(h.files), []byte{0, 'M', git.Untracked}) {
 			t.Errorf("files %q", got)
 		}
 		if !strings.Contains(h.diff.parsed.Text, "+changed") || !strings.Contains(h.diff.parsed.Text, "+untracked") {

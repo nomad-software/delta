@@ -142,10 +142,11 @@ const aboutWidth = 560
 func fitHeight(d *qt.QDialog, width int) {
 	layout := d.Layout()
 	layout.Activate()
+	// The size is miqt's to free, by its finalizer, as Qt gives it by value.
 	least := layout.MinimumSize()
-	defer least.Delete()
 	width = max(width, least.Width())
 	d.Resize(width, max(layout.HeightForWidth(width), least.Height()))
+	runtime.KeepAlive(least)
 }
 
 // linkLabel returns a label of wrapped rich text whose links open in a browser.

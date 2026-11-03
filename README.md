@@ -30,9 +30,10 @@ ticked along with the **Force push** checkbox.
 ## The changes
 
 * **Unstaged Changes** and **Staged Changes**, in the sidebar, list the changed
-  files, each with a letter for what happened to it: `M` modified, `A` added,
-  `D` deleted, `R` renamed, `C` copied, `T` type changed, `?` untracked, `U` in
-  conflict.
+  files, each with a circle in a Solarized colour for what happened to it: blue
+  modified, green added, red deleted, violet renamed, cyan copied, yellow type
+  changed, grey untracked, orange in conflict. Hover over a file to have it said in words.
+  The history's list of files has the same circles.
 * Choose a file to see its **diff**, with added lines in green and removed lines
   in red, and without git's file headers. Drag over the list to see each file in
   turn. Double-click a file to stage or unstage it. Ctrl and shift select several.
@@ -126,7 +127,7 @@ The **User interface** tab of **File > Settings…** sets:
 - How many commits of the history are read at a time: 500 to start with, from
   50 to 10,000.
 - The colours of added lines, removed lines and hunk headers (the grey
-  `@@ -1,6 +1,7 @@`), in a table.
+  `@@ -1,6 +1,7 @@`), in a table. They start as Solarized's green, red and grey.
 
 The settings are kept in `delta/settings.json` under the system's
 configuration folder (`~/.config` on Linux), along with whether **Force push**

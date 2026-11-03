@@ -102,6 +102,7 @@ func newBranchTab(config settings.Settings) *branchTab {
 // each is shown in turn, where Qt would otherwise select all those passed over.
 func newFileList() *qt.QListWidget {
 	list := qt.NewQListWidget2()
+	setChangeIconSize(list)
 	list.SetSelectionMode(qt.QAbstractItemView__ExtendedSelection)
 	list.SetUniformItemSizes(true)
 	list.OnMouseMoveEvent(func(super func(*qt.QMouseEvent), event *qt.QMouseEvent) {
@@ -137,8 +138,7 @@ func (t *branchTab) setList(list *qt.QListWidget, old, changes []git.Change) {
 	defer func() { t.updating = false }()
 	list.Clear()
 	for _, c := range changes {
-		item := qt.NewQListWidgetItem2(describe(c))
-		item.SetToolTip(explain(c))
+		item := newChangeItem(c)
 		list.AddItemWithItem(item)
 		item.SetSelected(selected[c.Path])
 	}

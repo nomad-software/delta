@@ -19,12 +19,22 @@ const (
 )
 
 // Default colours of a diff: lines added and removed, and the @@ range of a hunk's
-// heading.
+// heading. They are Solarized's green, red and base0 grey, as the circles of
+// changed files are.
 const (
-	DefaultAdded   = "#00a000"
-	DefaultRemoved = "#ff1919"
-	DefaultHunk    = "#808080"
+	DefaultAdded   = "#859900"
+	DefaultRemoved = "#dc322f"
+	DefaultHunk    = "#839496"
 )
+
+// oldDefaults are the default colours before they were Solarized's, each with
+// the one it became: a colour saved that is still one of them was never
+// chosen, so it follows the default.
+var oldDefaults = map[string]string{
+	"#00a000": DefaultAdded,
+	"#ff1919": DefaultRemoved,
+	"#808080": DefaultHunk,
+}
 
 const leastWindowSize = 200
 
@@ -159,9 +169,9 @@ func (s *Settings) normalise() {
 	if s.CodeFontSize < MinCodeFontSize || s.CodeFontSize > MaxCodeFontSize {
 		s.CodeFontSize = 0
 	}
-	s.AddedColour = colourOr(s.AddedColour, d.AddedColour)
-	s.RemovedColour = colourOr(s.RemovedColour, d.RemovedColour)
-	s.HunkColour = colourOr(s.HunkColour, d.HunkColour)
+	s.AddedColour = updated(colourOr(s.AddedColour, d.AddedColour))
+	s.RemovedColour = updated(colourOr(s.RemovedColour, d.RemovedColour))
+	s.HunkColour = updated(colourOr(s.HunkColour, d.HunkColour))
 }
 
 // or returns the sizes if both panes have some, or else the fallback.
@@ -170,6 +180,15 @@ func (p Panes) or(fallback Panes) Panes {
 		return fallback
 	}
 	return p
+}
+
+// updated returns a colour saved, or the default it was if it is one of the old
+// defaults.
+func updated(colour string) string {
+	if newer, ok := oldDefaults[strings.ToLower(colour)]; ok {
+		return newer
+	}
+	return colour
 }
 
 // colourOr returns the colour if it is one, or else the fallback.

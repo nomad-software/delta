@@ -65,8 +65,8 @@ type Window struct {
 	// Force push checkbox.
 	forceToggle *qt.QAction
 	// discard undoes everything not committed.
-	discard *qt.QAction
-	continueRebase, skipRebase, abortRebase               *qt.QAction
+	discard                                 *qt.QAction
+	continueRebase, skipRebase, abortRebase *qt.QAction
 
 	// confirm asks before doing what can't be taken back, and failed tells of a
 	// failure. Tests replace them.
