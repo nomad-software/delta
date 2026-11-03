@@ -67,7 +67,7 @@ merge is shown as what it changed against its first parent.
 
 ### Interactive rebase
 
-Right-click a commit and choose **Interactive Rebase from Here…** to rewrite it
+Right-click a commit and choose **Rebase from here…** to rewrite it
 and the commits after it. A dialog lists them oldest first, as git applies them,
 each with a dropdown of what to do with it:
 

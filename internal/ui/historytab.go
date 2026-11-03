@@ -179,7 +179,7 @@ func (w *Window) historyShown() bool {
 // The uncommitted changes are not a commit to rebase from.
 func (w *Window) commitMenu(c git.Commit) *qt.QMenu {
 	menu := qt.NewQMenu(w.QWidget)
-	rebase := menu.AddActionWithText("&Interactive Rebase from Here…")
+	rebase := menu.AddActionWithText("&Rebase from here…")
 	rebase.SetEnabled(w.repo != nil && !w.busy && c.Hash != git.Uncommitted)
 	rebase.OnTriggered(func() { w.rebaseFrom(c) })
 	return menu

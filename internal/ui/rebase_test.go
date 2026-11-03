@@ -550,8 +550,8 @@ func TestRebaseNeedsACleanTree(t *testing.T) {
 	on(func() {
 		menu := w.commitMenu(git.UncommittedCommit(""))
 		defer menu.DeleteLater()
-		if actions := menu.Actions(); len(actions) != 1 || actions[0].IsEnabled() {
-			t.Error("can rebase from the uncommitted changes")
+		if actions := menu.Actions(); len(actions) != 1 || actions[0].IsEnabled() || actions[0].Text() != "&Rebase from here…" {
+			t.Error("can rebase from the uncommitted changes, or the menu says otherwise")
 		}
 		head, _ := w.repo.Log(1, 0)
 		w.rebaseFrom(head[0])
