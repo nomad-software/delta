@@ -1,4 +1,4 @@
-# <img src="packaging/delta.png" alt="" width="40" height="40"> Delta
+# <img src="internal/appicon/appicon.png" alt="" width="40" height="40"> Delta
 
 A graphical user interface for git, in the spirit of `git gui` and `gitk`.
 Stage and commit your changes, and browse the history as a graph. It is
@@ -140,7 +140,7 @@ interactive rebase dialog.
 On Linux, Delta adds itself to the desktop's applications every time it
 starts, so that it can be opened from the menu and kept in a dock. It writes
 `~/.local/share/applications/delta.desktop` and its icon to
-`~/.local/share/icons/hicolor/128x128/apps/delta.png` (or under
+`~/.local/share/icons/hicolor/256x256/apps/delta.png` (or under
 `$XDG_DATA_HOME`). The entry starts the copy that ran last, wherever it is, which
 is the AppImage if it was run from one.
 
@@ -196,7 +196,7 @@ make install      # installs it in $GOBIN or $(go env GOPATH)/bin, to run from a
 make test         # runs the tests
 make vet          # runs go vet
 make screenshots  # redraws the pictures in docs/
-make icons        # redraws the icons in packaging/, after the icon's code changes
+make icons        # redraws the macOS icon in packaging/, after the icon changes
 make appimage     # builds the AppImage
 make macos        # builds the macOS app, on a Mac
 make clean        # removes ./delta and build/

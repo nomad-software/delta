@@ -76,7 +76,7 @@ func TestInstall(t *testing.T) {
 	if err := Install([]byte("image")); err != nil {
 		t.Fatal(err)
 	}
-	icon := filepath.Join(data, "icons", "hicolor", "128x128", "apps", "delta.png")
+	icon := filepath.Join(data, "icons", "hicolor", "256x256", "apps", "delta.png")
 	if got, err := os.ReadFile(icon); err != nil || string(got) != "image" {
 		t.Errorf("icon %q, %v", got, err)
 	}
@@ -145,5 +145,28 @@ func TestPackagedEntryAgrees(t *testing.T) {
 		if !strings.Contains(string(packaged), line+"\n") {
 			t.Errorf("packaged entry has no %q", line)
 		}
+	}
+}
+
+// TestOldIconIsRemoved checks that the icon written at 128 pixels, before it was
+// 256, is taken away.
+func TestOldIconIsRemoved(t *testing.T) {
+	data := t.TempDir()
+	old := filepath.Join(data, "icons", "hicolor", "128x128", "apps", "delta.png")
+	if err := os.MkdirAll(filepath.Dir(old), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(old, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := install(data, "/app", "app", []byte("icon")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Error("the old icon is still there")
+	}
+	// Nor is it a failure when there is none.
+	if err := install(data, "/app", "app", []byte("icon")); err != nil {
+		t.Error(err)
 	}
 }

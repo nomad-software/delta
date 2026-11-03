@@ -14,13 +14,14 @@ A git GUI in Go with Qt 6 through the miqt bindings, modelled on `git gui`. `pla
 
 ## Packaging
 
-`packaging/` and `.github/workflows/` are adapted from `../prism`: an AppImage built in an Ubuntu 22.04 container with Qt's own 6.9.3, and a macOS app for Apple Silicon with Homebrew's qtbase, both on `v` tags or by hand. The icon is drawn in code (`drawIcon`); `make icons` writes the copies in `packaging/`, and `TestPackagedIconsAreCurrent` says when that is needed. `make screenshots` redraws `docs/`. `main.go` embeds `packaging/delta.png` for the desktop entry, and `TestPackagedEntryAgrees` keeps `packaging/delta.desktop` in step with what is written at start.
+`packaging/` and `.github/workflows/` are adapted from `../prism`: an AppImage built in an Ubuntu 22.04 container with Qt's own 6.9.3, and a macOS app for Apple Silicon with Homebrew's qtbase, both on `v` tags or by hand. The icon (a dark triangle on a sun) is `internal/appicon/appicon.png`, a 256×256 PNG embedded by the `appicon` package, as apemail's is, for the window, the about box and the desktop entry (installed as a 256 pixel icon, the 128 pixel one of old being removed). To change it, replace the file with one of the same size (`TestPNG` checks) and run `make icons`, which draws the macOS app's, `packaging/macos/delta.png`, from it within Apple's margin (`drawMacIcon`); `TestPackagedIconsAreCurrent` says when that is needed. The AppImage copies it as it is (`appimage.sh`). `make screenshots` redraws `docs/`. `TestPackagedEntryAgrees` `TestPackagedEntryAgrees` keeps `packaging/delta.desktop` in step with what is written at start.
 
 ## Layout
 
 * `internal/git`: runs the git command line (`rebase.go` for interactive rebases). No Qt. Tests use real temporary repositories.
 * `internal/diff`: turns git's diff output into what is shown, and what each line is. No Qt.
 * `internal/graph`: lays out commits in lanes for the graph. No Qt.
+* `internal/appicon`: the program's icon, embedded. No Qt.
 * `internal/desktop`: writes the Linux desktop entry and icon, at every start, only when they differ. No Qt.
 * `internal/settings`: the JSON settings, with defaults for unusable values. No Qt.
 * `internal/atomicfile`: replaces a file whole, through a temporary file, for the settings and the desktop entry. No Qt.

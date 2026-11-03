@@ -11,12 +11,12 @@ import (
 )
 
 // packagedIcons are the icons kept for packaging, relative to packaging/, with
-// how each is drawn.
+// how each is drawn from the program's icon. The AppImage has the program's
+// icon as it is.
 var packagedIcons = []struct {
 	path         string
 	size, margin int
 }{
-	{"delta.png", appIconSize, 0},
 	{filepath.Join("macos", "delta.png"), macIconSize, macIconMargin},
 }
 
@@ -24,7 +24,7 @@ var packagedIcons = []struct {
 func saveIcon(t *testing.T, path string, size, margin int) {
 	t.Helper()
 	mainthread.Wait(func() {
-		pixmap := drawIcon(size, margin)
+		pixmap := drawMacIcon(size, margin)
 		defer pixmap.Delete()
 		if !pixmap.Save(path) {
 			t.Errorf("%s could not be written", path)
@@ -58,8 +58,8 @@ func TestWriteIcons(t *testing.T) {
 	}
 }
 
-// TestPackagedIconsAreCurrent says when the code drawing the icon has changed
-// without make icons being run. Another Qt may round a little differently, which
+// TestPackagedIconsAreCurrent says when the icon, or the code drawing it for
+// packaging, has changed without make icons being run. Another Qt may round a little differently, which
 // is not another icon.
 func TestPackagedIconsAreCurrent(t *testing.T) {
 	const tolerance = 0x400
@@ -99,7 +99,7 @@ func TestMacIconHasItsMargin(t *testing.T) {
 	if _, _, _, a := img.At(macIconMargin/2, macIconSize/2).RGBA(); a != 0 {
 		t.Error("the margin is not clear")
 	}
-	if _, _, _, a := img.At(macIconMargin+60, macIconSize/2).RGBA(); a == 0 {
-		t.Error("the tile is clear")
+	if _, _, _, a := img.At(macIconSize/2, macIconSize/2).RGBA(); a == 0 {
+		t.Error("the icon is not in the middle")
 	}
 }

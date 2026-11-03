@@ -99,11 +99,15 @@ export EXTRA_QT_MODULES="waylandcompositor"
 export LDAI_OUTPUT="$OUTPUT" OUTPUT
 export LINUXDEPLOY_OUTPUT_VERSION="$VERSION"
 
+# The icon is the program's own, which it is built with. The tool names it by
+# its file, which must be the entry's Icon.
+cp internal/appicon/appicon.png "$BUILD/delta.png"
+
 "$TOOLS/linuxdeploy-$ARCH.AppImage" \
 	--appdir "$APPDIR" \
 	--executable "$BUILD/delta" \
 	--desktop-file packaging/delta.desktop \
-	--icon-file packaging/delta.png \
+	--icon-file "$BUILD/delta.png" \
 	--custom-apprun packaging/AppRun \
 	--plugin qt
 
