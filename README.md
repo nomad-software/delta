@@ -16,12 +16,14 @@ delta [folder]
 ```
 
 It opens the repository holding the folder given. Without one, it opens the
-repository the current folder is in, or else the one last open. You can open
-another from **File > Open Repository…**.
+repository the current folder is in, or else none, until you open one from
+**File > Open Repository…**. It doesn't remember the last one open.
 
 It starts on the changes. A toolbar under the menus has **New Branch**,
-**Checkout** and **Delete**, then **Pull** and **Push**, then **History**, which
-shows the history in place of the changes until it is pressed again.
+**Checkout** and **Delete**, then **Rescan**, then **Pull** and **Push**, then
+**History**, which shows the history in place of the changes until it is
+pressed again, as **Branch > Show History** (`Ctrl+H`) does. The arrow beside **Push** opens an option to force the push,
+ticked along with the **Force push** checkbox.
 
 ## The changes
 
@@ -48,7 +50,8 @@ not fetched, so you can't overwrite someone else's work without seeing it.
 
 As in `gitk`, the commits of the current branch are listed at the top, newest
 first, with a graph at the left drawing how they branch and merge, and any
-branches and tags at them in brackets. More are read as you scroll to the end.
+branches and tags at them in brackets. They are read 500 at a time (a setting),
+and more as you scroll to the end.
 If anything is not committed yet, an **Uncommitted changes** row comes first,
 staged, unstaged and untracked together.
 
@@ -93,13 +96,23 @@ saying so.
 | Menu   | Items | Shortcuts |
 | ------ | ----- | --------- |
 | File   | Open Repository, Settings, Quit | `Ctrl+O`, `Ctrl+,`, `Ctrl+Q` |
-| Branch | New Branch, Checkout, Rename, Delete, Merge, Abort Merge, Continue Rebase, Skip Commit, Abort Rebase | `Ctrl+N`, `Ctrl+B`, Merge `Ctrl+M` |
-| Commit | Rescan, Stage Changes, Stage Selected, Unstage Selected, Unstage All, Commit, Push, Force Push | `F5`, `Ctrl+Shift+T`, `Ctrl+T`, `Ctrl+U`, `Ctrl+Shift+U`, `Ctrl+Return`, `Ctrl+P`, `Ctrl+Shift+P` |
-| Remote | Fetch, Pull, Push, Force Push, Add Remote, Rename Remote, Change URL, Remove Remote | Fetch `Ctrl+Shift+F`, Pull `Ctrl+Shift+L` |
+| Branch | New Branch, Checkout, Rename, Delete, Show History, Merge, Abort Merge, Continue Rebase, Skip Commit, Abort Rebase, Discard All Changes | `Ctrl+N`, `Ctrl+B`, Show History `Ctrl+H`, Merge `Ctrl+M` |
+| Commit | Rescan, Stage Changes, Stage Selected, Unstage Selected, Unstage All, Commit | `F5`, `Ctrl+Shift+S`, `Ctrl+S`, `Ctrl+U`, `Ctrl+Shift+U`, `Ctrl+Return` |
+| Remote | Fetch, Pull, Push, Force Push, Add Remote, Rename Remote, Change URL, Remove Remote | Fetch `Ctrl+Shift+F`, Pull `Ctrl+Shift+L`, Push `Ctrl+P`, Force Push `Ctrl+Shift+P` |
 | Help   | About | `Ctrl+I` |
+
+Checkout lists every local branch by name, with the current one chosen. Tick **Include remote
+branches** to fetch and list the remote ones too: checking one out makes a local
+branch that tracks it.
 
 Deleting a branch asks first, and asks again if it has commits that have not been
 merged.
+
+**Branch > Discard All Changes…** puts the branch back as if it had just been
+checked out: every change not committed, staged or not, is undone, new files and
+folders are deleted, and a merge in progress is abandoned. Commits, and files
+git ignores, are kept. It asks first, saying how many files it will put back and
+delete, as it can't be undone.
 
 ## Settings
 
@@ -108,12 +121,15 @@ The **User interface** tab of **File > Settings…** sets:
 - The theme: follow the system, light or dark.
 - The font and size of the code (diffs and the commit message). Any installed
   font can be chosen.
+- How many commits of the history are read at a time: 500 to start with, from
+  50 to 10,000.
 - The colours of added lines, removed lines and hunk headers (the grey
   `@@ -1,6 +1,7 @@`), in a table.
 
 The settings are kept in `delta/settings.json` under the system's
-configuration folder (`~/.config` on Linux), along with the size of the window
-and its panes, which are saved when it closes, and of the
+configuration folder (`~/.config` on Linux), along with whether **Force push**
+is ticked, the size of the window and its panes, which are saved when it closes,
+and of the
 interactive rebase dialog.
 
 ## Desktop entry

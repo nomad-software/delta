@@ -27,6 +27,8 @@ type settingsDialog struct {
 	codeFamily  *qt.QFontComboBox
 	codeSize    *qt.QSpinBox
 	codeDefault *qt.QPushButton
+	// historyPage is how many commits of the history are read at a time.
+	historyPage *qt.QSpinBox
 	// defaultFamily and defaultSize are the system's fixed width font, as the
 	// fields show it, which is what is meant when nothing else is chosen.
 	defaultFamily        string
@@ -129,6 +131,15 @@ func newSettingsDialog(parent *qt.QWidget, current settings.Settings, accepted f
 	form.AddRow3("Theme", d.theme.QWidget)
 	form.AddRow4("Code font", codeRow.QLayout)
 
+	d.historyPage = qt.NewQSpinBox2()
+	d.historyPage.SetRange(settings.MinHistoryPageSize, settings.MaxHistoryPageSize)
+	d.historyPage.SetSingleStep(100)
+	d.historyPage.SetSuffix(" commits")
+	// The History section is in the same form, so that its field lines up
+	// with those above it.
+	form.AddRowWithWidget(heading("History").QWidget)
+	form.AddRow3("Commits read at a time", d.historyPage.QWidget)
+
 	page := qt.NewQWidget2()
 	pageLayout := qt.NewQVBoxLayout(page)
 	pageLayout.SetContentsMargins(20, 20, 20, 20)
@@ -197,6 +208,7 @@ func (d *settingsDialog) show(s settings.Settings) {
 		}
 	}
 	d.showFont(s.CodeFont, s.CodeFontSize)
+	d.historyPage.SetValue(s.HistoryPageSize)
 	d.added.set(s.AddedColour)
 	d.removed.set(s.RemovedColour)
 	d.hunk.set(s.HunkColour)
@@ -221,6 +233,7 @@ func (d *settingsDialog) chosen(s settings.Settings) settings.Settings {
 	if size := d.codeSize.Value(); size != d.defaultSize {
 		s.CodeFontSize = size
 	}
+	s.HistoryPageSize = d.historyPage.Value()
 	s.AddedColour = d.added.colour
 	s.RemovedColour = d.removed.colour
 	s.HunkColour = d.hunk.colour

@@ -19,10 +19,11 @@ func TestRoundTrip(t *testing.T) {
 	s.Sidebar, s.Lists, s.Editor = Panes{1, 2}, Panes{3, 4}, Panes{5, 6}
 	s.History, s.HistoryDetail = Panes{7, 8}, Panes{9, 10}
 	s.RebaseWidth, s.RebaseHeight = 900, 600
+	s.ForcePush = true
+	s.HistoryPageSize = 2000
 	s.Theme = ThemeDark
 	s.AddedColour, s.RemovedColour, s.HunkColour = "#010203", "#040506", "#070809"
 	s.CodeFont, s.CodeFontSize = "Some Font", 14
-	s.Repository = "/some/where"
 	if err := s.Save(path); err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +39,7 @@ func TestUnusableValues(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write(`{"width": 5, "height": 5, "sidebar": [0, 10], "lists": [-1, 2], "editor": [3, 0], "history": [0, 1], "historyDetail": [1, -1], "rebaseWidth": 900, "rebaseHeight": 3,
+	write(`{"width": 5, "height": 5, "sidebar": [0, 10], "lists": [-1, 2], "editor": [3, 0], "history": [0, 1], "historyDetail": [1, -1], "rebaseWidth": 900, "rebaseHeight": 3, "historyPageSize": 10,
 		"codeFont": "  ", "codeFontSize": 500, "theme": "purple", "addedColour": "green", "removedColour": "#12", "hunkColour": "grey"}`)
 	if got := Load(path); got != Defaults() {
 		t.Errorf("got %+v", got)
@@ -46,5 +47,23 @@ func TestUnusableValues(t *testing.T) {
 	write("not json")
 	if got := Load(path); got != Defaults() {
 		t.Errorf("got %+v", got)
+	}
+}
+
+func TestHistoryPageSizeBounds(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	for text, want := range map[string]int{
+		`{}`:                         DefaultHistoryPageSize,
+		`{"historyPageSize": 49}`:    DefaultHistoryPageSize,
+		`{"historyPageSize": 50}`:    50,
+		`{"historyPageSize": 10000}`: 10000,
+		`{"historyPageSize": 10001}`: DefaultHistoryPageSize,
+	} {
+		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := Load(path).HistoryPageSize; got != want {
+			t.Errorf("%s gives %d, not %d", text, got, want)
+		}
 	}
 }

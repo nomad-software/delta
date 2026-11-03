@@ -28,6 +28,13 @@ const (
 
 const leastWindowSize = 200
 
+// How many commits of the history can be read at a time, and are by default.
+const (
+	MinHistoryPageSize     = 50
+	MaxHistoryPageSize     = 10000
+	DefaultHistoryPageSize = 500
+)
+
 // The sizes the code's font can be, in points.
 const (
 	MinCodeFontSize = 6
@@ -58,6 +65,14 @@ type Settings struct {
 	RebaseWidth  int `json:"rebaseWidth,omitempty"`
 	RebaseHeight int `json:"rebaseHeight,omitempty"`
 
+	// HistoryPageSize is how many commits of the history are read at a time:
+	// on showing it, and again on scrolling to the end of those read.
+	HistoryPageSize int `json:"historyPageSize"`
+
+	// ForcePush is whether the next push is forced, as the Force push checkbox
+	// says.
+	ForcePush bool `json:"forcePush,omitempty"`
+
 	// Theme is ThemeLight, ThemeDark, or empty to follow the system.
 	Theme string `json:"theme,omitempty"`
 
@@ -72,9 +87,6 @@ type Settings struct {
 	// 0 for that font's size.
 	CodeFont     string `json:"codeFont,omitempty"`
 	CodeFontSize int    `json:"codeFontSize,omitempty"`
-
-	// Repository is the repository last opened.
-	Repository string `json:"repository,omitempty"`
 }
 
 // Defaults returns the settings of a first run.
@@ -90,6 +102,8 @@ func Defaults() Settings {
 		AddedColour:   DefaultAdded,
 		RemovedColour: DefaultRemoved,
 		HunkColour:    DefaultHunk,
+
+		HistoryPageSize: DefaultHistoryPageSize,
 	}
 }
 
@@ -135,6 +149,9 @@ func (s *Settings) normalise() {
 	s.Editor = s.Editor.or(d.Editor)
 	s.History = s.History.or(d.History)
 	s.HistoryDetail = s.HistoryDetail.or(d.HistoryDetail)
+	if s.HistoryPageSize < MinHistoryPageSize || s.HistoryPageSize > MaxHistoryPageSize {
+		s.HistoryPageSize = d.HistoryPageSize
+	}
 	if s.Theme != ThemeLight && s.Theme != ThemeDark {
 		s.Theme = ""
 	}

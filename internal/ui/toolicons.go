@@ -16,7 +16,7 @@ const (
 	toolIconSize = 32
 	// toolButtonWidth is the least width of a toolbar's button, so that one
 	// with a short name is not thinner than the rest.
-	toolButtonWidth = 72
+	toolButtonWidth = 80
 )
 
 // iconShape adds an icon's lines to a path on the grid.
@@ -70,6 +70,16 @@ var (
 		p.LineTo2(10, 16.5)
 		p.MoveTo2(14, 10.5)
 		p.LineTo2(14, 16.5)
+	}
+	// rescanShape is an arrow going round, clockwise, from the left to the
+	// bottom.
+	rescanShape iconShape = func(p *qt.QPainterPath) {
+		p.MoveTo2(4.5, 12)
+		p.ArcTo2(4.5, 4.5, 15, 15, 180, -270)
+		p.LineTo2(10, 19.5)
+		p.MoveTo2(12.5, 17)
+		p.LineTo2(10, 19.5)
+		p.LineTo2(12.5, 22)
 	}
 	// pullShape is an arrow down into a tray.
 	pullShape iconShape = func(p *qt.QPainterPath) {

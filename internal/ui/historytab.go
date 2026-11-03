@@ -16,9 +16,6 @@ import (
 // historyView is where the history is among the window's views.
 const historyView = 1
 
-// historyPageSize is how many commits are read at a time.
-const historyPageSize = 500
-
 // The columns of the list of commits.
 const (
 	colGraph = iota
@@ -52,7 +49,7 @@ type historyTab struct {
 	shownHash    string
 	shownChanges []git.Change
 
-	// pageSize is how many commits are read at a time.
+	// pageSize is how many commits are read at a time, as the settings say.
 	pageSize int
 	// more says that there may be commits beyond those read, and loading that
 	// some are being read.
@@ -69,7 +66,7 @@ type historyTab struct {
 }
 
 func newHistoryTab(config settings.Settings) *historyTab {
-	h := &historyTab{page: qt.NewQWidget2(), pageSize: historyPageSize, stale: true}
+	h := &historyTab{page: qt.NewQWidget2(), pageSize: config.HistoryPageSize, stale: true}
 
 	h.commits = qt.NewQTreeWidget2()
 	h.commits.SetHeaderLabels([]string{"Graph", "Subject", "Author", "Date", "Commit"})

@@ -598,6 +598,22 @@ func (r *Repo) AbortMerge() (string, error) {
 	return r.run("merge", "--abort")
 }
 
+// DiscardChanges puts the work tree and index back as the current branch's
+// last commit has them, as if it had just been checked out: every change to a
+// tracked file is undone, staged or not, untracked files and folders are
+// deleted, and a merge in progress is abandoned. Ignored files are kept. A
+// branch with no commits yet is left with nothing at all.
+func (r *Repo) DiscardChanges() (string, error) {
+	reset := []string{"reset", "--hard", "-q", "HEAD"}
+	if !r.hasCommits() {
+		reset = []string{"read-tree", "--empty"}
+	}
+	if out, err := r.run(reset...); err != nil {
+		return out, err
+	}
+	return r.run("clean", "-f", "-d", "-q")
+}
+
 // Remotes returns the names of the remotes.
 func (r *Repo) Remotes() ([]string, error) {
 	out, err := r.run("remote")

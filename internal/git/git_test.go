@@ -596,3 +596,81 @@ func TestRemotes(t *testing.T) {
 		t.Errorf("remotes %v", rs)
 	}
 }
+
+func TestDiscardChanges(t *testing.T) {
+	r := newRepo(t)
+	write(t, r.Root, ".gitignore", "*.log\n")
+	write(t, r.Root, "kept", "kept\n")
+	git(t, r.Root, "add", ".")
+	git(t, r.Root, "commit", "-q", "-m", "second")
+	write(t, r.Root, "file", "changed\n")
+	write(t, r.Root, "staged", "staged\n")
+	git(t, r.Root, "add", "staged")
+	git(t, r.Root, "rm", "-q", "kept")
+	write(t, r.Root, "untracked", "untracked\n")
+	if err := os.MkdirAll(filepath.Join(r.Root, "dir", "deeper"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, r.Root, "dir/deeper/new", "new\n")
+	write(t, r.Root, "build.log", "ignored\n")
+	if _, err := r.DiscardChanges(); err != nil {
+		t.Fatal(err)
+	}
+	if s := status(t, r); len(s.Staged)+len(s.Unstaged) != 0 {
+		t.Errorf("left %+v", s)
+	}
+	if got := git(t, r.Root, "show", "HEAD:file"); got != "one\n" {
+		t.Errorf("file is %q", got)
+	}
+	for _, gone := range []string{"untracked", "dir", "staged"} {
+		if _, err := os.Stat(filepath.Join(r.Root, gone)); !os.IsNotExist(err) {
+			t.Errorf("%s is still there", gone)
+		}
+	}
+	for _, there := range []string{"kept", "build.log"} {
+		if _, err := os.Stat(filepath.Join(r.Root, there)); err != nil {
+			t.Errorf("%s is gone", there)
+		}
+	}
+	if got := strings.TrimSpace(git(t, r.Root, "log", "-1", "--format=%s")); got != "second" {
+		t.Errorf("HEAD is %q", got)
+	}
+}
+
+func TestDiscardChangesAbandonsAMerge(t *testing.T) {
+	r := newRepo(t)
+	git(t, r.Root, "switch", "-q", "-c", "topic")
+	write(t, r.Root, "file", "theirs\n")
+	git(t, r.Root, "commit", "-qam", "theirs")
+	git(t, r.Root, "switch", "-q", "main")
+	write(t, r.Root, "file", "ours\n")
+	git(t, r.Root, "commit", "-qam", "ours")
+	if _, err := r.Merge("topic"); err == nil {
+		t.Fatal("no conflict")
+	}
+	if _, err := r.DiscardChanges(); err != nil {
+		t.Fatal(err)
+	}
+	if s := status(t, r); s.Merging || len(s.Unstaged)+len(s.Staged) != 0 {
+		t.Errorf("status %+v", s)
+	}
+}
+
+func TestDiscardChangesOnUnbornBranch(t *testing.T) {
+	isolate(t)
+	dir := t.TempDir()
+	git(t, dir, "init", "-q", "-b", "main")
+	write(t, dir, "staged", "staged\n")
+	git(t, dir, "add", "staged")
+	write(t, dir, "untracked", "untracked\n")
+	r, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.DiscardChanges(); err != nil {
+		t.Fatal(err)
+	}
+	if s := status(t, r); len(s.Staged)+len(s.Unstaged) != 0 {
+		t.Errorf("left %+v", s)
+	}
+}

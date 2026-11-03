@@ -193,14 +193,116 @@ func (w *Window) checkoutBranch() {
 	if !ok {
 		return
 	}
-	items := append(without(local, w.status.Branch), remote...)
-	if len(items) == 0 {
-		w.failed("Checkout", "There are no other branches.")
+	if len(local)+len(remote) == 0 {
+		w.failed("Checkout", "There are no branches yet.")
 		return
 	}
-	if name, ok := askChoice(w.QWidget, "Checkout", "Branch", items); ok {
-		w.checkout(name, !slices.Contains(local, name))
+	r := w.repo
+	fetched := false
+	fetch := func() ([]string, error) {
+		fetched = true
+		if _, err := r.Fetch(); err != nil {
+			return nil, err
+		}
+		_, remote, err := r.Branches()
+		return remote, err
 	}
+	d, branch, _ := newCheckoutDialog(w.QWidget, w.status.Branch, local, remote, fetch)
+	if d.run() {
+		name := branch.CurrentText()
+		w.checkout(name, !slices.Contains(local, name))
+	} else if fetched {
+		// What was fetched changes how far the branch is from its upstream.
+		w.rescanRepository()
+	}
+}
+
+// newCheckoutDialog returns the dialog asking which branch to check out, its
+// list of them, and its checkbox: the list has the local branches, with the
+// current one chosen, and the remote ones after them while the checkbox is
+// ticked, each in order of name.
+// OK is enabled only while a branch other than the current one is chosen, as
+// there is nothing to do otherwise. Ticking it the first time fetches, in the
+// background, and lists the remote branches that gives, or, if it fails, says
+// why and lists those already known.
+func newCheckoutDialog(parent *qt.QWidget, current string, local, remote []string, fetch func() ([]string, error)) (*formDialog, *qt.QComboBox, *qt.QCheckBox) {
+	local, remote = byName(local), byName(remote)
+	d := newFormDialog(parent, "Checkout")
+	branch := d.addChoice("Branch", local)
+	branch.SetCurrentIndex(max(branch.FindText(current), 0))
+	withRemote := qt.NewQCheckBox3("Include remote branches")
+	d.form.AddRowWithWidget(withRemote.QWidget)
+	note := qt.NewQLabel2()
+	note.SetTextFormat(qt.PlainText)
+	note.SetWordWrap(true)
+	note.Hide()
+	d.form.AddRowWithWidget(note.QWidget)
+	fetching := false
+	d.fieldsValid = append(d.fieldsValid, func() bool {
+		return !fetching && branch.Count() > 0 && branch.CurrentText() != current
+	})
+	branch.OnCurrentIndexChanged(func(int) { d.check() })
+	fill := func() {
+		chosen := branch.CurrentText()
+		branch.Clear()
+		branch.AddItems(local)
+		if withRemote.IsChecked() {
+			branch.AddItems(remote)
+		}
+		// A branch no longer listed gives way to the current one.
+		at := branch.FindText(chosen)
+		if at < 0 {
+			at = branch.FindText(current)
+		}
+		branch.SetCurrentIndex(max(at, 0))
+		d.check()
+	}
+	fetched := false
+	withRemote.OnToggled(func(on bool) {
+		if !on || fetched {
+			fill()
+			return
+		}
+		fetched, fetching = true, true
+		branch.SetEnabled(false)
+		withRemote.SetEnabled(false)
+		note.SetText("Fetching…")
+		note.Show()
+		d.check()
+		go func() {
+			got, err := fetch()
+			mainthread.Start(func() {
+				if d.finished {
+					return
+				}
+				fetching = false
+				branch.SetEnabled(true)
+				withRemote.SetEnabled(true)
+				switch {
+				case err != nil:
+					note.SetText("Fetching failed, so these are the remote branches as last fetched: " + firstLine(err.Error()))
+				case len(got) == 0:
+					note.SetText("There are no remote branches.")
+					remote = nil
+				default:
+					note.Hide()
+					remote = byName(got)
+				}
+				fill()
+			})
+		}()
+	})
+	d.check()
+	return d, branch, withRemote
+}
+
+// byName returns the names in order, ignoring case.
+func byName(names []string) []string {
+	names = slices.Clone(names)
+	slices.SortStableFunc(names, func(a, b string) int {
+		return strings.Compare(strings.ToLower(a), strings.ToLower(b))
+	})
+	return names
 }
 
 // checkout switches to a branch.
@@ -455,6 +557,64 @@ func (w *Window) rebaseStep(name string, op func() (string, error)) {
 			w.say(strings.TrimSpace(name + " done. " + lastLine(out)))
 		}
 	})
+}
+
+// discardChanges undoes everything not committed, once that is confirmed, as
+// it can't be taken back: the branch is left as if just checked out.
+func (w *Window) discardChanges() {
+	r := w.repo
+	if r == nil || w.busy {
+		return
+	}
+	// A file new to the index is deleted as much as one untracked is, as the
+	// last commit has neither.
+	changed, added := map[string]bool{}, map[string]bool{}
+	for _, c := range slices.Concat(w.status.Staged, w.status.Unstaged) {
+		if c.Code == git.Untracked || c.Code == 'A' {
+			added[c.Path] = true
+		}
+	}
+	for _, c := range slices.Concat(w.status.Staged, w.status.Unstaged) {
+		if !added[c.Path] {
+			changed[c.Path] = true
+		}
+	}
+	branch := w.status.Branch
+	if branch == "" {
+		branch = "the detached HEAD"
+	}
+	var what []string
+	if n := len(changed); n > 0 {
+		what = append(what, plural(n, "changed file")+" will be put back as last committed")
+	}
+	if n := len(added); n > 0 {
+		what = append(what, plural(n, "new file")+" will be deleted")
+	}
+	if w.status.Merging {
+		what = append(what, "the merge in progress will be abandoned")
+	}
+	text := fmt.Sprintf("Discard all changes to %s?\n\n%s. Files ignored by git are kept.\n\nThis can't be undone.",
+		branch, upperFirst(strings.Join(what, ", and ")))
+	if !w.confirm("Discard All Changes", text) {
+		return
+	}
+	w.run("Discard All Changes", r.DiscardChanges, nil)
+}
+
+// plural returns how many of a thing there are, with the thing's name.
+func plural(n int, name string) string {
+	if n == 1 {
+		return "1 " + name
+	}
+	return fmt.Sprintf("%d %ss", n, name)
+}
+
+// upperFirst returns the text with its first letter a capital.
+func upperFirst(text string) string {
+	if text == "" {
+		return text
+	}
+	return strings.ToUpper(text[:1]) + text[1:]
 }
 
 // doAbortRebase abandons the rebase in progress once that is confirmed.

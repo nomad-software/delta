@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -148,15 +149,44 @@ func TestLayout(t *testing.T) {
 			if width := w.toolbar.WidgetForAction(a).MinimumWidth(); width != toolButtonWidth {
 				t.Errorf("%q is at least %d wide", a.IconText(), width)
 			}
+			// Its tooltip is never shown: the event asking for it is taken.
+			button := w.toolbar.WidgetForAction(a)
+			at := qt.NewQPoint2(button.Width()/2, button.Height()/2)
+			tip := qt.NewQHelpEvent(qt.QEvent__ToolTip, at, button.MapToGlobalWithQPoint(at))
+			if qt.QCoreApplication_SendEvent(button.QObject, tip.QEvent) && qt.QToolTip_IsVisible() {
+				t.Errorf("%q shows a tooltip", a.IconText())
+			}
+			if !qt.QCoreApplication_SendEvent(button.QObject, tip.QEvent) {
+				t.Errorf("%q's tooltip event was not taken", a.IconText())
+			}
+			tip.Delete()
+			at.Delete()
 			if a.Icon().IsNull() {
 				t.Errorf("%q has no icon", a.IconText())
 			}
 		}
-		if want := []string{"New Branch", "Checkout", "Delete", "|", "Pull", "Push", "|", "History"}; !slices.Equal(buttons, want) {
+		if want := []string{"New Branch", "Checkout", "Delete", "|", "Rescan", "|", "Pull", "Push", "|", "History"}; !slices.Equal(buttons, want) {
 			t.Errorf("buttons %q", buttons)
 		}
 		if size := w.toolbar.IconSize(); size.Width() != 32 || size.Height() != 32 || w.toolbar.ToolButtonStyle() != qt.ToolButtonTextUnderIcon || w.toolbar.IsMovable() {
 			t.Errorf("toolbar of %dx%d, style %v", size.Width(), size.Height(), w.toolbar.ToolButtonStyle())
+		}
+		// Push's arrow opens a menu to force the push, and only Push has one.
+		for _, a := range w.toolbar.Actions() {
+			if a.IsSeparator() {
+				continue
+			}
+			button := qt.UnsafeNewQToolButton(w.toolbar.WidgetForAction(a).UnsafePointer())
+			menu := button.Menu()
+			if a.UnsafePointer() != w.pushButton.UnsafePointer() {
+				if menu != nil {
+					t.Errorf("%q has a menu", a.IconText())
+				}
+				continue
+			}
+			if button.PopupMode() != qt.QToolButton__MenuButtonPopup || menu == nil || len(menu.Actions()) != 1 || menu.Actions()[0].UnsafePointer() != w.forceToggle.UnsafePointer() {
+				t.Errorf("Push's mode is %v, menu %v", button.PopupMode(), menu)
+			}
 		}
 		if !w.showHistory.IsCheckable() || w.showHistory.IsChecked() || w.historyShown() {
 			t.Error("the history is shown to start with, or can't be")
@@ -167,6 +197,24 @@ func TestLayout(t *testing.T) {
 		}
 		if want := []string{"File", "Branch", "Commit", "Remote", "Help"}; !slices.Equal(menus, want) {
 			t.Errorf("menus %v", menus)
+		}
+		// Staging is on S, as unstaging is on U.
+		for a, want := range map[*qt.QAction]string{w.stageAll: "Ctrl+Shift+S", w.stageSelected: "Ctrl+S", w.unstageSelected: "Ctrl+U", w.unstageAll: "Ctrl+Shift+U"} {
+			if got := a.Shortcut().ToString(); got != want {
+				t.Errorf("%q is on %q, not %q", a.Text(), got, want)
+			}
+		}
+		// Pushing is in the Remote menu, not the Commit menu.
+		for a, want := range map[*qt.QAction][]string{w.push: {"Remote"}, w.forcePush: {"Remote"}} {
+			var in []string
+			for _, o := range a.AssociatedObjects() {
+				if o.Inherits("QMenu") {
+					in = append(in, strings.ReplaceAll(qt.UnsafeNewQMenu(o.UnsafePointer()).Title(), "&", ""))
+				}
+			}
+			if !slices.Equal(in, want) {
+				t.Errorf("%q is in the menus %q", a.Text(), in)
+			}
 		}
 		for _, b := range []struct {
 			button *qt.QPushButton
@@ -400,24 +448,148 @@ func TestForcePush(t *testing.T) {
 	on(func() { w.tab.push.Click() })
 	waitFor(t, "the refusal", func() bool { return len(w.failures) == 1 && !w.busy })
 
-	// Saying no does nothing.
+	// The option of the toolbar's Push ticks the checkbox, and both buttons
+	// say they force. Saying no does nothing.
 	on(func() {
-		w.tab.force.SetChecked(true)
-		if w.tab.push.Text() != "Force Push" {
-			t.Errorf("button %q", w.tab.push.Text())
+		w.forceToggle.Trigger()
+		if !w.tab.force.IsChecked() || w.tab.push.Text() != "Force Push" || w.pushButton.IconText() != "Force Push" {
+			t.Errorf("checkbox %v, buttons %q, %q", w.tab.force.IsChecked(), w.tab.push.Text(), w.pushButton.IconText())
 		}
 		w.answer = false
 		w.tab.push.Click()
 		if w.busy || len(w.asked) != 1 {
 			t.Errorf("busy %v, asked %v", w.busy, w.asked)
 		}
+		// Unticking the checkbox unticks the option, and ticking it again
+		// ticks it.
+		w.tab.force.SetChecked(false)
+		if w.forceToggle.IsChecked() || w.pushButton.IconText() != "Push" {
+			t.Errorf("option %v, toolbar %q", w.forceToggle.IsChecked(), w.pushButton.IconText())
+		}
+		w.tab.force.SetChecked(true)
+		if !w.forceToggle.IsChecked() {
+			t.Error("the option is not ticked with the checkbox")
+		}
+		// The Remote menu's Push, on Ctrl+P, never forces: it is refused, as
+		// the branch has diverged, without asking.
+		w.push.Trigger()
+	})
+	waitFor(t, "the menu's push to be refused", func() bool { return !w.busy && len(w.failures) == 2 })
+	on(func() {
+		if len(w.asked) != 1 || !w.tab.force.IsChecked() {
+			t.Errorf("asked %q, force ticked %v", w.asked, w.tab.force.IsChecked())
+		}
 		w.answer = true
-		w.tab.push.Click()
+		w.pushButton.Trigger()
 	})
 	waitFor(t, "the force push", func() bool { return !w.busy && w.status.Behind == 0 && w.status.Ahead == 0 })
 	on(func() {
-		if w.tab.force.IsChecked() || w.tab.push.Text() != "Push" {
+		if w.tab.force.IsChecked() || w.forceToggle.IsChecked() || w.tab.push.Text() != "Push" || w.pushButton.IconText() != "Push" {
 			t.Error("force is still on after pushing")
+		}
+		if len(w.asked) != 2 {
+			t.Errorf("asked %q", w.asked)
+		}
+	})
+}
+
+// TestForcePushIsRemembered checks that whether Force push is ticked is saved
+// on closing, and ticked again on starting, with the toolbar's option and the
+// buttons saying so.
+func TestForcePushIsRemembered(t *testing.T) {
+	dir := newRepo(t)
+	w := newTestWindow(t, dir)
+	on(func() {
+		if w.tab.force.IsChecked() || w.forceToggle.IsChecked() {
+			t.Error("force push is ticked to start with")
+		}
+		w.forceToggle.Trigger()
+		w.Close()
+	})
+	if !settings.Load(w.path).ForcePush {
+		t.Fatal("force push was not saved")
+	}
+	again := newTestWindowAt(t, dir, w.path)
+	on(func() {
+		if !again.tab.force.IsChecked() || !again.forceToggle.IsChecked() || again.pushButton.IconText() != "Force Push" || again.tab.push.Text() != "Force Push" {
+			t.Errorf("checkbox %v, option %v, buttons %q %q", again.tab.force.IsChecked(), again.forceToggle.IsChecked(), again.pushButton.IconText(), again.tab.push.Text())
+		}
+		again.tab.force.SetChecked(false)
+		again.Close()
+	})
+	if settings.Load(w.path).ForcePush {
+		t.Error("unticking force push was not saved")
+	}
+}
+
+// TestDiscardAllChanges checks that discarding asks first, saying what will be
+// lost, does nothing if declined, and else leaves the branch as committed.
+func TestDiscardAllChanges(t *testing.T) {
+	dir := newRepo(t)
+	w := newTestWindow(t, dir)
+	waitFor(t, "the status", func() bool { return w.idleWith(0, 0) && w.status.Branch == "main" })
+	on(func() {
+		if w.discard.IsEnabled() {
+			t.Error("can discard with nothing changed")
+		}
+	})
+	writeFile(t, dir, "file", "changed\n")
+	writeFile(t, dir, "staged", "staged\n")
+	runGit(t, dir, "add", "staged")
+	writeFile(t, dir, "untracked", "new\n")
+	on(w.rescanRepository)
+	waitFor(t, "the changes", func() bool { return w.idleWith(2, 1) })
+	on(func() {
+		if !w.discard.IsEnabled() {
+			t.Fatal("can't discard")
+		}
+		w.answer = false
+		w.discard.Trigger()
+		if w.busy || len(w.asked) != 1 {
+			t.Fatalf("busy %v, asked %q", w.busy, w.asked)
+		}
+		want := "Discard all changes to main?\n\n1 changed file will be put back as last committed, and 2 new files will be deleted. Files ignored by git are kept.\n\nThis can't be undone."
+		if w.asked[0] != want {
+			t.Errorf("asked %q", w.asked[0])
+		}
+	})
+	if _, err := os.Stat(filepath.Join(dir, "untracked")); err != nil {
+		t.Fatal("declining deleted a file")
+	}
+	on(func() {
+		w.answer = true
+		w.discard.Trigger()
+	})
+	waitFor(t, "the discard", func() bool { return !w.busy && w.idleWith(0, 0) })
+	if data, _ := os.ReadFile(filepath.Join(dir, "file")); string(data) != "one\ntwo\nthree\n" {
+		t.Errorf("file is %q", data)
+	}
+	on(func() {
+		if w.discard.IsEnabled() {
+			t.Error("can discard again with nothing changed")
+		}
+	})
+}
+
+// TestHistoryPageSizeSetting checks that the history reads as many commits at a
+// time as the settings say, from starting and once changed.
+func TestHistoryPageSizeSetting(t *testing.T) {
+	dir := historyRepo(t, 5)
+	path := filepath.Join(t.TempDir(), "settings.json")
+	s := settings.Defaults()
+	s.HistoryPageSize = 50
+	if err := s.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	w := newTestWindowAt(t, dir, path)
+	on(func() {
+		if w.history.pageSize != 50 {
+			t.Errorf("reads %d at a time", w.history.pageSize)
+		}
+		s.HistoryPageSize = 700
+		w.applySettings(s)
+		if w.history.pageSize != 700 || settings.Load(path).HistoryPageSize != 700 {
+			t.Errorf("reads %d at a time once changed, saved %d", w.history.pageSize, settings.Load(path).HistoryPageSize)
 		}
 	})
 }
@@ -461,6 +633,125 @@ func TestBranchOperations(t *testing.T) {
 // TestDeletingABranchRunsInTheBackground checks that git is not run on the main
 // thread, which would hold up the window, and that nothing else can start
 // meanwhile. A branch with nothing of its own is deleted after one answer.
+// TestCheckoutDialog checks that every local branch is offered, in order of
+// name, with the current one chosen, which can't be checked out again, and the
+// remote ones after them, in order too, only once asked for, which fetches
+// first, keeping the branch chosen. A repository with
+// one branch has it in the list, which was empty when the current branch was
+// left out.
+func TestCheckoutDialog(t *testing.T) {
+	texts := func(c *qt.QComboBox) []string {
+		var all []string
+		for i := range c.Count() {
+			all = append(all, c.ItemText(i))
+		}
+		return all
+	}
+	fetches := 0
+	fetch := func() ([]string, error) {
+		fetches++
+		return []string{"origin/topic", "origin/Beta", "origin/main"}, nil
+	}
+	var d *formDialog
+	var branch *qt.QComboBox
+	var withRemote *qt.QCheckBox
+	on(func() {
+		d, branch, withRemote = newCheckoutDialog(nil, "main", []string{"topic", "main", "Zed", "apple"}, []string{"origin/old"}, fetch)
+		if withRemote.Text() != "Include remote branches" || withRemote.IsChecked() {
+			t.Fatal("no checkbox for the remote branches, or it starts ticked")
+		}
+		if got := texts(branch); !slices.Equal(got, []string{"apple", "main", "topic", "Zed"}) || branch.CurrentText() != "main" || d.ok.IsEnabled() {
+			t.Errorf("local %q, chosen %q, OK %v", got, branch.CurrentText(), d.ok.IsEnabled())
+		}
+		branch.SetCurrentIndex(2)
+		if !d.ok.IsEnabled() {
+			t.Error("can't check out another branch")
+		}
+		withRemote.SetChecked(true)
+		if branch.IsEnabled() || d.ok.IsEnabled() {
+			t.Error("the list can be used while fetching")
+		}
+	})
+	waitFor(t, "the fetch", func() bool { return branch.IsEnabled() })
+	on(func() {
+		if got := texts(branch); !slices.Equal(got, []string{"apple", "main", "topic", "Zed", "origin/Beta", "origin/main", "origin/topic"}) || branch.CurrentText() != "topic" {
+			t.Errorf("with remote %q, chosen %q", got, branch.CurrentText())
+		}
+		branch.SetCurrentIndex(5)
+		withRemote.SetChecked(false)
+		if got := branch.CurrentText(); got != "main" || d.ok.IsEnabled() {
+			t.Errorf("chose %q once the remote ones went, OK %v", got, d.ok.IsEnabled())
+		}
+		// Ticking it again lists what was fetched, without fetching again.
+		withRemote.SetChecked(true)
+		if got := texts(branch); len(got) != 7 || fetches != 1 {
+			t.Errorf("again %q after %d fetches", got, fetches)
+		}
+		d.DeleteLater()
+
+		// The only branch is there, though there is nothing else to choose.
+		one, only, _ := newCheckoutDialog(nil, "master", []string{"master"}, nil, fetch)
+		defer one.DeleteLater()
+		if got := texts(only); !slices.Equal(got, []string{"master"}) || one.ok.IsEnabled() {
+			t.Errorf("one branch: %q, OK %v", got, one.ok.IsEnabled())
+		}
+	})
+
+	// A failed fetch says so, and lists the remote branches already known.
+	var failing *qt.QComboBox
+	var failingBox *qt.QCheckBox
+	on(func() {
+		var fd *formDialog
+		fd, failing, failingBox = newCheckoutDialog(nil, "main", []string{"main"}, []string{"origin/old"}, func() ([]string, error) {
+			return nil, errors.New("could not resolve host")
+		})
+		t.Cleanup(func() { on(fd.DeleteLater) })
+		failingBox.SetChecked(true)
+	})
+	waitFor(t, "the failed fetch", func() bool { return failing.IsEnabled() })
+	on(func() {
+		if got := texts(failing); !slices.Equal(got, []string{"main", "origin/old"}) {
+			t.Errorf("after a failed fetch %q", got)
+		}
+	})
+}
+
+// TestFirstTextFieldHasTheFocus checks that a dialog opens with the cursor in
+// its first field of text, as in New Branch's name, not on OK, which the focus
+// went to as it is made first, nor on a list before it, as in Rename Branch.
+func TestFirstTextFieldHasTheFocus(t *testing.T) {
+	var d *formDialog
+	var name *qt.QLineEdit
+	on(func() {
+		d = newFormDialog(nil, "Rename Branch")
+		d.addChoice("Branch", []string{"main", "topic"})
+		name = d.addText("New name", "", notEmpty)
+		d.addText("Another", "", notEmpty)
+		d.Show()
+		d.ActivateWindow()
+	})
+	t.Cleanup(func() { on(func() { d.Hide(); d.DeleteLater() }) })
+	waitFor(t, "the dialog to be active", func() bool { return d.IsActiveWindow() })
+	waitFor(t, "the name to have the focus", name.HasFocus)
+}
+
+// TestFormFieldsFillTheDialog checks that a dialog's fields are as wide as it
+// is, as a list of branches was too short on a style that keeps them narrow.
+func TestFormFieldsFillTheDialog(t *testing.T) {
+	on(func() {
+		d, branch, _ := newCheckoutDialog(nil, "main", []string{"main"}, nil, nil)
+		defer d.DeleteLater()
+		d.Show()
+		if policy := d.form.FieldGrowthPolicy(); policy != qt.QFormLayout__AllNonFixedFieldsGrow {
+			t.Errorf("fields grow by %v", policy)
+		}
+		if branch.Width() < d.Width()/2 {
+			t.Errorf("the list is %d wide in a dialog %d wide", branch.Width(), d.Width())
+		}
+		d.Hide()
+	})
+}
+
 func TestDeletingABranchRunsInTheBackground(t *testing.T) {
 	dir := newRepo(t)
 	runGit(t, dir, "branch", "topic")
@@ -653,7 +944,6 @@ func TestSettingsDialog(t *testing.T) {
 		current := settings.Defaults()
 		current.Theme = settings.ThemeDark
 		current.AddedColour = "#123456"
-		current.Repository = "/kept"
 		var got settings.Settings
 		d := newSettingsDialog(nil, current, func(s settings.Settings) { got = s })
 		defer d.Delete()
@@ -663,10 +953,14 @@ func TestSettingsDialog(t *testing.T) {
 		if d.theme.CurrentText() != "Dark" || d.theme.Count() != 3 || d.added.colour != "#123456" {
 			t.Errorf("shown as %q, %s", d.theme.CurrentText(), d.added.colour)
 		}
+		if d.historyPage.Value() != settings.DefaultHistoryPageSize {
+			t.Errorf("history page %d", d.historyPage.Value())
+		}
 		d.theme.SetCurrentIndex(1)
 		d.removed.set("#abcdef")
+		d.historyPage.SetValue(1200)
 		d.box.Button(qt.QDialogButtonBox__Ok).Click()
-		if got.Theme != settings.ThemeLight || got.RemovedColour != "#abcdef" || got.Repository != "/kept" {
+		if got.Theme != settings.ThemeLight || got.RemovedColour != "#abcdef" || got.HistoryPageSize != 1200 {
 			t.Errorf("chosen %+v", got)
 		}
 		d.box.Button(qt.QDialogButtonBox__RestoreDefaults).Click()
@@ -795,9 +1089,36 @@ func TestColourTable(t *testing.T) {
 	})
 }
 
+// testHistoryMenu checks that the Branch menu's Show History, on Ctrl+H, is the
+// toolbar's History, and is ticked while the history is shown.
+func testHistoryMenu(t *testing.T) {
+	dir := newRepo(t)
+	w := newTestWindow(t, dir)
+	on(func() {
+		var in []string
+		for _, o := range w.showHistory.AssociatedObjects() {
+			if o.Inherits("QMenu") {
+				in = append(in, strings.ReplaceAll(qt.UnsafeNewQMenu(o.UnsafePointer()).Title(), "&", ""))
+			}
+		}
+		if !slices.Contains(in, "Branch") || w.showHistory.Text() != "Show &History" || w.showHistory.Shortcut().ToString() != "Ctrl+H" {
+			t.Errorf("in %q as %q on %q", in, w.showHistory.Text(), w.showHistory.Shortcut().ToString())
+		}
+		w.showHistory.Trigger()
+		if !w.historyShown() || !w.showHistory.IsChecked() {
+			t.Error("Show History did not show the history")
+		}
+		w.showHistory.Trigger()
+		if w.historyShown() {
+			t.Error("Show History did not hide the history")
+		}
+	})
+}
+
 // TestHistoryButton checks that the History button shows the history in place
 // of the changes, and the changes again.
 func TestHistoryButton(t *testing.T) {
+	t.Run("menu", testHistoryMenu)
 	dir := newRepo(t)
 	writeFile(t, dir, "file", "changed\n")
 	w := newTestWindow(t, dir)
@@ -844,9 +1165,6 @@ func TestSizesAreSaved(t *testing.T) {
 	if got.Sidebar[0] != 222 {
 		t.Errorf("sidebar %v", got.Sidebar)
 	}
-	if got.Repository != w.repo.Root {
-		t.Errorf("repository %q", got.Repository)
-	}
 
 	// A new window opens with them.
 	again := newTestWindowAt(t, dir, w.path)
@@ -858,10 +1176,15 @@ func TestSizesAreSaved(t *testing.T) {
 	})
 }
 
+// TestNoRepository checks that started outside a repository, with none named,
+// none is opened, not even one a settings file of an older version remembers.
 func TestNoRepository(t *testing.T) {
 	outside := t.TempDir()
+	remembered := newRepo(t)
+	path := filepath.Join(t.TempDir(), "settings.json")
+	writeFile(t, filepath.Dir(path), "settings.json", fmt.Sprintf(`{"repository": %q}`, remembered))
 	t.Chdir(outside)
-	w := newTestWindow(t, "")
+	w := newTestWindowAt(t, "", path)
 	on(func() {
 		if w.repo != nil {
 			t.Fatalf("opened %q", w.repo.Root)

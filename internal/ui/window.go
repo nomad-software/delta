@@ -54,6 +54,14 @@ type Window struct {
 	unstageAll, commit, push, forcePush, abortMerge, open *qt.QAction
 	newBranchAction, checkoutAction, deleteAction, pull   *qt.QAction
 	showHistory                                           *qt.QAction
+	// pushButton is what the Push buttons do: push, forcing it if Force push
+	// is ticked, where the Remote menu's Push, on Ctrl+P, never forces.
+	pushButton *qt.QAction
+	// forceToggle is the toolbar's Push's option to force it, ticked with the
+	// Force push checkbox.
+	forceToggle *qt.QAction
+	// discard undoes everything not committed.
+	discard *qt.QAction
 	continueRebase, skipRebase, abortRebase               *qt.QAction
 
 	// confirm asks before doing what can't be taken back, and failed tells of a
@@ -89,6 +97,8 @@ func NewWindow(path string) *Window {
 	w.applyCodeFont()
 	w.connect()
 	w.connectHistory()
+	// Once joined up, so that the toolbar's option and the buttons follow.
+	w.tab.force.SetChecked(w.config.ForcePush)
 	w.showTitle()
 	w.updateActions()
 
@@ -100,7 +110,8 @@ func NewWindow(path string) *Window {
 }
 
 // Start shows the window with a repository: the one named by the argument if
-// there is one, or else the one the current folder is in, or the one last open.
+// there is one, or else the one the current folder is in, or else none, until
+// one is opened from the File menu. The one last open is not remembered.
 func (w *Window) Start(argument string) {
 	if w.config.Maximized {
 		w.ShowMaximized()
@@ -119,9 +130,6 @@ func (w *Window) Start(argument string) {
 		return
 	}
 	if cwd, err := os.Getwd(); err == nil && w.openRepository(cwd) == nil {
-		return
-	}
-	if w.config.Repository != "" && w.openRepository(w.config.Repository) == nil {
 		return
 	}
 	w.say("Open a repository from the File menu.")
@@ -164,14 +172,10 @@ func (w *Window) say(message string) {
 // each the action of a menu, but History, which shows the history in place of
 // the changes while it is on.
 func (w *Window) makeToolBar() {
-	w.showHistory = qt.NewQAction5("History", w.QObject)
-	w.showHistory.SetCheckable(true)
-	w.showHistory.SetToolTip("Show the history in place of the changes")
-	w.showHistory.OnToggled(w.setHistoryShown)
 
 	for a, shape := range map[*qt.QAction]iconShape{
 		w.newBranchAction: newBranchShape, w.checkoutAction: checkoutShape, w.deleteAction: deleteShape,
-		w.pull: pullShape, w.push: pushShape, w.showHistory: historyShape,
+		w.rescan: rescanShape, w.pull: pullShape, w.push: pushShape, w.pushButton: pushShape, w.showHistory: historyShape,
 	} {
 		icon := toolIcon(shape)
 		a.SetIcon(icon)
@@ -181,6 +185,7 @@ func (w *Window) makeToolBar() {
 	w.newBranchAction.SetIconText("New Branch")
 	w.checkoutAction.SetIconText("Checkout")
 	w.deleteAction.SetIconText("Delete")
+	w.showHistory.SetIconText("History")
 
 	w.toolbar = qt.NewQToolBar4("Buttons", w.QWidget)
 	w.toolbar.SetMovable(false)
@@ -188,14 +193,33 @@ func (w *Window) makeToolBar() {
 	size := qt.NewQSize2(toolIconSize, toolIconSize)
 	defer size.Delete()
 	w.toolbar.SetIconSize(size)
-	for _, a := range []*qt.QAction{w.newBranchAction, w.checkoutAction, w.deleteAction, nil, w.pull, w.push, nil, w.showHistory} {
+	// The buttons have no tooltips. Qt gives a button its action's name as one
+	// whatever is set, so the toolbar takes the event that would show it.
+	noTips := qt.NewQObject2(w.toolbar.QObject)
+	noTips.OnEventFilter(func(super func(*qt.QObject, *qt.QEvent) bool, watched *qt.QObject, event *qt.QEvent) bool {
+		return event.Type() == qt.QEvent__ToolTip || super(watched, event)
+	})
+	for _, a := range []*qt.QAction{w.newBranchAction, w.checkoutAction, w.deleteAction, nil, w.rescan, nil, w.pull, w.pushButton, nil, w.showHistory} {
 		if a == nil {
 			w.toolbar.AddSeparator()
 			continue
 		}
 		w.toolbar.QWidget.AddAction(a)
-		w.toolbar.WidgetForAction(a).SetMinimumWidth(toolButtonWidth)
+		button := w.toolbar.WidgetForAction(a)
+		button.SetMinimumWidth(toolButtonWidth)
+		button.InstallEventFilter(noTips)
 	}
+	// Push is split: its arrow opens a menu with an option to force the push,
+	// ticked with the Force push checkbox. The menu is the button's own, so that
+	// the Remote menu is left as it is.
+	w.forceToggle = qt.NewQAction5("Force push", w.QObject)
+	w.forceToggle.SetCheckable(true)
+	w.forceToggle.OnToggled(w.tab.force.SetChecked)
+	push := qt.UnsafeNewQToolButton(w.toolbar.WidgetForAction(w.pushButton).UnsafePointer())
+	pushMenu := qt.NewQMenu(push.QWidget)
+	pushMenu.AddAction(w.forceToggle)
+	push.SetMenu(pushMenu)
+	push.SetPopupMode(qt.QToolButton__MenuButtonPopup)
 	w.AddToolBar(qt.TopToolBarArea, w.toolbar)
 }
 
@@ -229,18 +253,30 @@ func (w *Window) makeMenus() {
 	w.deleteAction = w.action(branch, "&Delete…", "", w.deleteBranch)
 	w.repoOnly = append(w.repoOnly, w.newBranchAction, w.checkoutAction, rename, w.deleteAction)
 	branch.AddSeparator()
+	// Show History is the toolbar's History too: it shows the history in place
+	// of the changes while it is ticked.
+	w.showHistory = qt.NewQAction5("Show &History", w.QObject)
+	w.showHistory.SetCheckable(true)
+	historyKey := qt.NewQKeySequence2("Ctrl+H")
+	defer historyKey.Delete()
+	w.showHistory.SetShortcut(historyKey)
+	w.showHistory.OnToggled(w.setHistoryShown)
+	branch.AddAction(w.showHistory)
+	branch.AddSeparator()
 	w.repoOnly = append(w.repoOnly, w.action(branch, "&Merge…", "Ctrl+M", w.mergeBranch))
 	w.abortMerge = w.action(branch, "&Abort Merge", "", w.doAbortMerge)
 	branch.AddSeparator()
 	w.continueRebase = w.action(branch, "C&ontinue Rebase", "", func() { w.rebaseStep("Continue Rebase", w.repo.ContinueRebase) })
 	w.skipRebase = w.action(branch, "S&kip Commit", "", func() { w.rebaseStep("Skip Commit", w.repo.SkipRebase) })
 	w.abortRebase = w.action(branch, "A&bort Rebase", "", w.doAbortRebase)
+	branch.AddSeparator()
+	w.discard = w.action(branch, "Discard &All Changes…", "", w.discardChanges)
 
 	commit := bar.AddMenuWithTitle("&Commit")
 	w.rescan = w.action(commit, "&Rescan", "F5", w.rescanRepository)
 	commit.AddSeparator()
-	w.stageAll = w.action(commit, "&Stage Changes", "Ctrl+Shift+T", func() { w.stageChanges(w.status.Unstaged) })
-	w.stageSelected = w.action(commit, "Stage Se&lected", "Ctrl+T", func() {
+	w.stageAll = w.action(commit, "&Stage Changes", "Ctrl+Shift+S", func() { w.stageChanges(w.status.Unstaged) })
+	w.stageSelected = w.action(commit, "Stage Se&lected", "Ctrl+S", func() {
 		w.stageChanges(selection(w.tab.unstaged, w.status.Unstaged))
 	})
 	w.unstageSelected = w.action(commit, "&Unstage Selected", "Ctrl+U", func() {
@@ -249,15 +285,15 @@ func (w *Window) makeMenus() {
 	w.unstageAll = w.action(commit, "Unstage &All", "Ctrl+Shift+U", func() { w.unstageChanges(w.status.Staged) })
 	commit.AddSeparator()
 	w.commit = w.action(commit, "&Commit", "Ctrl+Return", w.commitChanges)
-	w.push = w.action(commit, "&Push", "Ctrl+P", func() { w.pushBranch(w.tab.force.IsChecked()) })
-	w.forcePush = w.action(commit, "&Force Push…", "Ctrl+Shift+P", func() { w.pushBranch(true) })
 
 	remote := bar.AddMenuWithTitle("&Remote")
 	fetch := w.action(remote, "&Fetch", "Ctrl+Shift+F", func() { w.run("Fetch", w.repo.Fetch, nil) })
 	w.pull = w.action(remote, "Pu&ll", "Ctrl+Shift+L", func() { w.run("Pull", w.repo.Pull, nil) })
 	w.repoOnly = append(w.repoOnly, fetch, w.pull)
-	remote.AddAction(w.push)
-	remote.AddAction(w.forcePush)
+	w.push = w.action(remote, "&Push", "Ctrl+P", func() { w.pushBranch(false) })
+	w.pushButton = qt.NewQAction5("Push", w.QObject)
+	w.pushButton.OnTriggered(func() { w.pushBranch(w.tab.force.IsChecked()) })
+	w.forcePush = w.action(remote, "&Force Push…", "Ctrl+Shift+P", func() { w.pushBranch(true) })
 	remote.AddSeparator()
 	w.repoOnly = append(w.repoOnly,
 		w.action(remote, "&Add Remote…", "", w.addRemote),
@@ -282,13 +318,15 @@ func (w *Window) connect() {
 		}
 	})
 	t.commit.OnClicked(w.commit.Trigger)
-	t.push.OnClicked(w.push.Trigger)
+	t.push.OnClicked(w.pushButton.Trigger)
 	t.force.OnToggled(func(on bool) {
+		w.forceToggle.SetChecked(on)
+		text := "Push"
 		if on {
-			t.push.SetText("Force Push")
-		} else {
-			t.push.SetText("Push")
+			text = "Force Push"
 		}
+		t.push.SetText(text)
+		w.pushButton.SetIconText(text)
 	})
 	t.message.OnTextChanged(w.updateActions)
 
@@ -347,8 +385,11 @@ func (w *Window) updateActions() {
 	// same as the current branch.
 	w.commit.SetEnabled(idle && message && (len(w.status.Staged) > 0 || w.status.Merging))
 	w.push.SetEnabled(idle)
+	w.pushButton.SetEnabled(idle)
 	w.forcePush.SetEnabled(idle)
 	w.abortMerge.SetEnabled(idle && w.status.Merging)
+	// A rebase has its own way back, Abort Rebase.
+	w.discard.SetEnabled(idle && !w.status.Rebasing && (len(w.status.Unstaged)+len(w.status.Staged) > 0 || w.status.Merging))
 	for _, a := range []*qt.QAction{w.continueRebase, w.skipRebase, w.abortRebase} {
 		a.SetEnabled(idle && w.status.Rebasing)
 	}
@@ -362,8 +403,9 @@ func (w *Window) updateActions() {
 		t.stage.SetEnabled(w.stageAll.IsEnabled())
 	}
 	t.commit.SetEnabled(w.commit.IsEnabled())
-	t.push.SetEnabled(w.push.IsEnabled())
+	t.push.SetEnabled(w.pushButton.IsEnabled())
 	t.force.SetEnabled(idle)
+	w.forceToggle.SetEnabled(idle)
 }
 
 // showTitle shows the repository and branch in the title and the status bar.
@@ -403,7 +445,6 @@ func (w *Window) openRepository(dir string) error {
 		return err
 	}
 	w.repo = r
-	w.config.Repository = r.Root
 	w.applyStatus(git.Status{})
 	w.clearHistory()
 	w.tab.message.Clear()
@@ -415,7 +456,12 @@ func (w *Window) openRepository(dir string) error {
 
 // chooseRepository asks for a repository to open.
 func (w *Window) chooseRepository() {
-	dir := qt.QFileDialog_GetExistingDirectory3(w.QWidget, "Open Repository", w.config.Repository)
+	// It starts beside the repository open, if there is one.
+	start := ""
+	if w.repo != nil {
+		start = filepath.Dir(w.repo.Root)
+	}
+	dir := qt.QFileDialog_GetExistingDirectory3(w.QWidget, "Open Repository", start)
 	if dir == "" {
 		return
 	}
@@ -531,6 +577,8 @@ func (w *Window) applySettings(s settings.Settings) {
 	if themeChanged {
 		applyTheme(s.Theme)
 	}
+	// It is how many are read from the next read on.
+	w.history.pageSize = s.HistoryPageSize
 	w.tab.diff.setColours(s.AddedColour, s.RemovedColour, s.HunkColour)
 	w.history.diff.setColours(s.AddedColour, s.RemovedColour, s.HunkColour)
 	w.applyCodeFont()
@@ -553,6 +601,7 @@ func (w *Window) saveSettings() {
 		w.config.Width, w.config.Height = geometry.Width(), geometry.Height()
 	}
 	w.config.Maximized = w.IsMaximized()
+	w.config.ForcePush = w.tab.force.IsChecked()
 	if w.IsVisible() {
 		w.config.Sidebar = panes(w.tab.sidebar)
 		w.config.Lists = panes(w.tab.lists)

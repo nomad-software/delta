@@ -14,10 +14,18 @@ type formDialog struct {
 	ok   *qt.QPushButton
 	// fieldsValid are what say whether each field can be used.
 	fieldsValid []func() bool
+	// firstText is the first field of text, which has the focus when the
+	// dialog is shown.
+	firstText *qt.QLineEdit
+	// finished says that the dialog has been answered and is going, so that
+	// what comes back to it from the background later has nowhere to go.
+	finished bool
 }
 
 func newFormDialog(parent *qt.QWidget, title string) *formDialog {
 	d := &formDialog{QDialog: qt.NewQDialog(parent), form: qt.NewQFormLayout2()}
+	// Fields are as wide as the dialog, whatever the style would have.
+	d.form.SetFieldGrowthPolicy(qt.QFormLayout__AllNonFixedFieldsGrow)
 	d.SetWindowTitle(title)
 	d.SetMinimumWidth(420)
 	box := qt.NewQDialogButtonBox5(qt.QDialogButtonBox__Ok|qt.QDialogButtonBox__Cancel, qt.Horizontal)
@@ -27,6 +35,14 @@ func newFormDialog(parent *qt.QWidget, title string) *formDialog {
 	layout := qt.NewQVBoxLayout(d.QWidget)
 	layout.AddLayout(d.form.QLayout)
 	layout.AddWidget(box.QWidget)
+	// The focus would otherwise go to OK, made before the fields, as it goes
+	// in the order widgets are made.
+	d.OnShowEvent(func(super func(*qt.QShowEvent), event *qt.QShowEvent) {
+		super(event)
+		if d.firstText != nil {
+			d.firstText.SetFocus()
+		}
+	})
 	return d
 }
 
@@ -34,6 +50,7 @@ func newFormDialog(parent *qt.QWidget, title string) *formDialog {
 // still there to read until the event loop next runs.
 func (d *formDialog) run() bool {
 	accepted := d.Exec() == int(qt.QDialog__Accepted)
+	d.finished = true
 	d.DeleteLater()
 	return accepted
 }
@@ -47,6 +64,9 @@ func (d *formDialog) addText(label, initial string, valid func(string) bool) *qt
 	edit.OnTextChanged(func(string) { d.check() })
 	d.check()
 	d.form.AddRow3(label, edit.QWidget)
+	if d.firstText == nil {
+		d.firstText = edit
+	}
 	return edit
 }
 
