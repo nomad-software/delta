@@ -162,6 +162,10 @@ func TestLayout(t *testing.T) {
 				buttons = append(buttons, "|")
 				continue
 			}
+			// The space and the spinner after the buttons are not buttons.
+			if !w.toolbar.WidgetForAction(a).Inherits("QToolButton") {
+				continue
+			}
 			buttons = append(buttons, a.IconText())
 			if width := w.toolbar.WidgetForAction(a).MinimumWidth(); width != toolButtonWidth {
 				t.Errorf("%q is at least %d wide", a.IconText(), width)
@@ -190,7 +194,7 @@ func TestLayout(t *testing.T) {
 		}
 		// Push's arrow opens a menu to force the push, and only Push has one.
 		for _, a := range w.toolbar.Actions() {
-			if a.IsSeparator() {
+			if a.IsSeparator() || !w.toolbar.WidgetForAction(a).Inherits("QToolButton") {
 				continue
 			}
 			button := qt.UnsafeNewQToolButton(w.toolbar.WidgetForAction(a).UnsafePointer())

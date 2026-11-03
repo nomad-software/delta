@@ -20,9 +20,11 @@ func (w *Window) background(name string, op func() (string, error), done func(st
 	w.busy = true
 	w.updateActions()
 	w.say(name + "…")
+	w.beginWork()
 	go func() {
 		out, err := op()
 		mainthread.Start(func() {
+			w.endWork()
 			w.busy = false
 			done(out, err)
 			w.updateActions()
@@ -199,7 +201,10 @@ func (w *Window) checkoutBranch() {
 	}
 	r := w.repo
 	fetched := false
+	// It is called in the background, and the spinner shows it.
 	fetch := func() ([]string, error) {
+		mainthread.Wait(w.beginWork)
+		defer mainthread.Start(w.endWork)
 		fetched = true
 		if _, err := r.Fetch(); err != nil {
 			return nil, err

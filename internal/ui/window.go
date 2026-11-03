@@ -64,6 +64,10 @@ type Window struct {
 	// forceToggle is the toolbar's Push's option to force it, ticked with the
 	// Force push checkbox.
 	forceToggle *qt.QAction
+	// spinner is the toolbar's sign of work going on, at its right, and working
+	// how many pieces of work are going on in the background.
+	spinner *spinner
+	working int
 	// discard undoes everything not committed.
 	discard                                 *qt.QAction
 	continueRebase, skipRebase, abortRebase *qt.QAction
@@ -167,6 +171,23 @@ func fade(label *qt.QLabel) {
 	label.SetGraphicsEffect(effect.QGraphicsEffect)
 }
 
+// beginWork notes that a piece of work has gone into the background, which the
+// spinner shows, and endWork that one has come back, every time, whether what it
+// gave is used or not, so that the two always pair.
+func (w *Window) beginWork() {
+	w.working++
+	if w.working == 1 {
+		w.spinner.start()
+	}
+}
+
+func (w *Window) endWork() {
+	w.working--
+	if w.working == 0 {
+		w.spinner.stop()
+	}
+}
+
 // say shows the message in the status bar.
 func (w *Window) say(message string) {
 	w.said.SetText(message)
@@ -227,6 +248,15 @@ func (w *Window) makeToolBar() {
 	pushMenu.AddAction(w.forceToggle)
 	push.SetMenu(pushMenu)
 	push.SetPopupMode(qt.QToolButton__MenuButtonPopup)
+
+	// The spinner is at the far right, beyond a space that takes up the rest.
+	space := qt.NewQWidget2()
+	space.SetSizePolicy2(qt.QSizePolicy__Expanding, qt.QSizePolicy__Preferred)
+	w.toolbar.AddWidget(space)
+	w.spinner = newSpinner()
+	held := w.toolbar.AddWidget(w.spinner.QWidget)
+	w.spinner.shown = held.SetVisible
+	held.SetVisible(false)
 	w.AddToolBar(qt.TopToolBarArea, w.toolbar)
 }
 
@@ -499,6 +529,7 @@ func (w *Window) rescanRepository() {
 	w.markHistoryStale()
 	w.rescans++
 	request := w.rescans
+	w.beginWork()
 	go func() {
 		s, err := r.Status()
 		var mergeMessage string
@@ -506,6 +537,7 @@ func (w *Window) rescanRepository() {
 			mergeMessage = r.MergeMessage()
 		}
 		mainthread.Start(func() {
+			w.endWork()
 			if request != w.rescans || r != w.repo {
 				return
 			}
@@ -569,9 +601,11 @@ func (w *Window) showDiff() {
 		side = "Staged"
 	}
 	r := w.repo
+	w.beginWork()
 	go func() {
 		text, err := r.Diff(change, staged)
 		mainthread.Start(func() {
+			w.endWork()
 			if request != w.diffs {
 				return
 			}

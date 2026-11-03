@@ -239,6 +239,7 @@ func (w *Window) loadHistory() {
 	h.logs++
 	request := h.logs
 	limit := max(h.pageSize, h.committed())
+	w.beginWork()
 	go func() {
 		commits, err := r.Log(limit, 0)
 		var status git.Status
@@ -246,6 +247,7 @@ func (w *Window) loadHistory() {
 			status, err = r.Status()
 		}
 		mainthread.Start(func() {
+			w.endWork()
 			if request != h.logs || r != w.repo {
 				return
 			}
@@ -277,9 +279,11 @@ func (w *Window) loadMoreHistory() {
 	h.logs++
 	request := h.logs
 	skip, limit := h.committed(), h.pageSize
+	w.beginWork()
 	go func() {
 		commits, err := r.Log(limit, skip)
 		mainthread.Start(func() {
+			w.endWork()
 			if request != h.logs || r != w.repo {
 				return
 			}
@@ -421,9 +425,11 @@ func (w *Window) showCommit() {
 		return
 	}
 	commit := *c
+	w.beginWork()
 	go func() {
 		changes, text, err := r.CommitDetail(commit)
 		mainthread.Start(func() {
+			w.endWork()
 			if request != h.details || r != w.repo {
 				return
 			}

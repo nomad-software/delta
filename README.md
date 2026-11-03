@@ -22,10 +22,13 @@ repository the current folder is in, or else none, until you open one from
 It starts on the changes. A toolbar under the menus has **New Branch**,
 **Checkout** and **Delete**, then **Rescan** and **Stage** (which is **Unstage**
 when everything is staged, as the button beside the message is), then **Pull**
-and **Push**, then
-**History**, which shows the history in place of the changes until it is
-pressed again, as **Branch > Show History** (`Ctrl+H`) does. The arrow beside **Push** opens an option to force the push,
-ticked along with the **Force push** checkbox.
+and **Push**, then **History**, which shows the history in place of the changes
+until it is pressed again, as **Branch > Show History** (`Ctrl+H`) does. The
+arrow beside **Push** opens an option to force the push, ticked along with the
+**Force push** checkbox.
+
+At the toolbar's right end, a spinner says **Working** while anything takes more
+than a moment: a command, reading the status, a diff or the history, or a fetch.
 
 ## The changes
 
