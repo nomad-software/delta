@@ -75,15 +75,19 @@ func (l *Layout) Add(hash string, parents []string) Row {
 		}
 	}
 
-	// The first parent carries on down this lane if nothing is already waiting
-	// for it, and the others take a lane of their own, each as a new branch.
+	// The first parent carries on down this lane unless a lane to the left is
+	// already waiting for it, and the others take a lane of their own, each as
+	// a new branch. Were the first parent to join a lane to the right, the line
+	// would step right at every such join and wander ever further from the
+	// left; instead both lanes wait for it, and meet at its node, in the
+	// leftmost.
 	for i, parent := range parents {
 		target := l.find(parent)
 		switch {
-		case target >= 0:
-		case i == 0:
+		case i == 0 && (target < 0 || target > column):
 			target = column
 			l.lanes[column] = lane{hash: parent, colour: row.Colour}
+		case target >= 0:
 		default:
 			target = l.free(column)
 			l.lanes[target] = lane{hash: parent, colour: l.newColour()}

@@ -138,6 +138,16 @@ func (w *Window) connectHistory() {
 			w.showCommit()
 		}
 	})
+	h.commits.SetContextMenuPolicy(qt.CustomContextMenu)
+	h.commits.OnCustomContextMenuRequested(func(pos *qt.QPoint) {
+		row := h.commits.IndexOfTopLevelItem(h.commits.ItemAt(pos))
+		if row < 0 || row >= len(h.list) {
+			return
+		}
+		menu := w.commitMenu(h.list[row])
+		defer menu.DeleteLater()
+		menu.ExecWithPos(h.commits.Viewport().MapToGlobalWithQPoint(pos))
+	})
 	// More are read on reaching the end of those read.
 	bar := h.commits.VerticalScrollBar()
 	bar.OnValueChanged(func(value int) {
@@ -154,6 +164,16 @@ func (w *Window) connectHistory() {
 	// back to its place in the diff.
 	h.files.OnCurrentRowChanged(jump)
 	h.files.OnItemClicked(func(item *qt.QListWidgetItem) { jump(h.files.Row(item)) })
+}
+
+// commitMenu returns the menu of a commit in the history, which rebases from it.
+// The uncommitted changes are not a commit to rebase from.
+func (w *Window) commitMenu(c git.Commit) *qt.QMenu {
+	menu := qt.NewQMenu(w.QWidget)
+	rebase := menu.AddActionWithText("&Interactive Rebase from Here…")
+	rebase.SetEnabled(w.repo != nil && !w.busy && c.Hash != git.Uncommitted)
+	rebase.OnTriggered(func() { w.rebaseFrom(c) })
+	return menu
 }
 
 // jumpToFile scrolls the diff to the file on a row of the files, of which the

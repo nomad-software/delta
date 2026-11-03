@@ -76,12 +76,38 @@ func TestSeparateTipsTakeFreeLanes(t *testing.T) {
 	if rows[1].Lane != 1 || rows[3].Lane != 0 {
 		t.Errorf("lanes %d, %d", rows[1].Lane, rows[3].Lane)
 	}
-	// The third tip joins the lane already waiting for b.
-	if want := (Edge{0, 1, rows[3].Colour}); !slices.Contains(rows[3].Bottom, want) {
+	// The third tip keeps to its own lane rather than stepping right to the
+	// lane already waiting for b, and the two meet at b, in the leftmost.
+	if want := (Edge{0, 0, rows[3].Colour}); !slices.Contains(rows[3].Bottom, want) {
 		t.Errorf("from the third tip %v", rows[3].Bottom)
 	}
-	if len(rows[4].Top) != 1 {
-		t.Errorf("into b %v", rows[4].Top)
+	if rows[4].Lane != 0 || len(rows[4].Top) != 2 {
+		t.Errorf("into b in lane %d: %v", rows[4].Lane, rows[4].Top)
+	}
+}
+
+// TestDoesNotWanderRight checks that a line of merges, each with its side
+// branch listed first as git log --topo-order does, stays at the left. The
+// main line used to step right to the side branch's lane at every merge,
+// making the graph ever wider.
+func TestDoesNotWanderRight(t *testing.T) {
+	var commits []commit
+	for i := range 50 {
+		next := fmt.Sprint("m", i+1)
+		commits = append(commits,
+			commit{fmt.Sprint("m", i), []string{fmt.Sprint("c", i), fmt.Sprint("s", i)}},
+			commit{fmt.Sprint("s", i), []string{next}},
+			commit{fmt.Sprint("c", i), []string{next}},
+		)
+	}
+	rows, l := layOut(commits)
+	if l.Width() != 2 {
+		t.Errorf("width %d", l.Width())
+	}
+	for i := 0; i < len(rows); i += 3 {
+		if rows[i].Lane != 0 {
+			t.Fatalf("merge %d in lane %d", i/3, rows[i].Lane)
+		}
 	}
 }
 

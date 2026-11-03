@@ -53,6 +53,10 @@ type Settings struct {
 	// files and the diff, on the history tab.
 	History       Panes `json:"history"`
 	HistoryDetail Panes `json:"historyDetail"`
+	// RebaseWidth and RebaseHeight are the size of the interactive rebase
+	// dialog, 0 until it has been closed once.
+	RebaseWidth  int `json:"rebaseWidth,omitempty"`
+	RebaseHeight int `json:"rebaseHeight,omitempty"`
 
 	// Theme is ThemeLight, ThemeDark, or empty to follow the system.
 	Theme string `json:"theme,omitempty"`
@@ -122,6 +126,9 @@ func (s *Settings) normalise() {
 	d := Defaults()
 	if s.Width < leastWindowSize || s.Height < leastWindowSize {
 		s.Width, s.Height = d.Width, d.Height
+	}
+	if s.RebaseWidth < leastWindowSize || s.RebaseHeight < leastWindowSize {
+		s.RebaseWidth, s.RebaseHeight = 0, 0
 	}
 	s.Sidebar = s.Sidebar.or(d.Sidebar)
 	s.Lists = s.Lists.or(d.Lists)

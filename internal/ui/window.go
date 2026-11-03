@@ -53,6 +53,7 @@ type Window struct {
 	repoOnly                                              []*qt.QAction
 	rescan, stageAll, stageSelected, unstageSelected      *qt.QAction
 	unstageAll, commit, push, forcePush, abortMerge, open *qt.QAction
+	continueRebase, skipRebase, abortRebase               *qt.QAction
 
 	// confirm asks before doing what can't be taken back, and failed tells of a
 	// failure. Tests replace them.
@@ -203,6 +204,10 @@ func (w *Window) makeMenus() {
 	branch.AddSeparator()
 	w.repoOnly = append(w.repoOnly, w.action(branch, "&Merge…", "Ctrl+M", w.mergeBranch))
 	w.abortMerge = w.action(branch, "&Abort Merge", "", w.doAbortMerge)
+	branch.AddSeparator()
+	w.continueRebase = w.action(branch, "C&ontinue Rebase", "", func() { w.rebaseStep("Continue Rebase", w.repo.ContinueRebase) })
+	w.skipRebase = w.action(branch, "S&kip Commit", "", func() { w.rebaseStep("Skip Commit", w.repo.SkipRebase) })
+	w.abortRebase = w.action(branch, "A&bort Rebase", "", w.doAbortRebase)
 
 	commit := bar.AddMenuWithTitle("&Commit")
 	w.rescan = w.action(commit, "&Rescan", "F5", w.rescanRepository)
@@ -317,6 +322,9 @@ func (w *Window) updateActions() {
 	w.push.SetEnabled(idle)
 	w.forcePush.SetEnabled(idle)
 	w.abortMerge.SetEnabled(idle && w.status.Merging)
+	for _, a := range []*qt.QAction{w.continueRebase, w.skipRebase, w.abortRebase} {
+		a.SetEnabled(idle && w.status.Rebasing)
+	}
 
 	t.rescan.SetEnabled(w.rescan.IsEnabled())
 	if w.allStaged() {
@@ -350,6 +358,12 @@ func (w *Window) showTitle() {
 	}
 	if s.Merging {
 		where += "  (merging)"
+	}
+	switch {
+	case s.Rebasing && s.Rebase.Steps > 0:
+		where += fmt.Sprintf("  (rebasing %d of %d)", s.Rebase.Step, s.Rebase.Steps)
+	case s.Rebasing:
+		where += "  (rebasing)"
 	}
 	w.where.SetText(where)
 }
@@ -425,13 +439,14 @@ func (w *Window) rescanRepository() {
 }
 
 // chooseTab goes to the history on starting in a repository with nothing to
-// commit, as there is nothing to do on the branch tab.
+// commit and no merge or rebase to finish, as there is nothing to do on the
+// branch tab.
 func (w *Window) chooseTab(s git.Status) {
 	if !w.choosingTab {
 		return
 	}
 	w.choosingTab = false
-	if len(s.Unstaged) == 0 && len(s.Staged) == 0 && !s.Merging {
+	if len(s.Unstaged) == 0 && len(s.Staged) == 0 && !s.Merging && !s.Rebasing {
 		w.tabs.SetCurrentIndex(historyTabIndex)
 	}
 }

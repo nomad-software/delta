@@ -19,8 +19,8 @@ It opens the repository holding the folder given. Without one, it opens the
 repository the current folder is in, or else the one last open. You can open
 another from **File > Open Repository…**.
 
-It starts on the History tab if the repository has nothing to commit, and
-otherwise on the Branch tab.
+It starts on the History tab if the repository has nothing to commit and no
+merge or rebase to finish, and otherwise on the Branch tab.
 
 ## The Branch tab
 
@@ -55,6 +55,35 @@ Below the commits, choose one to see the files it changed on the left, and its
 message and diff on the right. Choose a file to go to its place in the diff. A
 merge is shown as what it changed against its first parent.
 
+### Interactive rebase
+
+Right-click a commit and choose **Interactive Rebase from Here…** to rewrite it
+and the commits after it. A dialog lists them oldest first, as git applies them,
+each with a dropdown of what to do with it:
+
+| Action | Does |
+| ------ | ---- |
+| Pick   | Keeps the commit. |
+| Fixup  | Folds the commit into the one above, keeping only that message. |
+| Reword | Keeps the commit with a new message: the message below the list becomes editable. |
+| Edit   | Stops after the commit, so that you can change it. |
+| Squash | Folds the commit into the one above, keeping both messages. |
+| Drop   | Leaves the commit out, after asking you first. |
+
+Drag commits into the order to apply them in, one or several at a time. Below
+the list is the chosen commit's message. The list shows only the start of each
+commit's first line, and its tooltip the start of its message, so that long
+messages fit. The message has all of it. The dialog opens at the size it was
+last closed at.
+
+Git needs a clean work tree, so commit or stash your changes first. A range
+holding a merge can't be rebased this way. When the rebase stops, at a commit to
+edit or one that doesn't apply cleanly, the status bar says so and how far it
+has got. Resolve and stage on the Branch tab, then choose **Continue Rebase**
+from the Branch menu. Anything staged at a commit to edit goes into that commit.
+**Skip Commit** leaves out the commit it stopped at, and **Abort Rebase** puts
+the branch back as it was.
+
 A diff over 4 MiB, on either tab, is cut off with a note saying so.
 
 ## Menus
@@ -64,7 +93,7 @@ A diff over 4 MiB, on either tab, is cut off with a note saying so.
 | Menu   | Items | Shortcuts |
 | ------ | ----- | --------- |
 | File   | Open Repository, Settings, Quit | `Ctrl+O`, `Ctrl+,`, `Ctrl+Q` |
-| Branch | New Branch, Checkout, Rename, Delete, Merge, Abort Merge | `Ctrl+N`, `Ctrl+B`, Merge `Ctrl+M` |
+| Branch | New Branch, Checkout, Rename, Delete, Merge, Abort Merge, Continue Rebase, Skip Commit, Abort Rebase | `Ctrl+N`, `Ctrl+B`, Merge `Ctrl+M` |
 | Commit | Rescan, Stage Changes, Stage Selected, Unstage Selected, Unstage All, Commit, Push, Force Push | `F5`, `Ctrl+Shift+T`, `Ctrl+T`, `Ctrl+U`, `Ctrl+Shift+U`, `Ctrl+Return`, `Ctrl+P`, `Ctrl+Shift+P` |
 | Remote | Fetch, Pull, Push, Force Push, Add Remote, Rename Remote, Change URL, Remove Remote | Fetch `Ctrl+Shift+F`, Pull `Ctrl+Shift+L` |
 | Help   | About | `Ctrl+I` |
@@ -84,7 +113,8 @@ The **User interface** tab of **File > Settings…** sets:
 
 The settings are kept in `delta/settings.json` under the system's
 configuration folder (`~/.config` on Linux), along with the size of the window
-and the panes of both tabs, which are saved when it closes.
+and the panes of both tabs, which are saved when it closes, and of the
+interactive rebase dialog.
 
 ## Desktop entry
 

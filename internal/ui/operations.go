@@ -372,3 +372,96 @@ func (w *Window) removeRemote() {
 	}
 	w.run("Remove Remote", func() (string, error) { return r.RemoveRemote(name) }, nil)
 }
+
+// rebaseFrom asks how to rewrite the commits from the one given up to HEAD, and
+// rewrites them. Git needs a clean work tree for that, and no merge or rebase
+// already going.
+func (w *Window) rebaseFrom(c git.Commit) {
+	const title = "Interactive Rebase"
+	r := w.repo
+	if r == nil || w.busy || c.Hash == git.Uncommitted {
+		return
+	}
+	switch {
+	case w.status.Merging:
+		w.failed(title, "Commit or abort the merge in progress first.")
+		return
+	case w.status.Rebasing:
+		w.failed(title, "Continue or abort the rebase in progress first, from the Branch menu.")
+		return
+	case w.hasTrackedChanges():
+		w.failed(title, "Commit or stash the changes first: git rebases only a clean work tree.")
+		return
+	}
+	commits, base, err := r.RebaseCommits(c.Hash)
+	if err != nil {
+		w.failed(title, "Commit "+c.Short+" can't be rebased from: "+err.Error()+".")
+		return
+	}
+	d := newRebaseDialog(w.QWidget, w.config, commits)
+	accepted := d.run()
+	w.config.RebaseWidth, w.config.RebaseHeight = d.width, d.height
+	w.saveSettings()
+	if !accepted {
+		return
+	}
+	w.startRebase(base, d.steps)
+}
+
+// hasTrackedChanges says whether anything but untracked files has changed.
+func (w *Window) hasTrackedChanges() bool {
+	return len(w.status.Staged) > 0 || slices.ContainsFunc(w.status.Unstaged, func(c git.Change) bool {
+		return c.Code != git.Untracked
+	})
+}
+
+// startRebase rewrites the commits on top of the base following the steps,
+// asking first if any are dropped.
+func (w *Window) startRebase(base string, steps []git.Step) {
+	r := w.repo
+	dropped := 0
+	for _, s := range steps {
+		if s.Action == git.Drop {
+			dropped++
+		}
+	}
+	if dropped > 0 && !w.confirm("Interactive Rebase", fmt.Sprintf("Drop %d of the commits? Their changes will be lost from the branch.", dropped)) {
+		return
+	}
+	w.rebaseStep("Interactive Rebase", func() (string, error) { return r.Rebase(base, steps) })
+}
+
+// rebaseStep runs a command of a rebase as background does, and says where the
+// rebase has got to: done, failed, or stopped, and how to go on.
+func (w *Window) rebaseStep(name string, op func() (string, error)) {
+	r := w.repo
+	var stopped bool
+	w.background(name, func() (string, error) {
+		out, err := op()
+		stopped = r.Rebasing()
+		return out, err
+	}, func(out string, err error) {
+		const next = "choose Continue Rebase from the Branch menu, or Abort Rebase to put the branch back as it was."
+		switch {
+		case stopped && err != nil:
+			w.say(name + " stopped")
+			w.failed(name+" Stopped", err.Error()+"\n\nOnce that is put right, with any conflicts resolved and staged, "+next)
+		case stopped:
+			w.say("Stopped to edit a commit: stage what to add to it, then " + next)
+		case err != nil:
+			w.say(name + " failed")
+			w.failed(name+" Failed", err.Error())
+		default:
+			w.say(strings.TrimSpace(name + " done. " + lastLine(out)))
+		}
+	})
+}
+
+// doAbortRebase abandons the rebase in progress once that is confirmed.
+func (w *Window) doAbortRebase() {
+	r := w.repo
+	if !w.confirm("Abort Rebase", "Abandon the rebase? The branch goes back to how it was before it, and changes made since it started are lost.") {
+		return
+	}
+	w.run("Abort Rebase", r.AbortRebase, nil)
+}

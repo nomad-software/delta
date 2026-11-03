@@ -53,7 +53,11 @@ type Status struct {
 	Upstream      string
 	Ahead, Behind int
 	// Merging says whether a merge is waiting to be committed.
-	Merging  bool
+	Merging bool
+	// Rebasing says whether a rebase is in progress, and Rebase how far it has
+	// got.
+	Rebasing bool
+	Rebase   RebaseState
 	Unstaged []Change
 	Staged   []Change
 }
@@ -99,7 +103,11 @@ func (r *Repo) run(args ...string) (string, error) {
 // runInput runs git with the input and returns what it wrote to its output.
 // The error of a failure holds everything git said.
 func (r *Repo) runInput(input string, args ...string) (string, error) {
-	cmd := r.command(args...)
+	return r.runCommand(r.command(args...), input)
+}
+
+// runCommand runs a git command made by command, as runInput does.
+func (r *Repo) runCommand(cmd *exec.Cmd, input string) (string, error) {
 	cmd.Stdin = strings.NewReader(input)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -141,6 +149,7 @@ func (r *Repo) Status() (Status, error) {
 	// The command fails, as it should, when there is no such ref.
 	_, err = r.run("rev-parse", "-q", "--verify", "MERGE_HEAD")
 	s.Merging = err == nil
+	s.Rebase, s.Rebasing = r.rebaseState()
 	return s, nil
 }
 
@@ -309,6 +318,8 @@ type Commit struct {
 	// Refs names the branches and tags at the commit, as git writes them.
 	Refs    string
 	Subject string
+	// Message is the whole message, which only RebaseCommits reads.
+	Message string
 }
 
 // Uncommitted is the hash of the commit standing for the changes not yet
@@ -502,11 +513,11 @@ func (r *Repo) Commit(message string) (string, error) {
 // MergeMessage returns the message git has prepared for the merge in progress,
 // without its comments.
 func (r *Repo) MergeMessage() string {
-	out, err := r.run("rev-parse", "--path-format=absolute", "--git-path", "MERGE_MSG")
+	path, err := r.gitPath("MERGE_MSG")
 	if err != nil {
 		return ""
 	}
-	data, err := os.ReadFile(strings.TrimRight(out, "\n"))
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return ""
 	}
