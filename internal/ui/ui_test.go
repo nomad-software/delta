@@ -165,7 +165,7 @@ func TestLayout(t *testing.T) {
 				t.Errorf("%q has no icon", a.IconText())
 			}
 		}
-		if want := []string{"New Branch", "Checkout", "Delete", "|", "Rescan", "|", "Pull", "Push", "|", "History"}; !slices.Equal(buttons, want) {
+		if want := []string{"New Branch", "Checkout", "Delete", "|", "Rescan", "Stage", "|", "Pull", "Push", "|", "History"}; !slices.Equal(buttons, want) {
 			t.Errorf("buttons %q", buttons)
 		}
 		if size := w.toolbar.IconSize(); size.Width() != 32 || size.Height() != 32 || w.toolbar.ToolButtonStyle() != qt.ToolButtonTextUnderIcon || w.toolbar.IsMovable() {
@@ -368,7 +368,11 @@ func TestStageButtonUnstagesWhenAllStaged(t *testing.T) {
 		if w.tab.stage.Text() != unstageText || !w.tab.stage.IsEnabled() {
 			t.Errorf("button %q, enabled %v", w.tab.stage.Text(), w.tab.stage.IsEnabled())
 		}
-		w.tab.stage.Click()
+		// The toolbar's says the same, and does the same.
+		if w.stageButton.IconText() != "Unstage" || !w.stageButton.IsEnabled() {
+			t.Errorf("toolbar %q, enabled %v", w.stageButton.IconText(), w.stageButton.IsEnabled())
+		}
+		w.stageButton.Trigger()
 	})
 	waitFor(t, "all unstaged", func() bool { return w.idleWith(2, 0) })
 
@@ -379,10 +383,10 @@ func TestStageButtonUnstagesWhenAllStaged(t *testing.T) {
 	})
 	waitFor(t, "one of each", func() bool { return w.idleWith(1, 1) })
 	on(func() {
-		if w.tab.stage.Text() != stageText {
-			t.Errorf("button %q", w.tab.stage.Text())
+		if w.tab.stage.Text() != stageText || w.stageButton.IconText() != "Stage" {
+			t.Errorf("buttons %q, %q", w.tab.stage.Text(), w.stageButton.IconText())
 		}
-		w.tab.stage.Click()
+		w.stageButton.Trigger()
 	})
 	waitFor(t, "all staged again", func() bool { return w.idleWith(0, 2) })
 
@@ -393,8 +397,8 @@ func TestStageButtonUnstagesWhenAllStaged(t *testing.T) {
 	})
 	waitFor(t, "the commit", func() bool { return w.idleWith(0, 0) })
 	on(func() {
-		if w.tab.stage.Text() != stageText || w.tab.stage.IsEnabled() {
-			t.Errorf("button %q, enabled %v", w.tab.stage.Text(), w.tab.stage.IsEnabled())
+		if w.tab.stage.Text() != stageText || w.tab.stage.IsEnabled() || w.stageButton.IconText() != "Stage" || w.stageButton.IsEnabled() {
+			t.Errorf("buttons %q, %q, enabled %v, %v", w.tab.stage.Text(), w.stageButton.IconText(), w.tab.stage.IsEnabled(), w.stageButton.IsEnabled())
 		}
 	})
 }
@@ -733,6 +737,21 @@ func TestFirstTextFieldHasTheFocus(t *testing.T) {
 	t.Cleanup(func() { on(func() { d.Hide(); d.DeleteLater() }) })
 	waitFor(t, "the dialog to be active", func() bool { return d.IsActiveWindow() })
 	waitFor(t, "the name to have the focus", name.HasFocus)
+}
+
+// TestCheckoutFocusesTheBranches checks that the checkout dialog opens with the
+// list of branches focused, to choose one by keyboard straight away.
+func TestCheckoutFocusesTheBranches(t *testing.T) {
+	var d *formDialog
+	var branch *qt.QComboBox
+	on(func() {
+		d, branch, _ = newCheckoutDialog(nil, "main", []string{"main", "topic"}, nil, nil)
+		d.Show()
+		d.ActivateWindow()
+	})
+	t.Cleanup(func() { on(func() { d.Hide(); d.DeleteLater() }) })
+	waitFor(t, "the dialog to be active", func() bool { return d.IsActiveWindow() })
+	waitFor(t, "the branches to have the focus", branch.HasFocus)
 }
 
 // TestFormFieldsFillTheDialog checks that a dialog's fields are as wide as it

@@ -230,6 +230,7 @@ func newCheckoutDialog(parent *qt.QWidget, current string, local, remote []strin
 	d := newFormDialog(parent, "Checkout")
 	branch := d.addChoice("Branch", local)
 	branch.SetCurrentIndex(max(branch.FindText(current), 0))
+	d.focus = branch.QWidget
 	withRemote := qt.NewQCheckBox3("Include remote branches")
 	d.form.AddRowWithWidget(withRemote.QWidget)
 	note := qt.NewQLabel2()

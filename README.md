@@ -20,7 +20,9 @@ repository the current folder is in, or else none, until you open one from
 **File > Open Repository…**. It doesn't remember the last one open.
 
 It starts on the changes. A toolbar under the menus has **New Branch**,
-**Checkout** and **Delete**, then **Rescan**, then **Pull** and **Push**, then
+**Checkout** and **Delete**, then **Rescan** and **Stage** (which is **Unstage**
+when everything is staged, as the button beside the message is), then **Pull**
+and **Push**, then
 **History**, which shows the history in place of the changes until it is
 pressed again, as **Branch > Show History** (`Ctrl+H`) does. The arrow beside **Push** opens an option to force the push,
 ticked along with the **Force push** checkbox.

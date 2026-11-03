@@ -15,8 +15,9 @@ type formDialog struct {
 	// fieldsValid are what say whether each field can be used.
 	fieldsValid []func() bool
 	// firstText is the first field of text, which has the focus when the
-	// dialog is shown.
+	// dialog is shown, unless focus says another does.
 	firstText *qt.QLineEdit
+	focus     *qt.QWidget
 	// finished says that the dialog has been answered and is going, so that
 	// what comes back to it from the background later has nowhere to go.
 	finished bool
@@ -39,7 +40,10 @@ func newFormDialog(parent *qt.QWidget, title string) *formDialog {
 	// in the order widgets are made.
 	d.OnShowEvent(func(super func(*qt.QShowEvent), event *qt.QShowEvent) {
 		super(event)
-		if d.firstText != nil {
+		switch {
+		case d.focus != nil:
+			d.focus.SetFocus()
+		case d.firstText != nil:
 			d.firstText.SetFocus()
 		}
 	})

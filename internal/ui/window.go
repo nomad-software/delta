@@ -54,6 +54,10 @@ type Window struct {
 	unstageAll, commit, push, forcePush, abortMerge, open *qt.QAction
 	newBranchAction, checkoutAction, deleteAction, pull   *qt.QAction
 	showHistory                                           *qt.QAction
+	// stageButton is what the Stage buttons do: stage everything listed, or
+	// unstage it all if it is all staged, as stageIcons, for each, show.
+	stageButton *qt.QAction
+	stageIcons  [2]*qt.QIcon
 	// pushButton is what the Push buttons do: push, forcing it if Force push
 	// is ticked, where the Remote menu's Push, on Ctrl+P, never forces.
 	pushButton *qt.QAction
@@ -186,6 +190,9 @@ func (w *Window) makeToolBar() {
 	w.checkoutAction.SetIconText("Checkout")
 	w.deleteAction.SetIconText("Delete")
 	w.showHistory.SetIconText("History")
+	w.stageIcons = [2]*qt.QIcon{toolIcon(stageShape), toolIcon(unstageShape)}
+	w.stageButton.SetIcon(w.stageIcons[0])
+	w.stageButton.SetIconText("Stage")
 
 	w.toolbar = qt.NewQToolBar4("Buttons", w.QWidget)
 	w.toolbar.SetMovable(false)
@@ -199,7 +206,7 @@ func (w *Window) makeToolBar() {
 	noTips.OnEventFilter(func(super func(*qt.QObject, *qt.QEvent) bool, watched *qt.QObject, event *qt.QEvent) bool {
 		return event.Type() == qt.QEvent__ToolTip || super(watched, event)
 	})
-	for _, a := range []*qt.QAction{w.newBranchAction, w.checkoutAction, w.deleteAction, nil, w.rescan, nil, w.pull, w.pushButton, nil, w.showHistory} {
+	for _, a := range []*qt.QAction{w.newBranchAction, w.checkoutAction, w.deleteAction, nil, w.rescan, w.stageButton, nil, w.pull, w.pushButton, nil, w.showHistory} {
 		if a == nil {
 			w.toolbar.AddSeparator()
 			continue
@@ -285,6 +292,14 @@ func (w *Window) makeMenus() {
 	w.unstageAll = w.action(commit, "Unstage &All", "Ctrl+Shift+U", func() { w.unstageChanges(w.status.Staged) })
 	commit.AddSeparator()
 	w.commit = w.action(commit, "&Commit", "Ctrl+Return", w.commitChanges)
+	w.stageButton = qt.NewQAction5(stageText, w.QObject)
+	w.stageButton.OnTriggered(func() {
+		if w.allStaged() {
+			w.unstageAll.Trigger()
+		} else {
+			w.stageAll.Trigger()
+		}
+	})
 
 	remote := bar.AddMenuWithTitle("&Remote")
 	fetch := w.action(remote, "&Fetch", "Ctrl+Shift+F", func() { w.run("Fetch", w.repo.Fetch, nil) })
@@ -310,13 +325,7 @@ func (w *Window) makeMenus() {
 func (w *Window) connect() {
 	t := w.tab
 	t.rescan.OnClicked(w.rescan.Trigger)
-	t.stage.OnClicked(func() {
-		if w.allStaged() {
-			w.unstageAll.Trigger()
-		} else {
-			w.stageAll.Trigger()
-		}
-	})
+	t.stage.OnClicked(w.stageButton.Trigger)
 	t.commit.OnClicked(w.commit.Trigger)
 	t.push.OnClicked(w.pushButton.Trigger)
 	t.force.OnToggled(func(on bool) {
@@ -395,13 +404,24 @@ func (w *Window) updateActions() {
 	}
 
 	t.rescan.SetEnabled(w.rescan.IsEnabled())
-	if w.allStaged() {
-		t.stage.SetText(unstageText)
-		t.stage.SetEnabled(w.unstageAll.IsEnabled())
+	// Both Stage buttons unstage instead when everything is staged.
+	unstage := w.allStaged()
+	if unstage {
+		w.stageButton.SetEnabled(w.unstageAll.IsEnabled())
 	} else {
-		t.stage.SetText(stageText)
-		t.stage.SetEnabled(w.stageAll.IsEnabled())
+		w.stageButton.SetEnabled(w.stageAll.IsEnabled())
 	}
+	if (w.stageButton.IconText() == "Unstage") != unstage {
+		text, icon := stageText, w.stageIcons[0]
+		if unstage {
+			text, icon = unstageText, w.stageIcons[1]
+		}
+		t.stage.SetText(text)
+		w.stageButton.SetText(text)
+		w.stageButton.SetIconText(strings.Fields(text)[0])
+		w.stageButton.SetIcon(icon)
+	}
+	t.stage.SetEnabled(w.stageButton.IsEnabled())
 	t.commit.SetEnabled(w.commit.IsEnabled())
 	t.push.SetEnabled(w.pushButton.IsEnabled())
 	t.force.SetEnabled(idle)
