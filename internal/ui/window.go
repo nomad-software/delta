@@ -820,7 +820,7 @@ func (w *Window) showDiff() {
 	if staged {
 		side = "Staged"
 	}
-	r, titles := w.repo, v.diff.titles
+	r := w.repo
 	w.beginWork()
 	go func() {
 		text, err := r.Diff(change, staged)
@@ -828,7 +828,7 @@ func (w *Window) showDiff() {
 			text = err.Error()
 		}
 		// It is parsed here, so that the main thread only fills the view.
-		parsed := diff.Parse(text, titles)
+		parsed := diff.Parse(text)
 		mainthread.Start(func() {
 			w.endWork()
 			if request != w.diffs {

@@ -1368,48 +1368,41 @@ func TestHistoryShowsCommits(t *testing.T) {
 		w.showHistory.SetChecked(true)
 	})
 	waitFor(t, "the commits", func() bool { return h.commits.TopLevelItemCount() == 2 })
-	// The newest is chosen, and its files and diff shown.
-	waitFor(t, "the files", func() bool { return h.files.Count() == 3 })
+	// The newest is chosen, with its files listed, and the first of them chosen
+	// and its diff alone shown, as in the changes.
+	waitFor(t, "the files", func() bool { return h.files.Count() == 2 && h.diff.raw != "" })
+	commit := ""
 	on(func() {
 		if row := treeRow(h, 0); !strings.Contains(row[0], "Two files") || !strings.Contains(row[0], "main") || row[1] != "Test" || row[2] == "" || row[3] == "" {
 			t.Errorf("row %q", row)
 		}
-		if got := listTexts(h.files); !slices.Equal(got, []string{"Commit message", "a", "b"}) || !slices.Equal(listCodes(h.files), []byte{0, 'A', 'A'}) {
+		commit = treeRow(h, 0)[3]
+		if got := listTexts(h.files); !slices.Equal(got, []string{"a", "b"}) || !slices.Equal(listCodes(h.files), []byte{'A', 'A'}) {
 			t.Errorf("files %q", got)
 		}
-		if !strings.Contains(h.diff.parsed.Text, "The body") || !strings.Contains(h.diff.parsed.Text, "+b") {
-			t.Errorf("diff %q", h.diff.parsed.Text)
+		if h.files.CurrentRow() != 0 || h.diffLabel.Text() != "Commit "+commit+": a" {
+			t.Errorf("row %d chosen, label %q", h.files.CurrentRow(), h.diffLabel.Text())
 		}
-		// Each file is headed by its name alone.
-		if strings.Contains(h.diff.parsed.Text, "diff --git") || strings.Contains(h.diff.parsed.Text, "+++") {
-			t.Errorf("diff %q", h.diff.parsed.Text)
-		}
-		for i, line := range h.diff.parsed.Files {
-			name := []string{"a", "b"}[i]
-			if got := h.diff.Document().FindBlockByNumber(line).Text(); got != name {
-				t.Errorf("heading %q, not %q", got, name)
-			}
+		if text := h.diff.parsed.Text; !strings.Contains(text, "+a") || strings.Contains(text, "+b") || strings.Contains(text, "diff --git") || strings.Contains(text, "+++") {
+			t.Errorf("diff %q", text)
 		}
 		if h.fileLabel.Text() != "Files (2)" {
 			t.Errorf("label %q", h.fileLabel.Text())
 		}
-		// Choosing a file goes to it in the diff, and the first row back.
-		starts := h.diff.parsed.Files
-		if len(starts) != 2 {
-			t.Fatalf("file lines %v", starts)
+		// Choosing another file shows its diff in place of the first's.
+		h.files.SetCurrentRow(1)
+	})
+	waitFor(t, "the second file", func() bool { return h.diffLabel.Text() == "Commit "+commit+": b" })
+	on(func() {
+		if text := h.diff.parsed.Text; !strings.Contains(text, "+b") || strings.Contains(text, "+a") {
+			t.Errorf("diff %q", text)
 		}
-		h.files.SetCurrentRow(2)
-		if got := h.diff.VerticalScrollBar().Value(); got != min(starts[1], h.diff.VerticalScrollBar().Maximum()) {
-			t.Errorf("scrolled to %d, file at %d", got, starts[1])
-		}
-		h.files.SetCurrentRow(0)
-		if got := h.diff.VerticalScrollBar().Value(); got != 0 {
-			t.Errorf("scrolled to %d", got)
-		}
-		// Choosing another commit shows that one.
+		// Choosing another commit shows that one's first file.
 		h.commits.SetCurrentItem(h.commits.TopLevelItem(1))
 	})
-	waitFor(t, "the first commit", func() bool { return strings.Contains(h.diff.parsed.Text, "first") && h.files.Count() == 2 })
+	waitFor(t, "the first commit", func() bool {
+		return h.files.Count() == 1 && strings.HasSuffix(h.diffLabel.Text(), ": file") && strings.Contains(h.diff.parsed.Text, "+one")
+	})
 }
 
 func TestHistoryFollowsChanges(t *testing.T) {
@@ -1474,7 +1467,7 @@ func TestHistoryShowsUncommittedChanges(t *testing.T) {
 	})
 	// It comes first and is chosen, on top of the first page of real commits.
 	waitFor(t, "the rows", func() bool { return h.commits.TopLevelItemCount() == 3 && !h.loading })
-	waitFor(t, "its files", func() bool { return h.files.Count() == 3 })
+	waitFor(t, "its files", func() bool { return h.files.Count() == 2 && h.diff.raw != "" })
 	on(func() {
 		if row := treeRow(h, 0); row[0] != "Uncommitted changes" || row[3] != "" {
 			t.Errorf("row %q", row)
@@ -1482,13 +1475,13 @@ func TestHistoryShowsUncommittedChanges(t *testing.T) {
 		if !h.commits.TopLevelItem(0).Font(colSubject).Italic() {
 			t.Error("it is not in italics")
 		}
-		if got := listTexts(h.files); !slices.Equal(got, []string{"All changes", "file", "untracked"}) || !slices.Equal(listCodes(h.files), []byte{0, 'M', git.Untracked}) {
+		if got := listTexts(h.files); !slices.Equal(got, []string{"file", "untracked"}) || !slices.Equal(listCodes(h.files), []byte{'M', git.Untracked}) {
 			t.Errorf("files %q", got)
 		}
-		if !strings.Contains(h.diff.parsed.Text, "+changed") || !strings.Contains(h.diff.parsed.Text, "+untracked") {
+		if !strings.Contains(h.diff.parsed.Text, "+changed") || strings.Contains(h.diff.parsed.Text, "+untracked") {
 			t.Errorf("diff %q", h.diff.parsed.Text)
 		}
-		if h.diffLabel.Text() != "Uncommitted changes" {
+		if h.diffLabel.Text() != "Uncommitted: file" {
 			t.Errorf("label %q", h.diffLabel.Text())
 		}
 		// It joins the graph to the commit it is on.
@@ -1500,10 +1493,14 @@ func TestHistoryShowsUncommittedChanges(t *testing.T) {
 	})
 	waitFor(t, "the next page", func() bool { return h.commits.TopLevelItemCount() == 5 && !h.loading })
 
-	// A new change to it shows on a rescan, staying where it is.
+	// New changes to it show on a rescan, with the file chosen kept and its
+	// diff read again.
 	writeFile(t, dir, "later", "later\n")
+	writeFile(t, dir, "file", "changed again\n")
 	on(func() { w.rescan.Trigger() })
-	waitFor(t, "the new file", func() bool { return h.files.Count() == 4 && strings.Contains(h.diff.parsed.Text, "+later") })
+	waitFor(t, "the new file", func() bool {
+		return h.files.Count() == 3 && h.diffLabel.Text() == "Uncommitted: file" && strings.Contains(h.diff.parsed.Text, "+changed again")
+	})
 
 	// Once it is committed the row has gone.
 	runGit(t, dir, "add", ".")
@@ -1595,7 +1592,7 @@ func TestHistoryOfEmptyAndOtherRepository(t *testing.T) {
 	w := newTestWindow(t, dir)
 	h := w.history
 	on(func() { w.showHistory.SetChecked(true) })
-	waitFor(t, "the commits", func() bool { return h.files.Count() == 2 })
+	waitFor(t, "the commits", func() bool { return h.files.Count() == 1 })
 	on(func() {
 		if err := w.openRepository(empty); err != nil {
 			t.Fatal(err)
@@ -1792,8 +1789,8 @@ func TestChangeListsHaveNoTooltips(t *testing.T) {
 				t.Errorf("%q has the tooltip %q", list.Item(0).Text(), tip)
 			}
 		}
-		w.history.setFiles([]git.Change{{Code: 'M', Path: "file"}}, "message")
-		if tip := w.history.files.Item(1).ToolTip(); tip != "Modified" {
+		w.history.setFiles([]git.Change{{Code: 'M', Path: "file"}})
+		if tip := w.history.files.Item(0).ToolTip(); tip != "Modified" {
 			t.Errorf("the history's file has the tooltip %q", tip)
 		}
 	})

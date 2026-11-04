@@ -52,9 +52,12 @@ type historyView struct {
 	// list is what the commits show, which starts with the uncommitted changes
 	// if there are any.
 	list []git.Commit
-	// shownHash and shownChanges are the hash and files of what is shown below.
-	shownHash    string
+	// shown is the commit whose files are listed below, with no hash if none
+	// is, and shownChanges its files. shownPath is the file whose diff is
+	// shown, kept chosen when the same commit's files are read again.
+	shown        git.Commit
 	shownChanges []git.Change
+	shownPath    string
 
 	// pageSize is how many commits are read at a time, as the settings say.
 	pageSize int
@@ -67,9 +70,9 @@ type historyView struct {
 	// updating says that the program is changing a list, so that its selection
 	// changing means nothing.
 	updating bool
-	// logs and details count the requests for each, so that the answer to any
+	// logs, details and fileDiffs count the requests for each, so that the answer to any
 	// but the latest is dropped.
-	logs, details int
+	logs, details, fileDiffs int
 }
 
 func newHistoryView(config settings.Settings) *historyView {
@@ -100,7 +103,6 @@ func newHistoryView(config settings.Settings) *historyView {
 	h.diffLabel = heading("Diff")
 	h.diffLabel.SetTextFormat(qt.PlainText)
 	h.diff = newDiffView(config.AddedColour, config.RemovedColour, config.HunkColour)
-	h.diff.titles = true
 
 	h.detail = newPaneSplitter(qt.Horizontal)
 	h.detail.AddWidget(labelled(h.fileLabel, h.files.QWidget))
@@ -146,15 +148,12 @@ func (w *Window) connectHistory() {
 			w.loadMoreHistory()
 		}
 	})
-	jump := func(row int) {
+	// The diff is of the file chosen, as in the changes.
+	h.files.OnCurrentRowChanged(func(int) {
 		if !h.updating {
-			h.jumpToFile(row)
+			w.showFile()
 		}
-	}
-	// Moving by keyboard changes the row, and clicking the same one again goes
-	// back to its place in the diff.
-	h.files.OnCurrentRowChanged(jump)
-	h.files.OnItemClicked(func(item *qt.QListWidgetItem) { jump(h.files.Row(item)) })
+	})
 }
 
 // setHistoryShown shows the history in place of the changes, or the changes
@@ -192,22 +191,6 @@ func (w *Window) commitMenu(c git.Commit) *qt.QMenu {
 	return menu
 }
 
-// jumpToFile scrolls the diff to the file on a row of the files, of which the
-// first is the commit's message, at the top. The diffs are in the order of the
-// files. A file past where a large diff was cut off has nowhere to go.
-func (h *historyView) jumpToFile(row int) {
-	if row < 0 {
-		return
-	}
-	if row == 0 {
-		h.diff.scrollToLine(0)
-		return
-	}
-	if starts := h.diff.parsed.Files; row-1 < len(starts) {
-		h.diff.scrollToLine(starts[row-1])
-	}
-}
-
 // markHistoryStale notes that the repository may have changed, and reads it
 // again if the history is on show.
 func (w *Window) markHistoryStale() {
@@ -222,12 +205,13 @@ func (w *Window) clearHistory() {
 	h := w.history
 	h.logs++
 	h.details++
+	h.fileDiffs++
 	h.more, h.loading = false, false
 	h.updating = true
 	h.commits.Clear()
 	h.files.Clear()
 	h.updating = false
-	h.list, h.shownHash, h.shownChanges = nil, "", nil
+	h.list, h.shown, h.shownChanges, h.shownPath = nil, git.Commit{}, nil, ""
 	h.resetGraph()
 	h.diff.show("")
 	h.fileLabel.SetText("Files")
@@ -468,62 +452,102 @@ func (h *historyView) chosen() *git.Commit {
 	return &h.list[row]
 }
 
-// showCommit shows the files and diff of the commit chosen, in the background.
+// showCommit lists the files of the commit chosen, read in the background, and
+// chooses one, which shows its diff: the one shown before, if the same commit's
+// files are read again, as on a rescan, or else the first.
 func (w *Window) showCommit() {
 	h, r := w.history, w.repo
 	h.details++
 	request := h.details
 	c := h.chosen()
 	if c == nil || r == nil {
-		h.setFiles(nil, "")
-		h.diff.show("")
-		h.diffLabel.SetText("Diff")
-		h.shownHash = ""
+		h.setFiles(nil)
+		h.shown, h.shownChanges = git.Commit{}, nil
+		w.showFile()
 		return
 	}
-	commit, titles := *c, h.diff.titles
+	commit := *c
 	w.beginWork()
 	go func() {
-		changes, text, err := r.CommitDetail(commit)
-		// It is parsed here, so that the main thread only fills the view.
-		var parsed diff.Parsed
-		if err == nil {
-			parsed = diff.Parse(text, titles)
-		}
+		changes, err := r.CommitFiles(commit)
 		mainthread.Start(func() {
 			w.endWork()
 			if request != h.details || r != w.repo {
 				return
 			}
-			first, title := "Commit message", "Commit "+commit.Short
-			if commit.Hash == git.Uncommitted {
-				first, title = "All changes", commit.Subject
-			}
-			h.diffLabel.SetText(title)
 			if err != nil {
-				h.setFiles(nil, "")
-				h.shownHash = ""
+				h.setFiles(nil)
+				h.shown, h.shownChanges = git.Commit{}, nil
+				w.showFile()
+				h.diffLabel.SetText(commitName(commit))
 				h.diff.show(err.Error())
 				return
 			}
-			// The same again, after a rescan, stays as it was, and scrolled.
-			same := commit.Hash == h.shownHash
+			same := commit.Hash == h.shown.Hash
 			if !same || !slices.Equal(changes, h.shownChanges) {
-				h.setFiles(changes, first)
+				h.setFiles(changes)
 			}
-			h.shownHash, h.shownChanges = commit.Hash, changes
-			h.diff.showParsed(text, parsed)
-			if !same {
-				h.diff.scrollToLine(0)
+			kept := ""
+			if same {
+				kept = h.shownPath
 			}
+			h.shown, h.shownChanges = commit, changes
+			row := max(slices.IndexFunc(changes, func(c git.Change) bool { return c.Path == kept }), 0)
+			h.updating = true
+			h.files.SetCurrentRow(row)
+			h.updating = false
+			// It is read again even if the same file stays chosen, as what is
+			// uncommitted changes.
+			w.showFile()
 		})
 	}()
 }
 
-// setFiles shows the files of a commit, under a row with the text first, which
-// goes to the top of the diff. Nil changes clear the list, where an empty list is
-// a commit that changed nothing.
-func (h *historyView) setFiles(changes []git.Change, first string) {
+// commitName names a commit above the diff of one of its files.
+func commitName(c git.Commit) string {
+	if c.Hash == git.Uncommitted {
+		return "Uncommitted"
+	}
+	return "Commit " + c.Short
+}
+
+// showFile shows the diff of the file chosen among the commit's, read and
+// parsed in the background, or nothing if none is.
+func (w *Window) showFile() {
+	h, r := w.history, w.repo
+	h.fileDiffs++
+	request := h.fileDiffs
+	row := h.files.CurrentRow()
+	if r == nil || h.shown.Hash == "" || row < 0 || row >= len(h.shownChanges) {
+		h.shownPath = ""
+		h.diffLabel.SetText("Diff")
+		h.diff.show("")
+		return
+	}
+	commit, change := h.shown, h.shownChanges[row]
+	h.shownPath = change.Path
+	w.beginWork()
+	go func() {
+		text, err := r.CommitFileDiff(commit, change)
+		if err != nil {
+			text = err.Error()
+		}
+		// It is parsed here, so that the main thread only fills the view.
+		parsed := diff.Parse(text)
+		mainthread.Start(func() {
+			w.endWork()
+			if request != h.fileDiffs || r != w.repo {
+				return
+			}
+			h.diffLabel.SetText(commitName(commit) + ": " + change.Path)
+			h.diff.showParsed(text, parsed)
+		})
+	}()
+}
+
+// setFiles lists the files of a commit. Nil changes clear the list, where an
+// empty list is a commit that changed nothing.
+func (h *historyView) setFiles(changes []git.Change) {
 	h.updating = true
 	defer func() { h.updating = false }()
 	h.files.Clear()
@@ -532,10 +556,6 @@ func (h *historyView) setFiles(changes []git.Change, first string) {
 		return
 	}
 	h.fileLabel.SetText(fmt.Sprintf("Files (%d)", len(changes)))
-	// It has a blank in place of a circle, to line up with the files.
-	top := qt.NewQListWidgetItem2(first)
-	top.SetIcon(changeIcon(0))
-	h.files.AddItemWithItem(top)
 	// What happened to each file is said in words when the pointer is over it.
 	for _, c := range changes {
 		item := newChangeItem(c)

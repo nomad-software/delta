@@ -208,17 +208,49 @@ func TestDiffsParsedInTheBackground(t *testing.T) {
 	waitFor(t, "the diff", func() bool { return strings.Contains(w.changes.diff.raw, "+changed") })
 	on(func() {
 		v := w.changes.diff
-		if want := diff.Parse(v.raw, false); !slices.Equal(v.parsed.Kinds, want.Kinds) || v.parsed.Text != want.Text || v.ToPlainText() != want.Text {
+		if want := diff.Parse(v.raw); !slices.Equal(v.parsed.Kinds, want.Kinds) || v.parsed.Text != want.Text || v.ToPlainText() != want.Text {
 			t.Errorf("parsed %q", v.parsed.Text)
 		}
 		w.showHistory.SetChecked(true)
 	})
 	h := w.history
-	waitFor(t, "the commit's diff", func() bool { return h.shownHash != "" && h.diff.raw != "" })
+	waitFor(t, "the file's diff", func() bool { return h.shownPath != "" && h.diff.raw != "" })
 	on(func() {
-		want := diff.Parse(h.diff.raw, true)
-		if !slices.Equal(h.diff.parsed.Files, want.Files) || h.diff.parsed.Text != want.Text || len(want.Files) == 0 {
-			t.Errorf("files at %v, not %v", h.diff.parsed.Files, want.Files)
+		want := diff.Parse(h.diff.raw)
+		if !slices.Equal(h.diff.parsed.Kinds, want.Kinds) || h.diff.parsed.Text != want.Text || h.diff.ToPlainText() != want.Text {
+			t.Errorf("parsed %q", h.diff.parsed.Text)
+		}
+	})
+}
+
+// Of files chosen one after another before their diffs are read, the last
+// chosen is shown, whatever order the diffs come back in.
+func TestLastFileChosenIsShown(t *testing.T) {
+	dir := newRepo(t)
+	// The files chosen before the last are large, so that their diffs come
+	// back after its.
+	for _, name := range []string{"a", "b", "c"} {
+		text := "text of " + name + "\n"
+		if name != "b" {
+			text += strings.Repeat(name+" is large\n", 200000)
+		}
+		writeFile(t, dir, name, text)
+	}
+	runGit(t, dir, "add", ".")
+	runGit(t, dir, "commit", "-m", "Three files")
+	w := newTestWindow(t, dir)
+	h := w.history
+	on(func() { w.showHistory.SetChecked(true) })
+	waitFor(t, "the files", func() bool { return h.files.Count() == 3 && h.diff.raw != "" })
+	on(func() {
+		for _, row := range []int{2, 0, 2, 1} {
+			h.files.SetCurrentRow(row)
+		}
+	})
+	waitFor(t, "the diffs", func() bool { return w.working == 0 })
+	on(func() {
+		if !strings.HasSuffix(h.diffLabel.Text(), ": b") || !strings.Contains(h.diff.parsed.Text, "+text of b") || h.shownPath != "b" {
+			t.Errorf("label %q, diff %q", h.diffLabel.Text(), h.diff.parsed.Text)
 		}
 	})
 }

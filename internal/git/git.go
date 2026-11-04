@@ -407,100 +407,64 @@ func compared(c Commit) []string {
 	return []string{c.Parents[0], c.Hash}
 }
 
-// CommitDetail returns the files a commit changed, in the order of its diff, and
-// the text of its header, message and diff, cut off as Diff says.
-func (r *Repo) CommitDetail(c Commit) ([]Change, string, error) {
-	if c.Hash == Uncommitted {
-		return r.uncommittedDetail()
+// CommitFiles returns the files a commit changed, as git lists them, which is
+// the order of its diff. For the uncommitted changes they are the files changed
+// since HEAD, staged or not, and then those untracked; a branch with no commits
+// has no HEAD to compare with, so has what is staged, and what is untracked.
+func (r *Repo) CommitFiles(c Commit) ([]Change, error) {
+	if c.Hash != Uncommitted {
+		out, err := r.run(append([]string{"diff-tree", "-r", "-z", "-M", "--no-commit-id", "--name-status"}, compared(c)...)...)
+		if err != nil {
+			return nil, err
+		}
+		return parseNameStatus(out)
 	}
-	// The files, the header and the diff are read at once.
-	var out, header, diff string
-	var outErr, headerErr, diffErr error
+	base := uncommittedBase(r)
+	// The files and the status, for the untracked files, are read at once.
+	var out string
+	var s Status
+	var outErr, statusErr error
 	together(
-		func() {
-			out, outErr = r.run(append([]string{"diff-tree", "-r", "-z", "-M", "--no-commit-id", "--name-status"}, compared(c)...)...)
-		},
-		func() {
-			header, headerErr = r.run("log", "-1", "--no-color", "--no-decorate", "--no-show-signature", "--date=iso", "--format=fuller", c.Hash, "--")
-		},
-		func() {
-			diff, diffErr = r.capped(slices.Concat([]string{"diff-tree", "-r", "-p", "-M", "--no-commit-id"}, patchOptions, compared(c)), false)
-		},
+		func() { out, outErr = r.run("diff", "-z", "-M", "--name-status", base, "--") },
+		func() { s, statusErr = r.Status() },
 	)
 	// Of those that failed, the error is the first in the order they would have
 	// run one after another.
-	if err := cmp.Or(outErr, headerErr, diffErr); err != nil {
-		return nil, "", err
+	if err := cmp.Or(outErr, statusErr); err != nil {
+		return nil, err
 	}
 	changes, err := parseNameStatus(out)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	return changes, strings.TrimRight(header, "\n") + "\n\n" + diff, nil
-}
-
-// uncommittedDetail returns the files changed since HEAD, staged or not, then
-// those untracked, and their diffs, cut off as Diff says. A branch with no commits
-// has no HEAD to compare with, so shows what is staged and what is untracked.
-func (r *Repo) uncommittedDetail() ([]Change, string, error) {
-	base := "HEAD"
-	if !r.hasCommits() {
-		base = "--cached"
-	}
-	// The files, their diff and the status, for the untracked files, are read
-	// at once.
-	var out, text string
-	var s Status
-	var outErr, textErr, statusErr error
-	together(
-		func() { out, outErr = r.run("diff", "-z", "-M", "--name-status", base, "--") },
-		func() {
-			text, textErr = r.capped(slices.Concat([]string{"diff", "-M"}, patchOptions, []string{base, "--"}), false)
-		},
-		func() { s, statusErr = r.Status() },
-	)
-	// The first that failed, as in CommitDetail.
-	if err := cmp.Or(outErr, textErr, statusErr); err != nil {
-		return nil, "", err
-	}
-	changes, err := parseNameStatus(out)
-	if err != nil {
-		return nil, "", err
-	}
-	untracked := slices.DeleteFunc(slices.Clone(s.Unstaged), func(c Change) bool { return c.Code != Untracked })
-	changes = append(changes, untracked...)
-	text, err = r.untrackedDiffs(text, untracked)
-	if err != nil {
-		return nil, "", err
-	}
-	if len(text) > MaxDiff {
-		text = text[:strings.LastIndexByte(text[:MaxDiff], '\n')+1] + cutNote()
-	}
-	return changes, text, nil
-}
-
-// untrackedDiffs returns the text with the diffs of the untracked files after
-// it, in their order, until it is cut off, as nothing goes after a diff that has
-// been. They are read readers at a time, at once, and only so many more as could
-// be needed are read past where it is cut off.
-func (r *Repo) untrackedDiffs(text string, untracked []Change) (string, error) {
-	cut := func() bool { return len(text) >= MaxDiff || strings.HasSuffix(text, cutNote()) }
-	for start := 0; start < len(untracked) && !cut(); start += readers {
-		batch := untracked[start:min(start+readers, len(untracked))]
-		diffs := make([]string, len(batch))
-		errs := make([]error, len(batch))
-		each(len(batch), func(i int) { diffs[i], errs[i] = r.Diff(batch[i], false) })
-		for i := range batch {
-			if cut() {
-				break
-			}
-			if errs[i] != nil {
-				return "", errs[i]
-			}
-			text += diffs[i]
+	for _, c := range s.Unstaged {
+		if c.Code == Untracked {
+			changes = append(changes, c)
 		}
 	}
-	return text, nil
+	return changes, nil
+}
+
+// uncommittedBase returns what the uncommitted changes are compared with: HEAD,
+// or the index on a branch with no commits.
+func uncommittedBase(r *Repo) string {
+	if r.hasCommits() {
+		return "HEAD"
+	}
+	return "--cached"
+}
+
+// CommitFileDiff returns the diff of one of the files a commit changed, against
+// its first parent, or of one of the uncommitted changes, against HEAD, cut off
+// as Diff says. A renamed or copied file is diffed with the file it came from.
+func (r *Repo) CommitFileDiff(c Commit, f Change) (string, error) {
+	switch {
+	case c.Hash != Uncommitted:
+		return r.capped(slices.Concat([]string{"diff-tree", "-r", "-p", "-M", "--no-commit-id"}, patchOptions, compared(c), []string{"--"}, f.paths()), false)
+	case f.Code == Untracked:
+		return r.Diff(f, false)
+	}
+	return r.capped(slices.Concat([]string{"diff", "-M"}, patchOptions, []string{uncommittedBase(r), "--"}, f.paths()), false)
 }
 
 // parseNameStatus reads the output of git diff-tree -z --name-status.

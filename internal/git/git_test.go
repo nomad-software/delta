@@ -329,7 +329,7 @@ func TestLogAndDetail(t *testing.T) {
 		t.Errorf("second page %+v", page)
 	}
 
-	changes, text, err := r.CommitDetail(second)
+	changes, err := r.CommitFiles(second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,17 +337,35 @@ func TestLogAndDetail(t *testing.T) {
 	if !slices.Equal(changes, want) {
 		t.Errorf("files %+v", changes)
 	}
-	for _, part := range []string{"commit " + second.Hash, "Author:", "the body", "+added", "rename to moved"} {
-		if !strings.Contains(text, part) {
-			t.Errorf("no %q in %q", part, text)
-		}
+	// Each file's diff is its own; a rename is one with the file it came from.
+	if text := fileDiff(t, r, second, changes[0]); !strings.Contains(text, "+added") || strings.Contains(text, "moved") {
+		t.Errorf("added: %q", text)
+	}
+	if text := fileDiff(t, r, second, changes[1]); !strings.Contains(text, "rename to moved") || strings.Contains(text, "added") {
+		t.Errorf("moved: %q", text)
 	}
 
 	// The first commit has no parent to compare with.
-	changes, text, err = r.CommitDetail(first)
-	if err != nil || !slices.Equal(changes, []Change{{Path: "file", Code: 'A'}}) || !strings.Contains(text, "+one") {
-		t.Errorf("first: %+v, %q, %v", changes, text, err)
+	changes, err = r.CommitFiles(first)
+	if err != nil || !slices.Equal(changes, []Change{{Path: "file", Code: 'A'}}) {
+		t.Fatalf("first: %+v, %v", changes, err)
 	}
+	if text := fileDiff(t, r, first, changes[0]); !strings.Contains(text, "+one") {
+		t.Errorf("first: %q", text)
+	}
+}
+
+// fileDiff returns the diff of one of a commit's files.
+func fileDiff(t *testing.T, r *Repo, c Commit, f Change) string {
+	t.Helper()
+	text, err := r.CommitFileDiff(c, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(text, "diff --") != 1 {
+		t.Errorf("not the diff of one file: %q", text)
+	}
+	return text
 }
 
 func TestDetailOfMergeIsAgainstFirstParent(t *testing.T) {
@@ -365,9 +383,12 @@ func TestDetailOfMergeIsAgainstFirstParent(t *testing.T) {
 	if err != nil || len(commits[0].Parents) != 2 {
 		t.Fatalf("log %+v, %v", commits, err)
 	}
-	changes, text, err := r.CommitDetail(commits[0])
-	if err != nil || !slices.Equal(changes, []Change{{Path: "theirs", Code: 'A'}}) || !strings.Contains(text, "+theirs") {
-		t.Errorf("merge: %+v, %q, %v", changes, text, err)
+	changes, err := r.CommitFiles(commits[0])
+	if err != nil || !slices.Equal(changes, []Change{{Path: "theirs", Code: 'A'}}) {
+		t.Fatalf("merge: %+v, %v", changes, err)
+	}
+	if text := fileDiff(t, r, commits[0], changes[0]); !strings.Contains(text, "+theirs") {
+		t.Errorf("merge: %q", text)
 	}
 }
 
@@ -377,43 +398,31 @@ func TestUncommittedDetail(t *testing.T) {
 	write(t, r.Root, "staged", "staged\n")
 	git(t, r.Root, "add", "staged")
 	write(t, r.Root, "untracked", "untracked\n")
-	changes, text, err := r.CommitDetail(UncommittedCommit("abc"))
+	uncommitted := UncommittedCommit("abc")
+	changes, err := r.CommitFiles(uncommitted)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []Change{{Path: "file", Code: 'M'}, {Path: "staged", Code: 'A'}, {Path: "untracked", Code: Untracked}}
 	if !slices.Equal(changes, want) {
-		t.Errorf("files %+v", changes)
+		t.Fatalf("files %+v", changes)
 	}
-	for _, part := range []string{"+unstaged", "+staged", "+untracked", "b/file", "b/staged", "b/untracked"} {
-		if !strings.Contains(text, part) {
-			t.Errorf("no %q in %q", part, text)
+	// Staged or not, each is against HEAD.
+	for i, part := range []string{"+unstaged", "+staged", "+untracked"} {
+		if text := fileDiff(t, r, uncommitted, changes[i]); !strings.Contains(text, part) || !strings.Contains(text, "b/"+changes[i].Path) {
+			t.Errorf("%s: %q", changes[i].Path, text)
 		}
-	}
-	if strings.Count(text, "diff --git") != 3 {
-		t.Errorf("not one diff to a file: %q", text)
 	}
 }
 
-// TestUncommittedDetailStopsAtTheCut checks that an untracked file's diff does not
-// follow one that was cut off, here well short of MaxDiff, as its last line is long.
-func TestUncommittedDetailStopsAtTheCut(t *testing.T) {
+// A file's diff is cut off as Diff says, here well short of MaxDiff, as its last
+// line is long.
+func TestCommitFileDiffIsCut(t *testing.T) {
 	r := newRepo(t)
-	write(t, r.Root, "big", "start\n")
-	if err := r.Stage([]Change{{Path: "big"}}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := r.Commit("big"); err != nil {
-		t.Fatal(err)
-	}
-	write(t, r.Root, "big", "short\n"+strings.Repeat("x", MaxDiff+1)+"\n")
-	write(t, r.Root, "later", "later text\n")
-	changes, text, err := r.CommitDetail(UncommittedCommit(""))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(changes) != 2 || !strings.HasSuffix(text, cutNote()) || strings.Contains(text, "later text") {
-		t.Errorf("%d changes, text %q", len(changes), text[max(0, len(text)-200):])
+	write(t, r.Root, "file", "short\n"+strings.Repeat("x", MaxDiff+1)+"\n")
+	text, err := r.CommitFileDiff(UncommittedCommit(""), Change{Path: "file", Code: 'M'})
+	if err != nil || !strings.HasSuffix(text, cutNote()) || len(text) > MaxDiff+len(cutNote()) {
+		t.Errorf("%v, %d bytes", err, len(text))
 	}
 }
 
@@ -496,9 +505,16 @@ func TestUncommittedDetailOfUnbornBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	changes, text, err := r.CommitDetail(UncommittedCommit(""))
-	if err != nil || len(changes) != 2 || !strings.Contains(text, "+staged") || !strings.Contains(text, "+untracked") {
-		t.Errorf("%+v, %q, %v", changes, text, err)
+	uncommitted := UncommittedCommit("")
+	changes, err := r.CommitFiles(uncommitted)
+	if err != nil || len(changes) != 2 {
+		t.Fatalf("%+v, %v", changes, err)
+	}
+	if text := fileDiff(t, r, uncommitted, changes[0]); !strings.Contains(text, "+staged") {
+		t.Errorf("staged: %q", text)
+	}
+	if text := fileDiff(t, r, uncommitted, changes[1]); !strings.Contains(text, "+untracked") {
+		t.Errorf("untracked: %q", text)
 	}
 }
 

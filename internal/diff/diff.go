@@ -17,9 +17,7 @@ const (
 	Removed
 	// Hunk is the heading of a hunk, the @@ line.
 	Hunk
-	// File is the name of a file, heading its diff.
-	File
-	// Meta is anything else: a commit's header, a rename, or a note.
+	// Meta is anything else: a rename, a change of mode, or a note.
 	Meta
 )
 
@@ -32,8 +30,6 @@ type Parsed struct {
 	// RangeEnds says, for each Hunk line, where its @@ range ends, in bytes,
 	// which is where any text about the hunk starts.
 	RangeEnds []int
-	// Files are the lines at which the diff of each file starts.
-	Files []int
 }
 
 // cleaner replaces whatever a text widget would take as the end of a block,
@@ -53,15 +49,15 @@ var hiddenHeaders = []string{
 	"similarity index ", "dissimilarity index ",
 }
 
-// Parse makes the output of git ready to be shown. Each file's "diff" line is
-// dropped with the rest of its header, or, if titles is set, as when several
-// files are shown together, replaced by the file's name.
+// Parse makes the output of git ready to be shown, a file at a time: each
+// file's "diff" line is dropped with the rest of its header, as the file is
+// named above the diff.
 //
 // A line starting "--- " is a removal in a hunk and a header outside one, so it
 // matters which it is in. Every line in a hunk starts with a space, + or - (for
 // each parent, in the combined diff of a merge), so a "diff " line can only be
 // the start of the next file.
-func Parse(text string, titles bool) Parsed {
+func Parse(text string) Parsed {
 	lines := strings.Split(cleaner.Replace(strings.ToValidUTF8(text, "�")), "\n")
 	p := Parsed{}
 	shown := make([]string, 0, len(lines))
@@ -71,18 +67,12 @@ func Parse(text string, titles bool) Parsed {
 		p.RangeEnds = append(p.RangeEnds, rangeEnd)
 	}
 	// columns is how many characters start each line of the hunk, or 0 outside
-	// a hunk. inHeader says that a file's header is being read, and title is
-	// where its name goes, or -1.
-	columns, inHeader, title := 0, false, -1
+	// a hunk. inHeader says that a file's header is being read.
+	columns, inHeader := 0, false
 	for _, line := range lines {
 		switch {
 		case strings.HasPrefix(line, "diff "):
-			columns, inHeader, title = 0, true, -1
-			p.Files = append(p.Files, len(shown))
-			if titles {
-				title = len(shown)
-				add(nameFromDiffLine(line), File, 0)
-			}
+			columns, inHeader = 0, true
 		case strings.HasPrefix(line, "@@"):
 			inHeader = false
 			columns = len(line) - len(strings.TrimLeft(line, "@")) - 1
@@ -90,9 +80,6 @@ func Parse(text string, titles bool) Parsed {
 		case inHeader && line == "":
 			add(line, Context, 0)
 		case inHeader:
-			if name := nameFromHeader(line); name != "" && title >= 0 {
-				shown[title] = name
-			}
 			if !hasAnyPrefix(line, hiddenHeaders) {
 				add(line, Meta, 0)
 			}
@@ -124,41 +111,6 @@ func rangeEnd(line string, marker int) int {
 		return marker + i + len(closing)
 	}
 	return len(line)
-}
-
-// nameFromHeader returns the name a line of a file's header gives it, if any.
-func nameFromHeader(line string) string {
-	for _, prefix := range []string{"rename to ", "copy to "} {
-		if name, ok := strings.CutPrefix(line, prefix); ok {
-			return name
-		}
-	}
-	// git ends a name with spaces in it with a tab. A file that is new or gone
-	// has /dev/null on one side, whose other side names it.
-	if name, ok := strings.CutPrefix(line, "+++ b/"); ok {
-		return strings.TrimRight(name, "\t")
-	}
-	if name, ok := strings.CutPrefix(line, "--- a/"); ok {
-		return strings.TrimRight(name, "\t")
-	}
-	return ""
-}
-
-// nameFromDiffLine returns the name of a file from its "diff" line, for when no
-// other line of its header names it, as when only its mode changed. It is
-// "diff --git a/name b/name", which can only be cut in two at the middle if the
-// name has spaces in it, or "diff --cc name".
-func nameFromDiffLine(line string) string {
-	if name, ok := strings.CutPrefix(line, "diff --cc "); ok {
-		return name
-	}
-	if names, ok := strings.CutPrefix(line, "diff --git a/"); ok {
-		if half := (len(names) - len(" b/")) / 2; half > 0 && strings.HasPrefix(names[half:], " b/") {
-			return names[:half]
-		}
-		return names
-	}
-	return line
 }
 
 // inHunk returns what a line in a hunk is, from its first columns characters.

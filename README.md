@@ -1,8 +1,8 @@
 # <img src="internal/appicon/appicon.png" alt="" width="40" height="40"> Delta
 
-**A fast, friendly git GUI for Linux and macOS.** Delta puts `git gui` and
-`gitk` in one window: stage and commit your changes, then press `Ctrl+H` to
-browse the history as a graph, and press it again to go back. It is a native
+**A fast, friendly git GUI for Linux and macOS.** Stage and commit your changes,
+then press `Ctrl+H` to browse the history as a graph in the same window, and
+press it again to go back. It is a native
 Qt 6 app written in Go, through the [miqt](https://github.com/mappu/miqt)
 bindings.
 
@@ -20,7 +20,8 @@ bindings.
   to each file, the diff follows the file you choose (or drag over), and a
   double-click stages or unstages it. The history draws every branch and merge
   as a graph, reads more as you scroll, and starts with a row for what you
-  haven't committed yet.
+  haven't committed yet. In both, the diff is of one file at a time, the one
+  you choose.
 * **Interactive rebase without the editor.** Right-click a commit, then drag
   commits into order and pick, fixup, reword, edit, squash or drop each from a
   dropdown, with the message right below. When git stops, the Branch menu has
@@ -155,9 +156,10 @@ branches and tags at them in brackets. They are read 500 at a time (a setting),
 and more as you scroll to the end. If anything is not committed yet, an
 **Uncommitted changes** row comes first, staged, unstaged and untracked together.
 
-Below the commits, choose one to see the files it changed on the left, and its
-message and diff on the right. Choose a file to go to its place in the diff. A
-merge is shown as what it changed against its first parent.
+Below the commits, choose one to see the files it changed on the left, and the
+diff of one of them on the right: the first to start with, and whichever you
+choose after, as in the changes. A merge is shown as what it changed against its
+first parent.
 
 A diff over 4 MiB, of the changes or in the history, is cut off with a note
 saying so.

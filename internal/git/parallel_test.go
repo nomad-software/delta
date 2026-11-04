@@ -1,11 +1,8 @@
 package git
 
 import (
-	"fmt"
 	"slices"
-	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -37,99 +34,6 @@ func TestTogetherRunsAtOnce(t *testing.T) {
 	}
 	if slices.Contains(ran, false) {
 		t.Errorf("ran %v", ran)
-	}
-}
-
-// each calls every number once, more than one at a time, and never more than
-// readers at a time.
-func TestEachLimitsHowManyAtOnce(t *testing.T) {
-	old := readers
-	readers = 3
-	t.Cleanup(func() { readers = old })
-	const n = 40
-	var running, most atomic.Int32
-	calls := make([]int32, n)
-	each(n, func(i int) {
-		now := running.Add(1)
-		for {
-			m := most.Load()
-			if now <= m || most.CompareAndSwap(m, now) {
-				break
-			}
-		}
-		time.Sleep(2 * time.Millisecond)
-		atomic.AddInt32(&calls[i], 1)
-		running.Add(-1)
-	})
-	for i, c := range calls {
-		if c != 1 {
-			t.Errorf("%d called %d times", i, c)
-		}
-	}
-	if m := most.Load(); m < 2 || m > 3 {
-		t.Errorf("at most %d at once", m)
-	}
-}
-
-// The diffs of many untracked files, read several at a time, are in the order
-// of the files, each once.
-func TestUntrackedDiffsInOrder(t *testing.T) {
-	r := newRepo(t)
-	var names []string
-	for i := range readers*2 + 3 {
-		name := fmt.Sprintf("new%03d", i)
-		names = append(names, name)
-		write(t, r.Root, name, "text of "+name+"\n")
-	}
-	changes, text, err := r.CommitDetail(UncommittedCommit(""))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got []string
-	for _, c := range changes {
-		got = append(got, c.Path)
-	}
-	if !slices.Equal(got, names) {
-		t.Errorf("files %q", got)
-	}
-	at := -1
-	for _, name := range names {
-		next := strings.Index(text, "+text of "+name+"\n")
-		if next <= at || strings.Count(text, "+text of "+name+"\n") != 1 {
-			t.Fatalf("%s is not once, after the one before it", name)
-		}
-		at = next
-	}
-}
-
-// Untracked files after one whose diff is cut off are listed, but their diffs
-// are not shown, however many are read at once: here the cut is well short of
-// MaxDiff, as the file's last line is long, so that only the files after it in
-// the same batch would show.
-func TestUntrackedDiffsStopAtTheCut(t *testing.T) {
-	r := newRepo(t)
-	for i := range readers * 3 {
-		text := fmt.Sprintf("small %d\n", i)
-		if i == readers+1 {
-			text = "short\n" + strings.Repeat("x", MaxDiff+1) + "\n"
-		}
-		write(t, r.Root, fmt.Sprintf("new%03d", i), text)
-	}
-	changes, text, err := r.CommitDetail(UncommittedCommit(""))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(changes) != readers*3 {
-		t.Errorf("%d files", len(changes))
-	}
-	if !strings.HasSuffix(text, cutNote()) || strings.Count(text, cutNote()) != 1 {
-		t.Error("not cut off once, at the end")
-	}
-	for i := range readers * 3 {
-		shown := strings.Contains(text, fmt.Sprintf("+small %d\n", i))
-		if shown != (i <= readers) {
-			t.Errorf("file %d shown %v", i, shown)
-		}
 	}
 }
 
@@ -201,7 +105,8 @@ func TestReadsAtOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := r.Snapshot()
-	_, wantText, _ := r.CommitDetail(UncommittedCommit(commits[0].Hash))
+	uncommitted := UncommittedCommit(commits[0].Hash)
+	wantFiles, _ := r.CommitFiles(uncommitted)
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Go(func() {
@@ -209,10 +114,10 @@ func TestReadsAtOnce(t *testing.T) {
 			if snap.Err != nil || !slices.Equal(snap.Status.Unstaged, want.Status.Unstaged) || snap.QuickFix != want.QuickFix {
 				t.Errorf("snapshot %+v", snap)
 			}
-			if _, text, err := r.CommitDetail(UncommittedCommit(commits[0].Hash)); err != nil || text != wantText {
-				t.Errorf("detail %v", err)
+			if files, err := r.CommitFiles(uncommitted); err != nil || !slices.Equal(files, wantFiles) {
+				t.Errorf("files %+v, %v", files, err)
 			}
-			if _, _, err := r.CommitDetail(commits[0]); err != nil {
+			if _, err := r.CommitFiles(commits[0]); err != nil {
 				t.Error(err)
 			}
 		})
