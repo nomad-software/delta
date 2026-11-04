@@ -108,7 +108,8 @@ func NewWindow(path string) *Window {
 	w.bar = newRepoBar()
 	w.bar.setRepositories(w.config.Repositories, "")
 	// The progress bar is under the toolbar, the width of the window.
-	w.progress = newProgress()
+	w.progress = newProgress(w.config.ProgressColour)
+	changeColours = changeCodes(w.config.ChangeColours)
 	central := qt.NewQWidget2()
 	layout := qt.NewQVBoxLayout(central)
 	layout.SetContentsMargins(0, 0, 0, 0)
@@ -755,8 +756,20 @@ func (w *Window) applySettings(s settings.Settings) {
 	w.history.pageSize = s.HistoryPageSize
 	w.changes.diff.setColours(s.AddedColour, s.RemovedColour, s.HunkColour)
 	w.history.diff.setColours(s.AddedColour, s.RemovedColour, s.HunkColour)
+	w.applyColours()
 	w.applyCodeFont()
 	w.saveSettings()
+}
+
+// applyColours gives the circles of changed files and the progress bar the
+// colours chosen, and paints again what shows them.
+func (w *Window) applyColours() {
+	changeColours = changeCodes(w.config.ChangeColours)
+	w.progress.colour = w.config.ProgressColour
+	for _, view := range []*qt.QAbstractItemView{w.changes.unstaged.QAbstractItemView, w.changes.staged.QAbstractItemView, w.history.files.QAbstractItemView} {
+		view.Viewport().Update()
+	}
+	w.progress.Update()
 }
 
 // applyCodeFont gives the diffs and the commit message the font chosen.

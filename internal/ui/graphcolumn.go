@@ -4,6 +4,7 @@ import (
 	qt "github.com/mappu/miqt/qt6"
 
 	"github.com/nomad-software/delta/internal/graph"
+	"github.com/nomad-software/delta/internal/settings"
 )
 
 // The size of the graph, in pixels.
@@ -18,13 +19,6 @@ const (
 	graphNodeRing = 1.5
 )
 
-// graphColours are the colours of the branches, which read on light and dark
-// backgrounds alike, and are told apart at a glance.
-var graphColours = []string{
-	"#3b82f6", "#ef4444", "#22a55b", "#f59e0b",
-	"#a855f7", "#06b6d4", "#ec4899", "#84a60f",
-}
-
 // graphColumn draws the graph in the column of the commits, row by row, which is
 // what makes it scroll with them and take no time for rows out of sight.
 type graphColumn struct {
@@ -34,6 +28,14 @@ type graphColumn struct {
 	// pens and brushes are of each of graphColours.
 	pens    []*qt.QPen
 	brushes []*qt.QBrush
+}
+
+// graphColours are the colours of the branches, taken in turn: Solarized's
+// accents, which read on light and dark backgrounds alike, in an order that puts
+// those most alike apart.
+var graphColours = []string{
+	settings.Blue, settings.Red, settings.Green, settings.Yellow,
+	settings.Violet, settings.Cyan, settings.Magenta, settings.Orange,
 }
 
 func newGraphColumn(parent *qt.QObject) *graphColumn {

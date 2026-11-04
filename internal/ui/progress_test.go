@@ -5,6 +5,7 @@ import (
 	"time"
 
 	qt "github.com/mappu/miqt/qt6"
+	"github.com/nomad-software/delta/internal/settings"
 )
 
 // progressShown says whether the progress bar is on show.
@@ -121,7 +122,7 @@ func TestWorkPairs(t *testing.T) {
 // beyond the bar.
 func TestProgressChunk(t *testing.T) {
 	on(func() {
-		p := newProgress()
+		p := newProgress(settings.DefaultProgressColour)
 		defer p.Delete()
 		p.Resize(400, progressHeight)
 		for phase, want := range map[float64][2]int{

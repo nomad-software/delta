@@ -21,8 +21,8 @@ const (
 
 // progress is the sign that something is being done in the background: a bar
 // the width of the window under the toolbar, busy rather than counting, as how
-// long git will take is not known. It is painted here, a segment in the
-// highlight colour sweeping across a faint track, as a style's own busy bar may
+// long git will take is not known. It is painted here, a segment in its
+// colour sweeping across a faint track, as a style's own busy bar may
 // be a still block of colour. It keeps its room while hidden, so that the panes
 // under it don't move as it shows and goes.
 type progress struct {
@@ -31,10 +31,13 @@ type progress struct {
 	delay, frames *qt.QTimer
 	// phase is how far through a sweep the segment is, from 0 to 1.
 	phase float64
+	// colour is the segment's, as #rrggbb.
+	colour string
 }
 
-func newProgress() *progress {
-	p := &progress{QProgressBar: qt.NewQProgressBar2()}
+// newProgress returns the bar, its segment in the colour.
+func newProgress(colour string) *progress {
+	p := &progress{QProgressBar: qt.NewQProgressBar2(), colour: colour}
 	p.SetRange(0, 0)
 	p.SetTextVisible(false)
 	p.SetFixedHeight(progressHeight)
@@ -89,7 +92,8 @@ func (p *progress) chunk() (left, right int) {
 }
 
 // paint draws the track, in a colour a little way from the window's towards its
-// text, and the segment on it in the highlight colour.
+// text, so that it follows the theme, and the segment on it in its colour, by
+// default Solarized's blue.
 func (p *progress) paint() {
 	// The palette is a copy, whose colours are its own, kept until they have
 	// been used.
@@ -101,6 +105,8 @@ func (p *progress) paint() {
 	defer painter.Delete()
 	painter.FillRect5(0, 0, p.Width(), p.Height(), track)
 	left, right := p.chunk()
-	painter.FillRect5(left, 0, right-left, p.Height(), palette.ColorWithCr(qt.QPalette__Highlight))
+	segment := qt.NewQColor6(p.colour)
+	defer segment.Delete()
+	painter.FillRect5(left, 0, right-left, p.Height(), segment)
 	painter.End()
 }

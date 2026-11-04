@@ -27,9 +27,11 @@ func TestChangeIcons(t *testing.T) {
 				// The edge, at the middle of the left, is the colour itself,
 				// and the middle a wash of it.
 				edge := image.PixelColor(0, changeDotSize/2)
+				// The outline is two pixels wide: the second in is it too.
+				inner := image.PixelColor(1, changeDotSize/2)
 				middle := image.PixelColor(changeDotSize/2, changeDotSize/2)
-				if edge.Alpha() < 128 || middle.Alpha() == 0 || middle.Alpha() > 128 {
-					t.Errorf("%s %c: edge alpha %d, middle alpha %d", theme, code, edge.Alpha(), middle.Alpha())
+				if edge.Alpha() < 128 || inner.Alpha() < 192 || middle.Alpha() == 0 || middle.Alpha() > 128 {
+					t.Errorf("%s %c: edge alpha %d, inner %d, middle %d", theme, code, edge.Alpha(), inner.Alpha(), middle.Alpha())
 				}
 				colour := qt.NewQColor6(want)
 				if d := edge.Hue() - colour.Hue(); colour.Saturation() > 0 && (d > 8 || d < -8) {

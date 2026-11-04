@@ -25,6 +25,8 @@ func TestRoundTrip(t *testing.T) {
 	s.HistoryPageSize = 2000
 	s.Theme = ThemeDark
 	s.AddedColour, s.RemovedColour, s.HunkColour = "#010203", "#040506", "#070809"
+	s.ChangeColours = ChangeColours{"#000001", "#000002", "#000003", "#000004", "#000005", "#000006", "#000007", "#000008"}
+	s.ProgressColour = "#abcdef"
 	s.CodeFont, s.CodeFontSize = "Some Font", 14
 	s.Repositories = []string{"/one", "/two"}
 	s.LastRepository = "/two"
@@ -44,7 +46,8 @@ func TestUnusableValues(t *testing.T) {
 		}
 	}
 	write(`{"width": 5, "height": 5, "sidebar": [0, 10], "lists": [-1, 2], "editor": [3, 0], "history": [0, 1], "historyDetail": [1, -1], "rebaseWidth": 900, "rebaseHeight": 3, "historyPageSize": 10,
-		"codeFont": "  ", "codeFontSize": 500, "lastRepository": "relative", "theme": "purple", "addedColour": "green", "removedColour": "#12", "hunkColour": "grey"}`)
+		"codeFont": "  ", "codeFontSize": 500, "lastRepository": "relative", "theme": "purple", "addedColour": "green", "removedColour": "#12", "hunkColour": "grey",
+		"changeColours": {"modified": "blue", "untracked": ""}, "progressColour": "#ggg000"}`)
 	if got := Load(path); !reflect.DeepEqual(got, Defaults()) {
 		t.Errorf("got %+v", got)
 	}
@@ -88,5 +91,22 @@ func TestRepositories(t *testing.T) {
 	}
 	if !s.Remember("/d") || !slices.Equal(s.Repositories, []string{"/a/b", "/c", "/d"}) {
 		t.Errorf("remembered %q", s.Repositories)
+	}
+}
+
+// Colours given in part keep those that are usable, the rest their defaults.
+func TestColoursInPart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(path, []byte(`{"changeColours": {"added": "#111111", "deleted": "nope"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := Load(path)
+	want := DefaultChangeColours
+	want.Added = "#111111"
+	if s.ChangeColours != want {
+		t.Errorf("changes %+v", s.ChangeColours)
+	}
+	if s.ProgressColour != DefaultProgressColour {
+		t.Errorf("progress %s", s.ProgressColour)
 	}
 }

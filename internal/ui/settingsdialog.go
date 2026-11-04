@@ -16,10 +16,12 @@ const (
 )
 
 // colourTableHeight is the least height of the table of colours.
-const colourTableHeight = 170
+const colourTableHeight = 260
 
-// settingsDialog edits the theme, the font of the code and the colours of the
-// diff.
+// settingsDialog edits the theme, the font of the code, the history, and the
+// colours the program gives itself. As apemail's, each section is a frame with
+// its name, a note on what it is for, and its fields; the colours are in a
+// table in theirs.
 type settingsDialog struct {
 	*qt.QDialog
 	tabs        *qt.QTabWidget
@@ -34,9 +36,15 @@ type settingsDialog struct {
 	defaultFamily        string
 	defaultSize          int
 	added, removed, hunk *colourButton
+	// changes are the colours of the circles of changed files, in the order of
+	// changeNames, and progress that of the progress bar's segment.
+	changes  []*colourButton
+	progress *colourButton
 	// colours is the table of the colours.
 	colours *qt.QTableWidget
-	box     *qt.QDialogButtonBox
+	// sections are the frames of the sections, by title.
+	sections map[string]*qt.QGroupBox
+	box      *qt.QDialogButtonBox
 }
 
 // colourButton shows a colour, and chooses another when clicked.
@@ -59,26 +67,48 @@ func newColourButton(title string) *colourButton {
 	return b
 }
 
-// set shows the colour, named on the button in whichever of black and white can
-// be read on it.
+// set shows the colour, named on the button in whichever of Solarized's darkest
+// and lightest can be read on it.
 func (b *colourButton) set(colour string) {
 	b.colour = colour
 	c := qt.NewQColor6(colour)
 	defer c.Delete()
-	text := "#ffffff"
+	text := settings.Base3
 	if c.Red()*299+c.Green()*587+c.Blue()*114 > 128000 {
-		text = "#000000"
+		text = settings.Base03
 	}
 	b.SetText(colour)
-	b.SetStyleSheet(fmt.Sprintf("QPushButton { background-color: %s; color: %s; padding: 6px; }", colour, text))
+	// With a border of its own, the button is drawn in the colour as it is,
+	// rather than shaded by the style.
+	b.SetStyleSheet(fmt.Sprintf("QPushButton { background-color: %s; color: %s; padding: 6px; border: 1px solid %s; border-radius: 3px; }", colour, text, text))
+}
+
+// settingsDialogWidth is the narrowest the dialog is, so that its notes have
+// room.
+const settingsDialogWidth = 560
+
+// changeNames are what can happen to a file, as the settings list them, each
+// with where its colour is kept.
+var changeNames = []struct {
+	name   string
+	colour func(*settings.ChangeColours) *string
+}{
+	{"Modified", func(c *settings.ChangeColours) *string { return &c.Modified }},
+	{"Added", func(c *settings.ChangeColours) *string { return &c.Added }},
+	{"Deleted", func(c *settings.ChangeColours) *string { return &c.Deleted }},
+	{"Renamed", func(c *settings.ChangeColours) *string { return &c.Renamed }},
+	{"Copied", func(c *settings.ChangeColours) *string { return &c.Copied }},
+	{"Type changed", func(c *settings.ChangeColours) *string { return &c.TypeChanged }},
+	{"In conflict", func(c *settings.ChangeColours) *string { return &c.Conflict }},
+	{"Untracked", func(c *settings.ChangeColours) *string { return &c.Untracked }},
 }
 
 // newSettingsDialog returns the dialog showing the settings. accepted is called
 // with what was chosen, on top of current, if it is accepted.
 func newSettingsDialog(parent *qt.QWidget, current settings.Settings, accepted func(settings.Settings)) *settingsDialog {
-	d := &settingsDialog{QDialog: qt.NewQDialog(parent)}
+	d := &settingsDialog{QDialog: qt.NewQDialog(parent), sections: map[string]*qt.QGroupBox{}}
 	d.SetWindowTitle("Settings")
-	d.SetMinimumWidth(460)
+	d.SetMinimumWidth(settingsDialogWidth)
 
 	d.theme = qt.NewQComboBox2()
 	for _, t := range themeChoices {
@@ -100,6 +130,19 @@ func newSettingsDialog(parent *qt.QWidget, current settings.Settings, accepted f
 	codeRow.AddWidget2(d.codeFamily.QWidget, 1)
 	codeRow.AddWidget(d.codeSize.QWidget)
 	codeRow.AddWidget(d.codeDefault.QWidget)
+	d.historyPage = qt.NewQSpinBox2()
+	d.historyPage.SetRange(settings.MinHistoryPageSize, settings.MaxHistoryPageSize)
+	d.historyPage.SetSingleStep(100)
+	d.historyPage.SetSuffix(" commits")
+
+	d.tabs = qt.NewQTabWidget2()
+
+	look := d.page("User interface")
+	appearance := d.section(look, "Appearance", "")
+	appearance.AddRow3("Theme:", d.theme.QWidget)
+	appearance.AddRow4("Code font:", codeRow.QLayout)
+	history := d.section(look, "History", "The history is read this many commits at a time.")
+	history.AddRow3("Commits:", d.historyPage.QWidget)
 
 	d.colours = qt.NewQTableWidget3(0, colourColumns)
 	d.colours.SetMinimumHeight(colourTableHeight)
@@ -116,38 +159,23 @@ func newSettingsDialog(parent *qt.QWidget, current settings.Settings, accepted f
 	d.added = d.addColour("Added lines")
 	d.removed = d.addColour("Removed lines")
 	d.hunk = d.addColour("Hunk headers")
+	d.addColourSection("Changed files")
+	for _, c := range changeNames {
+		d.changes = append(d.changes, d.addColour(c.name))
+	}
+	d.addColourSection("Progress bar")
+	d.progress = d.addColour("Progress")
 
 	useDefaults := qt.NewQPushButton3("Use Default Colours")
-	useDefaults.OnClicked(func() {
-		d.added.set(settings.DefaultAdded)
-		d.removed.set(settings.DefaultRemoved)
-		d.hunk.set(settings.DefaultHunk)
-	})
+	useDefaults.OnClicked(func() { d.showColours(settings.Defaults()) })
 	defaultsRow := qt.NewQHBoxLayout2()
 	defaultsRow.AddStretch()
 	defaultsRow.AddWidget(useDefaults.QWidget)
-
-	form := qt.NewQFormLayout2()
-	form.AddRow3("Theme", d.theme.QWidget)
-	form.AddRow4("Code font", codeRow.QLayout)
-
-	d.historyPage = qt.NewQSpinBox2()
-	d.historyPage.SetRange(settings.MinHistoryPageSize, settings.MaxHistoryPageSize)
-	d.historyPage.SetSingleStep(100)
-	d.historyPage.SetSuffix(" commits")
-	// The History section is in the same form, so that its field lines up
-	// with those above it.
-	form.AddRowWithWidget(heading("History").QWidget)
-	form.AddRow3("Commits read at a time", d.historyPage.QWidget)
-
-	page := qt.NewQWidget2()
-	pageLayout := qt.NewQVBoxLayout(page)
-	pageLayout.SetContentsMargins(20, 20, 20, 20)
-	pageLayout.AddWidget(heading("Appearance").QWidget)
-	pageLayout.AddLayout(form.QLayout)
-	pageLayout.AddWidget(heading("Colours").QWidget)
-	pageLayout.AddWidget2(d.colours.QWidget, 1)
-	pageLayout.AddLayout(defaultsRow.QLayout)
+	colours := d.section(look, "Colours", "")
+	colours.AddRowWithWidget(d.colours.QWidget)
+	colours.AddRowWithLayout(defaultsRow.QLayout)
+	// The table takes what room the page has.
+	look.SetStretchFactor(d.sections["Colours"].QWidget, 1)
 
 	d.show(current)
 
@@ -159,14 +187,40 @@ func newSettingsDialog(parent *qt.QWidget, current settings.Settings, accepted f
 		accepted(d.chosen(current))
 	})
 
-	d.tabs = qt.NewQTabWidget2()
-	d.tabs.AddTab(page, "User interface")
-
 	layout := qt.NewQVBoxLayout(d.QWidget)
 	layout.AddWidget2(d.tabs.QWidget, 1)
 	layout.AddWidget(d.box.QWidget)
+	// Its notes wrap onto more lines than Qt allows for, so it is given the
+	// height its contents need at its width, and no less, as the about box is;
+	// else the frames overlap what is in them.
+	fitHeight(d.QDialog, settingsDialogWidth)
+	d.SetMinimumHeight(d.Height())
 	d.OnFinished(func(int) { d.DeleteLater() })
 	return d
+}
+
+// page adds a tab, and returns the layout its sections go in.
+func (d *settingsDialog) page(title string) *qt.QVBoxLayout {
+	w := qt.NewQWidget2()
+	d.tabs.AddTab(w, title)
+	return qt.NewQVBoxLayout(w)
+}
+
+// section adds a frame with the title to the layout, with the note, if there is
+// one, above its fields, and returns the form they go in. Its fields grow to its width, as
+// some styles keep them narrow.
+func (d *settingsDialog) section(layout *qt.QVBoxLayout, title, note string) *qt.QFormLayout {
+	box := qt.NewQGroupBox3(title)
+	form := qt.NewQFormLayout(box.QWidget)
+	form.SetFieldGrowthPolicy(qt.QFormLayout__AllNonFixedFieldsGrow)
+	if note != "" {
+		label := qt.NewQLabel3(note)
+		label.SetWordWrap(true)
+		form.AddRowWithWidget(label.QWidget)
+	}
+	layout.AddWidget(box.QWidget)
+	d.sections[title] = box
+	return form
 }
 
 // addColourSection adds a bold row as wide as the table, heading those after it.
@@ -209,9 +263,18 @@ func (d *settingsDialog) show(s settings.Settings) {
 	}
 	d.showFont(s.CodeFont, s.CodeFontSize)
 	d.historyPage.SetValue(s.HistoryPageSize)
+	d.showColours(s)
+}
+
+// showColours puts the settings' colours in the dialog.
+func (d *settingsDialog) showColours(s settings.Settings) {
 	d.added.set(s.AddedColour)
 	d.removed.set(s.RemovedColour)
 	d.hunk.set(s.HunkColour)
+	for i, c := range changeNames {
+		d.changes[i].set(*c.colour(&s.ChangeColours))
+	}
+	d.progress.set(s.ProgressColour)
 }
 
 // showFont puts a font in the dialog, each part the system's if it is not given.
@@ -237,5 +300,9 @@ func (d *settingsDialog) chosen(s settings.Settings) settings.Settings {
 	s.AddedColour = d.added.colour
 	s.RemovedColour = d.removed.colour
 	s.HunkColour = d.hunk.colour
+	for i, c := range changeNames {
+		*c.colour(&s.ChangeColours) = d.changes[i].colour
+	}
+	s.ProgressColour = d.progress.colour
 	return s
 }

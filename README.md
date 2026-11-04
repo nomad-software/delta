@@ -161,8 +161,14 @@ The **User interface** tab of **File > Settings…** sets:
   font can be chosen.
 - How many commits of the history are read at a time: 500 to start with, from
   50 to 10,000.
-- The colours of added lines, removed lines and hunk headers (the grey
-  `@@ -1,6 +1,7 @@`), in a table. They start as Solarized's green, red and grey.
+
+Its table of colours sets every colour Delta gives itself, each starting as one
+of Solarized's:
+
+- The diff's added lines, removed lines and hunk headers (the grey
+  `@@ -1,6 +1,7 @@`).
+- The circle beside a changed file, for each thing that can happen to it.
+- The progress bar under the toolbar.
 
 The settings are kept in `delta/settings.json` under the system's configuration
 folder (`~/.config` on Linux), along with whether **Force push** is ticked, the

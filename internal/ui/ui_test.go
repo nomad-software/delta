@@ -1021,7 +1021,7 @@ func TestSettingsDialog(t *testing.T) {
 		var got settings.Settings
 		d := newSettingsDialog(nil, current, func(s settings.Settings) { got = s })
 		defer d.Delete()
-		if d.tabs.Count() != 1 || d.tabs.TabText(0) != "User interface" || !d.tabs.Widget(0).IsAncestorOf(d.theme.QWidget) {
+		if d.tabs.Count() != 1 || d.tabs.TabText(0) != "User interface" || !d.tabs.Widget(0).IsAncestorOf(d.theme.QWidget) || !d.tabs.Widget(0).IsAncestorOf(d.colours.QWidget) {
 			t.Errorf("tabs: %d, first %q", d.tabs.Count(), d.tabs.TabText(0))
 		}
 		if d.theme.CurrentText() != "Dark" || d.theme.Count() != 3 || d.added.colour != "#123456" {
@@ -1129,36 +1129,84 @@ func TestCodeFontIsApplied(t *testing.T) {
 	})
 }
 
-func TestColourTable(t *testing.T) {
+// As apemail's, each section is a frame with its name, a note, and its fields,
+// labelled; the colours are in a table in theirs, every colour the program
+// gives itself, and each is chosen.
+func TestSettingsSections(t *testing.T) {
 	on(func() {
-		current := settings.Defaults()
-		current.HunkColour = "#111111"
 		var got settings.Settings
-		d := newSettingsDialog(nil, current, func(s settings.Settings) { got = s })
+		d := newSettingsDialog(nil, settings.Defaults(), func(s settings.Settings) { got = s })
 		defer d.Delete()
-		if d.colours.ColumnCount() != 2 || d.colours.RowCount() != 4 {
-			t.Fatalf("table is %d by %d", d.colours.ColumnCount(), d.colours.RowCount())
+		// note is the section's note, or empty if it has none.
+		in := func(title, note string, widgets ...*qt.QWidget) {
+			t.Helper()
+			box := d.sections[title]
+			if box == nil || box.Title() != title {
+				t.Errorf("no frame %q", title)
+				return
+			}
+			for _, w := range widgets {
+				if !box.IsAncestorOf(w) {
+					t.Errorf("%q does not hold %q", title, w.ObjectName())
+				}
+			}
+			got := ""
+			for _, child := range box.Children() {
+				if child.Inherits("QLabel") {
+					if label := qt.UnsafeNewQLabel(child.UnsafePointer()); label.WordWrap() {
+						got = label.Text()
+					}
+				}
+			}
+			if got != note {
+				t.Errorf("%q's note is %q", title, got)
+			}
+		}
+		in("Appearance", "", d.theme.QWidget, d.codeFamily.QWidget)
+		in("History", "The history is read this many commits at a time.", d.historyPage.QWidget)
+		in("Colours", "", d.colours.QWidget)
+		if len(d.sections) != 3 {
+			t.Errorf("%d frames", len(d.sections))
+		}
+		form := qt.UnsafeNewQFormLayout(d.sections["History"].Layout().UnsafePointer())
+		if label := qt.UnsafeNewQLabel(form.LabelForField(d.historyPage.QWidget).UnsafePointer()); label.Text() != "Commits:" {
+			t.Errorf("labelled %q", label.Text())
+		}
+
+		// The colours are in a table, in sections headed by bold rows across it.
+		if d.colours.ColumnCount() != 2 {
+			t.Fatalf("table has %d columns", d.colours.ColumnCount())
 		}
 		var names []string
 		for row := range d.colours.RowCount() {
-			names = append(names, d.colours.Item(row, colColourName).Text())
+			item := d.colours.Item(row, colColourName)
+			names = append(names, item.Text())
+			if heading := d.colours.CellWidget(row, colColourSwatch) == nil; heading != item.Font().Bold() || heading != (d.colours.ColumnSpan(row, colColourName) == 2) {
+				t.Errorf("row %q: heading %v, bold %v", item.Text(), heading, item.Font().Bold())
+			}
 		}
-		if want := []string{"Diff", "Added lines", "Removed lines", "Hunk headers"}; !slices.Equal(names, want) {
-			t.Errorf("names %q", names)
+		want := []string{"Diff", "Added lines", "Removed lines", "Hunk headers", "Changed files"}
+		for _, c := range changeNames {
+			want = append(want, c.name)
 		}
-		if !d.colours.Item(0, colColourName).Font().Bold() || d.colours.ColumnSpan(0, colColourName) != 2 {
-			t.Error("the section row is not a bold heading across the table")
+		want = append(want, "Progress bar", "Progress")
+		if !slices.Equal(names, want) {
+			t.Errorf("rows %q", names)
 		}
 		if !d.colours.CellWidget(3, colColourSwatch).IsAncestorOf(d.hunk.QWidget) {
 			t.Error("the button is not in the table")
 		}
-		if d.hunk.Text() != "#111111" {
-			t.Errorf("shown as %q", d.hunk.Text())
-		}
-		d.hunk.set("#222222")
+
+		// Each is chosen, and the defaults put back.
+		d.changes[2].set("#000003")
+		d.progress.set("#000009")
 		d.box.Button(qt.QDialogButtonBox__Ok).Click()
-		if got.HunkColour != "#222222" {
-			t.Errorf("chose %q", got.HunkColour)
+		if got.ChangeColours.Deleted != "#000003" || got.ProgressColour != "#000009" {
+			t.Errorf("chose %+v, %s", got.ChangeColours, got.ProgressColour)
+		}
+		d.showColours(settings.Defaults())
+		if s := d.chosen(settings.Settings{}); s.ChangeColours != settings.DefaultChangeColours || s.ProgressColour != settings.DefaultProgressColour {
+			t.Errorf("defaults %+v", s)
 		}
 	})
 }

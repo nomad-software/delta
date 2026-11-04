@@ -23,10 +23,42 @@ const (
 // heading. They are Solarized's green, red and base0 grey, as the circles of
 // changed files are.
 const (
-	DefaultAdded   = "#859900"
-	DefaultRemoved = "#dc322f"
-	DefaultHunk    = "#839496"
+	DefaultAdded   = Green
+	DefaultRemoved = Red
+	DefaultHunk    = Base0
 )
+
+// The default colours of the circles of changed files and the progress bar:
+// Solarized's accents, and its base0 grey for what git does not track.
+var (
+	DefaultChangeColours = ChangeColours{
+		Modified:    Blue,
+		Added:       Green,
+		Deleted:     Red,
+		Renamed:     Violet,
+		Copied:      Cyan,
+		TypeChanged: Yellow,
+		Conflict:    Orange,
+		Untracked:   Base0,
+	}
+)
+
+// DefaultProgressColour is the default colour of the progress bar's segment,
+// Solarized's blue.
+const DefaultProgressColour = Blue
+
+// ChangeColours are the colours of the circles of changed files, one for each
+// thing that can happen to a file, as #rrggbb.
+type ChangeColours struct {
+	Modified    string `json:"modified"`
+	Added       string `json:"added"`
+	Deleted     string `json:"deleted"`
+	Renamed     string `json:"renamed"`
+	Copied      string `json:"copied"`
+	TypeChanged string `json:"typeChanged"`
+	Conflict    string `json:"conflict"`
+	Untracked   string `json:"untracked"`
+}
 
 const leastWindowSize = 200
 
@@ -83,6 +115,10 @@ type Settings struct {
 	RemovedColour string `json:"removedColour"`
 	// HunkColour is the colour of the @@ range of a hunk's heading, as #rrggbb.
 	HunkColour string `json:"hunkColour"`
+	// ChangeColours are those of the circles of changed files, and
+	// ProgressColour that of the progress bar's segment, each as #rrggbb.
+	ChangeColours  ChangeColours `json:"changeColours"`
+	ProgressColour string        `json:"progressColour"`
 
 	// CodeFont is the family of the font of diffs and the commit message, empty
 	// for the system's fixed width font, and CodeFontSize its size in points,
@@ -112,6 +148,9 @@ func Defaults() Settings {
 		AddedColour:   DefaultAdded,
 		RemovedColour: DefaultRemoved,
 		HunkColour:    DefaultHunk,
+
+		ChangeColours:  DefaultChangeColours,
+		ProgressColour: DefaultProgressColour,
 
 		HistoryPageSize: DefaultHistoryPageSize,
 	}
@@ -172,6 +211,16 @@ func (s *Settings) normalise() {
 	s.AddedColour = colourOr(s.AddedColour, d.AddedColour)
 	s.RemovedColour = colourOr(s.RemovedColour, d.RemovedColour)
 	s.HunkColour = colourOr(s.HunkColour, d.HunkColour)
+	c, dc := &s.ChangeColours, d.ChangeColours
+	c.Modified = colourOr(c.Modified, dc.Modified)
+	c.Added = colourOr(c.Added, dc.Added)
+	c.Deleted = colourOr(c.Deleted, dc.Deleted)
+	c.Renamed = colourOr(c.Renamed, dc.Renamed)
+	c.Copied = colourOr(c.Copied, dc.Copied)
+	c.TypeChanged = colourOr(c.TypeChanged, dc.TypeChanged)
+	c.Conflict = colourOr(c.Conflict, dc.Conflict)
+	c.Untracked = colourOr(c.Untracked, dc.Untracked)
+	s.ProgressColour = colourOr(s.ProgressColour, d.ProgressColour)
 	if filepath.IsAbs(s.LastRepository) {
 		s.LastRepository = filepath.Clean(s.LastRepository)
 	} else {
