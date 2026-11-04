@@ -505,17 +505,17 @@ func (w *Window) updateActions() {
 	for _, a := range []*qt.QAction{w.continueRebase, w.skipRebase, w.abortRebase} {
 		a.SetEnabled(idle && w.status.Rebasing)
 	}
-	// Stashes are made and used only outside a merge or rebase, as is a quick
-	// fix, which needs one read for the state as it is.
-	stashable := idle && !w.status.Merging && !w.status.Rebasing
-	w.quickFixAction.SetEnabled(stashable && w.quickFix.Head != "" && w.quickFix.Refused == "")
-	w.uncommit.SetEnabled(stashable && w.canUncommit)
+	// Stashes, quick fixes, uncommitting and finishing a branch are only for
+	// outside a merge or rebase.
+	settled := idle && !w.status.Merging && !w.status.Rebasing
+	w.quickFixAction.SetEnabled(settled && w.quickFix.Head != "" && w.quickFix.Refused == "")
+	w.uncommit.SetEnabled(settled && w.canUncommit)
 	// A branch is finished with from any but the main one.
 	main := git.MainBranch(w.localBranches)
-	w.finishAction.SetEnabled(stashable && main != "" && w.status.Branch != "" && w.status.Branch != main)
-	w.stashAction.SetEnabled(stashable && len(w.status.Unstaged)+len(w.status.Staged) > 0)
+	w.finishAction.SetEnabled(settled && main != "" && w.status.Branch != "" && w.status.Branch != main)
+	w.stashAction.SetEnabled(settled && len(w.status.Unstaged)+len(w.status.Staged) > 0)
 	for _, a := range []*qt.QAction{w.applyStashAction, w.popStashAction, w.dropStashAction} {
-		a.SetEnabled(stashable && w.stashes > 0)
+		a.SetEnabled(settled && w.stashes > 0)
 	}
 
 	v.rescan.SetEnabled(w.rescan.IsEnabled())
@@ -667,8 +667,9 @@ func (w *Window) rescanRepository() {
 		var quickFix git.QuickFix
 		var canUncommit bool
 		if err == nil {
-			quickFix = r.PlanQuickFix(len(s.Unstaged)+len(s.Staged) > 0)
-			canUncommit = r.UncommitRefused() == ""
+			tip := r.ReadTip()
+			quickFix = tip.QuickFix(len(s.Unstaged)+len(s.Staged) > 0)
+			canUncommit = tip.UncommitRefused() == ""
 		}
 		var mergeMessage string
 		if err == nil && s.Merging {

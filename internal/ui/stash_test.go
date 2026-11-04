@@ -1,26 +1,9 @@
 package ui
 
 import (
-	"os/exec"
 	"strings"
 	"testing"
 )
-
-// runGitOutFails runs git in the folder where it is meant to fail, as a merge
-// that stops with a conflict.
-func runGitOutFails(dir string, args ...string) {
-	exec.Command("git", append([]string{"-C", dir}, args...)...).Run()
-}
-
-// runGitOut runs git in the folder and returns what it wrote.
-func runGitOut(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
-	}
-	return string(out)
-}
 
 // stashCount returns how many stashes the repository has, by git.
 func stashCount(t *testing.T, dir string) int {

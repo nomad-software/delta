@@ -42,6 +42,36 @@ func runGit(t *testing.T, dir string, args ...string) {
 	}
 }
 
+// runGitOutFails runs git in the folder where it is meant to fail, as a merge
+// that stops with a conflict.
+func runGitOutFails(dir string, args ...string) {
+	exec.Command("git", append([]string{"-C", dir}, args...)...).Run()
+}
+
+// runGitOut runs git in the folder and returns what it wrote.
+func runGitOut(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return string(out)
+}
+
+// hasButton says whether a push button with the text is in the object, at any
+// depth.
+func hasButton(object *qt.QObject, text string) bool {
+	for _, child := range object.Children() {
+		if child.Inherits("QPushButton") && qt.UnsafeNewQPushButton(child.UnsafePointer()).Text() == text {
+			return true
+		}
+		if hasButton(child, text) {
+			return true
+		}
+	}
+	return false
+}
+
 func writeFile(t *testing.T, dir, name, text string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o644); err != nil {

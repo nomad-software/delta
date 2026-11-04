@@ -690,12 +690,17 @@ func quickFixQuestion(q git.QuickFix, s git.Status) string {
 		text = fmt.Sprintf("Fold every change not committed, untracked files included, into the last commit, “%s”, keeping its message?", q.Last)
 		rewritten = 1
 	}
-	text += " This rewrites the branch's history."
-	// Commits not yet pushed are those ahead of the upstream.
-	if s.Upstream != "" && s.Ahead < rewritten {
-		text += fmt.Sprintf("\n\nIt has been pushed to %s, so the branch will need a force push.", s.Upstream)
+	return text + " This rewrites the branch's history." + pushedNote(s, rewritten)
+}
+
+// pushedNote returns what a question about rewriting the last commits, as many
+// as rewritten, adds if any of them have been pushed: that the branch will then
+// need a force push. Those not yet pushed are those ahead of the upstream.
+func pushedNote(s git.Status, rewritten int) string {
+	if s.Upstream == "" || s.Ahead >= rewritten {
+		return ""
 	}
-	return text
+	return fmt.Sprintf("\n\nIt has been pushed to %s, so the branch will need a force push.", s.Upstream)
 }
 
 // uncommitLast takes the last commit back, its changes left unstaged as if they
@@ -714,11 +719,7 @@ func (w *Window) uncommitLast() {
 // of the subject: that its changes are kept, and, if it has been pushed, that
 // the branch will need a force push.
 func uncommitQuestion(subject string, s git.Status) string {
-	text := fmt.Sprintf("Uncommit the last commit, “%s”? Its changes are kept, unstaged.", subject)
-	if s.Upstream != "" && s.Ahead < 1 {
-		text += fmt.Sprintf("\n\nIt has been pushed to %s, so the branch will need a force push.", s.Upstream)
-	}
-	return text
+	return fmt.Sprintf("Uncommit the last commit, “%s”? Its changes are kept, unstaged.", subject) + pushedNote(s, 1)
 }
 
 // finishBranch finishes with the current branch, once asked: it checks out the

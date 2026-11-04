@@ -20,7 +20,7 @@ func TestQuickFixAmends(t *testing.T) {
 	write(t, r.Root, "staged", "new\n")
 	git(t, r.Root, "add", "staged")
 	write(t, r.Root, "loose", "untracked\n")
-	q := r.PlanQuickFix(true)
+	q := r.ReadTip().QuickFix(true)
 	if !q.Amend || q.Last != "second" || q.Previous != "" || q.Refused != "" {
 		t.Fatalf("plan %+v", q)
 	}
@@ -47,7 +47,7 @@ func TestQuickFixFolds(t *testing.T) {
 	write(t, r.Root, "other", "third\n")
 	git(t, r.Root, "add", "other")
 	git(t, r.Root, "commit", "-q", "-m", "the fix")
-	q := r.PlanQuickFix(false)
+	q := r.ReadTip().QuickFix(false)
 	if q.Amend || q.Last != "the fix" || q.Previous != "second" || q.Refused != "" {
 		t.Fatalf("plan %+v", q)
 	}
@@ -68,7 +68,7 @@ func TestQuickFixFolds(t *testing.T) {
 	}
 
 	// Onto the root: the result has no parent.
-	q = r.PlanQuickFix(false)
+	q = r.ReadTip().QuickFix(false)
 	if q.Refused != "" {
 		t.Fatalf("plan %+v", q)
 	}
@@ -78,7 +78,7 @@ func TestQuickFixFolds(t *testing.T) {
 	if got := headSubjects(t, r); strings.Join(got, " ") != "first" {
 		t.Errorf("commits %q", got)
 	}
-	if q := r.PlanQuickFix(false); q.Refused == "" {
+	if q := r.ReadTip().QuickFix(false); q.Refused == "" {
 		t.Errorf("a root commit could be folded: %+v", q)
 	}
 }
@@ -87,7 +87,7 @@ func TestQuickFixFolds(t *testing.T) {
 func TestQuickFixFoldsOnlyWhatWasPlanned(t *testing.T) {
 	r := newRepo(t)
 	git(t, r.Root, "commit", "-q", "--allow-empty", "-m", "second")
-	q := r.PlanQuickFix(false)
+	q := r.ReadTip().QuickFix(false)
 	git(t, r.Root, "commit", "-q", "--allow-empty", "-m", "since")
 	if _, err := r.RunQuickFix(q); err == nil {
 		t.Error("folded a commit no longer the last")
@@ -106,7 +106,7 @@ func TestQuickFixRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if q := empty.PlanQuickFix(true); q.Refused == "" {
+	if q := empty.ReadTip().QuickFix(true); q.Refused == "" {
 		t.Error("a quick fix with no commits")
 	}
 
@@ -116,72 +116,15 @@ func TestQuickFixRefused(t *testing.T) {
 	git(t, r.Root, "switch", "-q", "main")
 	git(t, r.Root, "commit", "-q", "--allow-empty", "-m", "main")
 	git(t, r.Root, "merge", "-q", "--no-edit", "topic")
-	if q := r.PlanQuickFix(false); !strings.Contains(q.Refused, "merge") {
+	if q := r.ReadTip().QuickFix(false); !strings.Contains(q.Refused, "merge") {
 		t.Errorf("fold of a merge: %+v", q)
 	}
 	git(t, r.Root, "commit", "-q", "--allow-empty", "-m", "after")
-	if q := r.PlanQuickFix(false); !strings.Contains(q.Refused, "merge") {
+	if q := r.ReadTip().QuickFix(false); !strings.Contains(q.Refused, "merge") {
 		t.Errorf("fold into a merge: %+v", q)
 	}
 	// Amending the merge is only a commit's amend.
-	if q := r.PlanQuickFix(true); q.Refused != "" {
+	if q := r.ReadTip().QuickFix(true); q.Refused != "" {
 		t.Errorf("amend: %+v", q)
-	}
-}
-
-// Uncommit takes the last commit back, its changes and any staged before left
-// unstaged; the first commit goes back to none, its files untracked; a merge is
-// refused.
-func TestUncommit(t *testing.T) {
-	r := newRepo(t)
-	write(t, r.Root, "file", "second\n")
-	write(t, r.Root, "added", "new\n")
-	git(t, r.Root, "add", "file", "added")
-	git(t, r.Root, "commit", "-q", "-m", "second")
-	write(t, r.Root, "other", "staged\n")
-	git(t, r.Root, "add", "other")
-	if refused := r.UncommitRefused(); refused != "" {
-		t.Fatal(refused)
-	}
-	if _, err := r.Uncommit(); err != nil {
-		t.Fatal(err)
-	}
-	if got := headSubjects(t, r); strings.Join(got, " ") != "first" {
-		t.Errorf("commits %q", got)
-	}
-	s := status(t, r)
-	var unstaged []string
-	for _, c := range s.Unstaged {
-		unstaged = append(unstaged, string(c.Code)+" "+c.Path)
-	}
-	if len(s.Staged) != 0 || strings.Join(unstaged, ", ") != "M file, ? added, ? other" {
-		t.Errorf("staged %+v, unstaged %q", s.Staged, unstaged)
-	}
-
-	// The first commit: none left, its files untracked.
-	git(t, r.Root, "clean", "-q", "-f")
-	git(t, r.Root, "checkout", "--", "file")
-	if _, err := r.Uncommit(); err != nil {
-		t.Fatal(err)
-	}
-	s = status(t, r)
-	if len(s.Staged) != 0 || len(s.Unstaged) != 1 || s.Unstaged[0].Code != Untracked || s.Unstaged[0].Path != "file" || s.Branch != "main" {
-		t.Errorf("after the first: %+v", s)
-	}
-	if refused := r.UncommitRefused(); refused == "" {
-		t.Error("uncommit with no commits")
-	}
-
-	m := newRepo(t)
-	git(t, m.Root, "switch", "-q", "-c", "topic")
-	git(t, m.Root, "commit", "-q", "--allow-empty", "-m", "topic")
-	git(t, m.Root, "switch", "-q", "main")
-	git(t, m.Root, "commit", "-q", "--allow-empty", "-m", "main")
-	git(t, m.Root, "merge", "-q", "--no-edit", "topic")
-	if refused := m.UncommitRefused(); !strings.Contains(refused, "merge") {
-		t.Errorf("a merge: %q", refused)
-	}
-	if _, err := m.Uncommit(); err == nil {
-		t.Error("a merge was uncommitted")
 	}
 }

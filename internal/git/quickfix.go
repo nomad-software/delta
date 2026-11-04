@@ -1,7 +1,6 @@
 package git
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 )
@@ -20,39 +19,26 @@ type QuickFix struct {
 	Refused string
 }
 
-// PlanQuickFix says what a quick fix would do, given whether there are changes
-// not committed, or why there can be none.
-func (r *Repo) PlanQuickFix(uncommitted bool) QuickFix {
-	out, err := r.run("log", "-2", "--format=%H%x00%P%x00%s", "HEAD")
-	if err != nil {
-		return QuickFix{Amend: uncommitted, Refused: "There are no commits yet."}
+// QuickFix says what a quick fix would do, given whether there are changes not
+// committed, or why there can be none.
+func (t Tip) QuickFix(uncommitted bool) QuickFix {
+	if len(t.commits) == 0 {
+		return QuickFix{Amend: uncommitted, Refused: noCommits}
 	}
-	type commit struct {
-		hash, subject string
-		parents       int
-	}
-	var commits []commit
-	for line := range strings.Lines(out) {
-		if fields := strings.SplitN(strings.TrimRight(line, "\n"), "\x00", 3); len(fields) == 3 {
-			commits = append(commits, commit{fields[0], fields[2], len(strings.Fields(fields[1]))})
-		}
-	}
-	if len(commits) == 0 {
-		return QuickFix{Amend: uncommitted, Refused: "There are no commits yet."}
-	}
-	q := QuickFix{Amend: uncommitted, Head: commits[0].hash, Last: commits[0].subject}
+	last := t.commits[0]
+	q := QuickFix{Amend: uncommitted, Head: last.hash, Last: last.subject}
 	switch {
 	case uncommitted:
-	case commits[0].parents == 0:
+	case len(last.parents) == 0:
 		q.Refused = "The last commit has no commit before it to fold into."
-	case commits[0].parents > 1:
+	case len(last.parents) > 1:
 		q.Refused = "The last commit is a merge."
-	case len(commits) < 2:
+	case len(t.commits) < 2:
 		q.Refused = "The commit before the last can't be read."
-	case commits[1].parents > 1:
+	case len(t.commits[1].parents) > 1:
 		q.Refused = "The commit before the last is a merge."
 	default:
-		q.Previous = commits[1].subject
+		q.Previous = t.commits[1].subject
 	}
 	return q
 }
@@ -107,41 +93,4 @@ func (r *Repo) foldHead(head string) (string, error) {
 	// The branch moves only if it is still at head, so that nothing done since
 	// the plan was read is lost.
 	return r.run("update-ref", "-m", "quick fix: fold into the commit before", "HEAD", strings.TrimSpace(folded), head)
-}
-
-// UncommitRefused says why the last commit can't be uncommitted, or is empty if
-// it can: there must be one, and it must not be a merge, as taking a merge back
-// would mix the branch merged in with the changes.
-func (r *Repo) UncommitRefused() string {
-	out, err := r.run("rev-list", "--parents", "-n", "1", "HEAD")
-	switch {
-	case err != nil:
-		return "There are no commits yet."
-	case len(strings.Fields(out)) > 2:
-		return "The last commit is a merge."
-	}
-	return ""
-}
-
-// Uncommit takes the last commit back, leaving its changes in the work tree,
-// unstaged as if they were new, as are any staged before. The first commit of a
-// branch is taken back to none, its files untracked.
-func (r *Repo) Uncommit() (string, error) {
-	if refused := r.UncommitRefused(); refused != "" {
-		return "", errors.New(refused)
-	}
-	out, err := r.run("rev-list", "--parents", "-n", "1", "HEAD")
-	if err != nil {
-		return "", err
-	}
-	commits := strings.Fields(out)
-	if len(commits) == 1 {
-		// The branch goes back to having no commits, only if it is still at
-		// this one, and nothing is staged.
-		if _, err := r.run("update-ref", "-d", "HEAD", commits[0]); err != nil {
-			return "", err
-		}
-		return r.run("read-tree", "--empty")
-	}
-	return r.run("reset", "--mixed", "-q", commits[1])
 }
