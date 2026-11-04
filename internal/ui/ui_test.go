@@ -146,6 +146,18 @@ func mapPoint(widget, in *qt.QWidget, x, y int) (int, int) {
 	return at.X(), at.Y()
 }
 
+// openRepository opens the repository that holds the folder at once, rather
+// than looking for it in the background as the window does, dropping any it is
+// looking for.
+func (w *Window) openRepository(dir string) error {
+	r, err := git.Open(dir)
+	if err != nil {
+		return err
+	}
+	w.useRepository(r)
+	return nil
+}
+
 // waitFor waits until the condition, tested on the main thread, holds.
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()

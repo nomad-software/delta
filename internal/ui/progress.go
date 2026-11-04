@@ -80,11 +80,6 @@ func (p *progress) stop() {
 	p.SetVisible(false)
 }
 
-// moving says whether the segment is sweeping, on show.
-func (p *progress) moving() bool {
-	return p.frames.IsActive()
-}
-
 // chunk returns where the segment is, from its left to its right, cut to the
 // bar: it comes in at the left and goes out at the right.
 func (p *progress) chunk() (left, right int) {

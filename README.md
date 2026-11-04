@@ -1,13 +1,53 @@
 # <img src="internal/appicon/appicon.png" alt="" width="40" height="40"> Delta
 
-A graphical user interface for git. Stage and commit your changes, and browse the history as a graph. It is
-written in Go with Qt 6, through the [miqt](https://github.com/mappu/miqt)
-bindings, and runs on Linux and macOS. Git runs in the background, with reads
-that don't depend on each other run at once, so that the window never waits on it.
+**A fast, friendly git GUI for Linux and macOS.** Delta puts `git gui` and
+`gitk` in one window: stage and commit your changes, then press `Ctrl+H` to
+browse the history as a graph, and press it again to go back. It is a native
+Qt 6 app written in Go, through the [miqt](https://github.com/mappu/miqt)
+bindings.
 
 ![The changes in Delta](docs/changes.png)
 
 ![The history in Delta](docs/history.png)
+
+## Why Delta
+
+* **It never makes you wait.** Git runs in the background, never in the
+  window's way, and reads that don't depend on each other run at once: a rescan
+  reads the status, branches, stashes and last commits side by side, and diffs
+  are worked out off screen. Quick work doesn't even flicker the progress bar.
+* **Changes and history in one place.** Colour-coded circles show what happened
+  to each file, the diff follows the file you choose (or drag over), and a
+  double-click stages or unstages it. The history draws every branch and merge
+  as a graph, reads more as you scroll, and starts with a row for what you
+  haven't committed yet.
+* **Interactive rebase without the editor.** Right-click a commit, then drag
+  commits into order and pick, fixup, reword, edit, squash or drop each from a
+  dropdown, with the message right below. When git stops, the Branch menu has
+  Continue, Skip and Abort.
+* **The everyday fixes, built in.**
+  * **Quick Fix** folds a forgotten change into the last commit, or the last
+    commit into the one before.
+  * **Uncommit** takes the last commit back into your files.
+  * **Finish Branch** checks out `main`, pulls, and deletes the branch you were
+    done with, in one go.
+* **Safe by default.** Anything that rewrites history or throws work away asks
+  first, with No as the answer, and says when what it rewrites has been pushed.
+  Force pushes use `--force-with-lease`, and Discard All Changes tells you how
+  many files it will put back and delete.
+* **Stashes that explain themselves.** Stash with a message and untracked files
+  if you like. When applying a stash clashes, it keeps the stash, marks the
+  conflicts in orange, and tells you what to do.
+* **Quick to get around.** Every repository you open is a dropdown away, beside
+  a dropdown of branches. Running `delta` again brings back the window that is
+  open rather than starting a second copy, and opens the repository you named.
+* **Yours to style.** Light, dark or the system's theme, and any font for the
+  code. Every colour, from the diff's lines to the change circles, starts as
+  Solarized's and can be changed.
+* **It never hangs.** Git and ssh never wait on a hidden password prompt: Delta
+  uses your credential helper or ssh agent, or shows git's error.
+* **Easy to install.** One program, released as an AppImage for Linux and an
+  app for Apple Silicon Macs.
 
 ## Running
 

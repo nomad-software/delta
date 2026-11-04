@@ -170,13 +170,7 @@ func (w *Window) Start(argument string) {
 	// The repository is looked for in the background, so that the window is
 	// drawn at once.
 	if argument != "" {
-		w.findRepository(func() (*git.Repo, error) { return git.Open(argument) }, func(r *git.Repo, err error) {
-			if err != nil {
-				w.failed("Open Repository", err.Error())
-				return
-			}
-			w.useRepository(r)
-		})
+		w.openFolder(argument)
 		return
 	}
 	cwd, cwdErr := os.Getwd()
@@ -250,7 +244,7 @@ func (w *Window) Activate(r instance.Request) {
 			}
 		case w.repo != nil && repo.Root == w.repo.Root:
 		case w.busy:
-			w.say(repo.Root + " was not opened, as a command is running.")
+			w.notOpened(repo)
 		default:
 			w.useRepository(repo)
 		}
@@ -616,17 +610,6 @@ func (w *Window) showTitle() {
 	w.where.SetText(where)
 }
 
-// openRepository opens the repository that holds the folder, in place of any
-// that was open, looking for it here rather than in the background.
-func (w *Window) openRepository(dir string) error {
-	r, err := git.Open(dir)
-	if err != nil {
-		return err
-	}
-	w.useRepository(r)
-	return nil
-}
-
 // useRepository opens the repository found, in place of any that was open. Any
 // still being looked for is dropped.
 func (w *Window) useRepository(r *git.Repo) {
@@ -658,13 +641,19 @@ func (w *Window) useRepository(r *git.Repo) {
 func (w *Window) chooseRepository() {
 	// It starts beside the repository open, if there is one.
 	start := ""
-	if w.repo != nil {
-		start = filepath.Dir(w.repo.Root)
+	if root := w.root(); root != "" {
+		start = filepath.Dir(root)
 	}
 	dir := qt.QFileDialog_GetExistingDirectory3(w.QWidget, "Open Repository", start)
 	if dir == "" {
 		return
 	}
+	w.openFolder(dir)
+}
+
+// openFolder opens the repository that holds the folder, once it is found in
+// the background, telling of it if there is none.
+func (w *Window) openFolder(dir string) {
 	w.findRepository(func() (*git.Repo, error) { return git.Open(dir) }, func(r *git.Repo, err error) {
 		if err != nil {
 			w.failed("Open Repository", err.Error())
@@ -672,6 +661,19 @@ func (w *Window) chooseRepository() {
 		}
 		w.useRepository(r)
 	})
+}
+
+// root returns the top folder of the repository open, or nothing if none is.
+func (w *Window) root() string {
+	if w.repo == nil {
+		return ""
+	}
+	return w.repo.Root
+}
+
+// notOpened says that a repository found was not opened, as a command is running.
+func (w *Window) notOpened(r *git.Repo) {
+	w.say(r.Root + " was not opened, as a command is running.")
 }
 
 // chooseListedRepository opens the repository chosen in the bar, unless it is
@@ -689,15 +691,11 @@ func (w *Window) chooseListedRepository(index int) {
 			w.useRepository(r)
 			return
 		}
-		current := ""
-		if w.repo != nil {
-			current = w.repo.Root
-		}
-		w.bar.setRepositories(w.config.Repositories, current)
+		w.bar.setRepositories(w.config.Repositories, w.root())
 		if err != nil {
 			w.failed("Open Repository", err.Error())
 		} else {
-			w.say(r.Root + " was not opened, as a command is running.")
+			w.notOpened(r)
 		}
 	})
 }
@@ -858,11 +856,7 @@ func (w *Window) applySettings(s settings.Settings) {
 	w.history.pageSize = s.HistoryPageSize
 	// A lower limit drops those opened longest ago at once.
 	if w.config.LimitRepositories() {
-		current := ""
-		if w.repo != nil {
-			current = w.repo.Root
-		}
-		w.bar.setRepositories(w.config.Repositories, current)
+		w.bar.setRepositories(w.config.Repositories, w.root())
 	}
 	w.applyColours()
 	w.applyCodeFont()

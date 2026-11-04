@@ -85,6 +85,11 @@ func TestProgress(t *testing.T) {
 	})
 }
 
+// moving says whether the segment is sweeping, on show.
+func (p *progress) moving() bool {
+	return p.frames.IsActive()
+}
+
 // TestWorkPairs checks that every piece of background work that starts ends,
 // those whose answers are dropped too, as the progress bar would otherwise stay.
 func TestWorkPairs(t *testing.T) {

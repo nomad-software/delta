@@ -4,6 +4,7 @@ package git
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
@@ -426,7 +427,9 @@ func (r *Repo) CommitDetail(c Commit) ([]Change, string, error) {
 			diff, diffErr = r.capped(slices.Concat([]string{"diff-tree", "-r", "-p", "-M", "--no-commit-id"}, patchOptions, compared(c)), false)
 		},
 	)
-	if err := firstError(outErr, headerErr, diffErr); err != nil {
+	// Of those that failed, the error is the first in the order they would have
+	// run one after another.
+	if err := cmp.Or(outErr, headerErr, diffErr); err != nil {
 		return nil, "", err
 	}
 	changes, err := parseNameStatus(out)
@@ -434,17 +437,6 @@ func (r *Repo) CommitDetail(c Commit) ([]Change, string, error) {
 		return nil, "", err
 	}
 	return changes, strings.TrimRight(header, "\n") + "\n\n" + diff, nil
-}
-
-// firstError returns the first of the errors that is not nil, as the reads made
-// at once would have failed with had they been made one after another.
-func firstError(errs ...error) error {
-	for _, err := range errs {
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // uncommittedDetail returns the files changed since HEAD, staged or not, then
@@ -467,7 +459,8 @@ func (r *Repo) uncommittedDetail() ([]Change, string, error) {
 		},
 		func() { s, statusErr = r.Status() },
 	)
-	if err := firstError(outErr, textErr, statusErr); err != nil {
+	// The first that failed, as in CommitDetail.
+	if err := cmp.Or(outErr, textErr, statusErr); err != nil {
 		return nil, "", err
 	}
 	changes, err := parseNameStatus(out)

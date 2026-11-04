@@ -560,12 +560,13 @@ func (w *Window) discardChanges() {
 	// A file new to the index is deleted as much as one untracked is, as the
 	// last commit has neither.
 	changed, added := map[string]bool{}, map[string]bool{}
-	for _, c := range slices.Concat(w.status.Staged, w.status.Unstaged) {
+	all := slices.Concat(w.status.Staged, w.status.Unstaged)
+	for _, c := range all {
 		if c.Code == git.Untracked || c.Code == 'A' {
 			added[c.Path] = true
 		}
 	}
-	for _, c := range slices.Concat(w.status.Staged, w.status.Unstaged) {
+	for _, c := range all {
 		if !added[c.Path] {
 			changed[c.Path] = true
 		}

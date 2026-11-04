@@ -256,7 +256,7 @@ func (w *Window) loadHistory() {
 			}
 			h.loading = false
 			if err != nil {
-				w.say("Reading the history failed: " + firstLine(err.Error()))
+				w.historyFailed(err)
 				return
 			}
 			h.more = more
@@ -293,7 +293,7 @@ func (w *Window) loadMoreHistory() {
 			}
 			h.loading = false
 			if err != nil {
-				w.say("Reading the history failed: " + firstLine(err.Error()))
+				w.historyFailed(err)
 				return
 			}
 			h.more = len(commits) == limit
@@ -306,6 +306,11 @@ func (w *Window) loadMoreHistory() {
 			h.updating = false
 		})
 	}()
+}
+
+// historyFailed says why the history could not be read.
+func (w *Window) historyFailed(err error) {
+	w.say("Reading the history failed: " + firstLine(err.Error()))
 }
 
 // committed returns how many real commits have been read.
