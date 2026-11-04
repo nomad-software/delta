@@ -153,7 +153,20 @@ func (r *Repo) hasCommits() bool {
 
 // Status reads the state of the work tree and index.
 func (r *Repo) Status() (Status, error) {
-	out, err := r.run("status", "--porcelain=v2", "--branch", "-z", "--untracked-files=all")
+	// The status, whether a merge is going on and a rebase's state are read at
+	// once.
+	var (
+		out           string
+		err, mergeErr error
+		rebase        RebaseState
+		rebasing      bool
+	)
+	together(
+		func() { out, err = r.run("status", "--porcelain=v2", "--branch", "-z", "--untracked-files=all") },
+		// The command fails, as it should, when there is no such ref.
+		func() { _, mergeErr = r.run("rev-parse", "-q", "--verify", "MERGE_HEAD") },
+		func() { rebase, rebasing = r.rebaseState() },
+	)
 	if err != nil {
 		return Status{}, err
 	}
@@ -161,10 +174,8 @@ func (r *Repo) Status() (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
-	// The command fails, as it should, when there is no such ref.
-	_, err = r.run("rev-parse", "-q", "--verify", "MERGE_HEAD")
-	s.Merging = err == nil
-	s.Rebase, s.Rebasing = r.rebaseState()
+	s.Merging = mergeErr == nil
+	s.Rebase, s.Rebasing = rebase, rebasing
 	return s, nil
 }
 
@@ -401,23 +412,39 @@ func (r *Repo) CommitDetail(c Commit) ([]Change, string, error) {
 	if c.Hash == Uncommitted {
 		return r.uncommittedDetail()
 	}
-	out, err := r.run(append([]string{"diff-tree", "-r", "-z", "-M", "--no-commit-id", "--name-status"}, compared(c)...)...)
-	if err != nil {
+	// The files, the header and the diff are read at once.
+	var out, header, diff string
+	var outErr, headerErr, diffErr error
+	together(
+		func() {
+			out, outErr = r.run(append([]string{"diff-tree", "-r", "-z", "-M", "--no-commit-id", "--name-status"}, compared(c)...)...)
+		},
+		func() {
+			header, headerErr = r.run("log", "-1", "--no-color", "--no-decorate", "--no-show-signature", "--date=iso", "--format=fuller", c.Hash, "--")
+		},
+		func() {
+			diff, diffErr = r.capped(slices.Concat([]string{"diff-tree", "-r", "-p", "-M", "--no-commit-id"}, patchOptions, compared(c)), false)
+		},
+	)
+	if err := firstError(outErr, headerErr, diffErr); err != nil {
 		return nil, "", err
 	}
 	changes, err := parseNameStatus(out)
 	if err != nil {
 		return nil, "", err
 	}
-	header, err := r.run("log", "-1", "--no-color", "--no-decorate", "--no-show-signature", "--date=iso", "--format=fuller", c.Hash, "--")
-	if err != nil {
-		return nil, "", err
-	}
-	diff, err := r.capped(slices.Concat([]string{"diff-tree", "-r", "-p", "-M", "--no-commit-id"}, patchOptions, compared(c)), false)
-	if err != nil {
-		return nil, "", err
-	}
 	return changes, strings.TrimRight(header, "\n") + "\n\n" + diff, nil
+}
+
+// firstError returns the first of the errors that is not nil, as the reads made
+// at once would have failed with had they been made one after another.
+func firstError(errs ...error) error {
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // uncommittedDetail returns the files changed since HEAD, staged or not, then
@@ -428,41 +455,59 @@ func (r *Repo) uncommittedDetail() ([]Change, string, error) {
 	if !r.hasCommits() {
 		base = "--cached"
 	}
-	out, err := r.run("diff", "-z", "-M", "--name-status", base, "--")
-	if err != nil {
+	// The files, their diff and the status, for the untracked files, are read
+	// at once.
+	var out, text string
+	var s Status
+	var outErr, textErr, statusErr error
+	together(
+		func() { out, outErr = r.run("diff", "-z", "-M", "--name-status", base, "--") },
+		func() {
+			text, textErr = r.capped(slices.Concat([]string{"diff", "-M"}, patchOptions, []string{base, "--"}), false)
+		},
+		func() { s, statusErr = r.Status() },
+	)
+	if err := firstError(outErr, textErr, statusErr); err != nil {
 		return nil, "", err
 	}
 	changes, err := parseNameStatus(out)
 	if err != nil {
 		return nil, "", err
 	}
-	text, err := r.capped(slices.Concat([]string{"diff", "-M"}, patchOptions, []string{base, "--"}), false)
+	untracked := slices.DeleteFunc(slices.Clone(s.Unstaged), func(c Change) bool { return c.Code != Untracked })
+	changes = append(changes, untracked...)
+	text, err = r.untrackedDiffs(text, untracked)
 	if err != nil {
 		return nil, "", err
-	}
-	s, err := r.Status()
-	if err != nil {
-		return nil, "", err
-	}
-	for _, c := range s.Unstaged {
-		if c.Code != Untracked {
-			continue
-		}
-		changes = append(changes, c)
-		// Nothing goes after a diff that has been cut off.
-		if len(text) >= MaxDiff || strings.HasSuffix(text, cutNote()) {
-			continue
-		}
-		diff, err := r.Diff(c, false)
-		if err != nil {
-			return nil, "", err
-		}
-		text += diff
 	}
 	if len(text) > MaxDiff {
 		text = text[:strings.LastIndexByte(text[:MaxDiff], '\n')+1] + cutNote()
 	}
 	return changes, text, nil
+}
+
+// untrackedDiffs returns the text with the diffs of the untracked files after
+// it, in their order, until it is cut off, as nothing goes after a diff that has
+// been. They are read readers at a time, at once, and only so many more as could
+// be needed are read past where it is cut off.
+func (r *Repo) untrackedDiffs(text string, untracked []Change) (string, error) {
+	cut := func() bool { return len(text) >= MaxDiff || strings.HasSuffix(text, cutNote()) }
+	for start := 0; start < len(untracked) && !cut(); start += readers {
+		batch := untracked[start:min(start+readers, len(untracked))]
+		diffs := make([]string, len(batch))
+		errs := make([]error, len(batch))
+		each(len(batch), func(i int) { diffs[i], errs[i] = r.Diff(batch[i], false) })
+		for i := range batch {
+			if cut() {
+				break
+			}
+			if errs[i] != nil {
+				return "", errs[i]
+			}
+			text += diffs[i]
+		}
+	}
+	return text, nil
 }
 
 // parseNameStatus reads the output of git diff-tree -z --name-status.

@@ -28,14 +28,22 @@ func newDiffView(added, removed, hunk string) *diffView {
 	return v
 }
 
-// show shows the diff. Showing the same text again leaves the view as it is,
-// scrolled where it was, as happens on every rescan.
+// show shows the diff, parsing it here. A diff read in the background is parsed
+// there too, as diff.Parse touches nothing of Qt, and shown with showParsed,
+// leaving the main thread only the widget to fill.
 func (v *diffView) show(text string) {
+	v.showParsed(text, diff.Parse(text, v.titles))
+}
+
+// showParsed shows the diff, already parsed as the view's titles say. Showing
+// the same text again leaves the view as it is, scrolled where it was, as
+// happens on every rescan.
+func (v *diffView) showParsed(text string, parsed diff.Parsed) {
 	if text == v.raw {
 		return
 	}
 	v.raw = text
-	v.parsed = diff.Parse(text, v.titles)
+	v.parsed = parsed
 	v.SetPlainText(v.parsed.Text)
 	v.paint()
 }

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	qt "github.com/mappu/miqt/qt6"
@@ -41,21 +42,32 @@ func TestActivateOpens(t *testing.T) {
 	outside := t.TempDir()
 	w := newTestWindow(t, first)
 	waitFor(t, "the status", func() bool { return w.idleWith(0, 0) })
+	// Each is looked for in the background, and then opened or not.
+	activate := func(r instance.Request) {
+		on(func() { w.Activate(r) })
+		waitFor(t, "the folder to be looked for", func() bool { return w.finding == 0 })
+	}
+	on(func() { w.changes.message.SetPlainText("kept") })
+	activate(instance.Request{Folder: first})
 	on(func() {
-		w.changes.message.SetPlainText("kept")
-		w.Activate(instance.Request{Folder: first})
 		if w.repo.Root != first || w.changes.message.ToPlainText() != "kept" {
 			t.Error("the repository open was opened again")
 		}
-		w.Activate(instance.Request{Folder: outside})
+	})
+	activate(instance.Request{Folder: outside})
+	on(func() {
 		if w.repo.Root != first || len(w.failures) != 0 {
 			t.Errorf("a folder started in, in no repository: %q, %q", w.repo.Root, w.failures)
 		}
-		w.Activate(instance.Request{Folder: outside, Named: true})
+	})
+	activate(instance.Request{Folder: outside, Named: true})
+	on(func() {
 		if w.repo.Root != first || len(w.failures) != 1 {
 			t.Errorf("a folder named, in no repository: %q, %q", w.repo.Root, w.failures)
 		}
-		w.Activate(instance.Request{Folder: other})
+	})
+	activate(instance.Request{Folder: other})
+	on(func() {
 		if w.repo.Root != other {
 			t.Errorf("open %q", w.repo.Root)
 		}
@@ -68,9 +80,11 @@ func TestActivateOpens(t *testing.T) {
 			<-release
 			return "", nil
 		}, func(string, error) {})
-		w.Activate(instance.Request{Folder: first})
-		if w.repo.Root != other {
-			t.Error("opened while a command runs")
+	})
+	activate(instance.Request{Folder: first})
+	on(func() {
+		if w.repo.Root != other || !strings.Contains(w.said.Text(), "a command is running") {
+			t.Errorf("opened while a command runs, or said %q", w.said.Text())
 		}
 	})
 	close(release)

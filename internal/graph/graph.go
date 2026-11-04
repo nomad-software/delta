@@ -7,6 +7,8 @@
 // The lanes at the bottom of a row are those at the top of the next.
 package graph
 
+import "slices"
+
 // Edge is a line across half of a row, between two lanes. Colour numbers the
 // branch it is part of, and is not limited: the UI picks from its own colours.
 type Edge struct {
@@ -38,6 +40,15 @@ type Layout struct {
 	colours int
 	// width is the most lanes any row has needed.
 	width int
+}
+
+// Clone returns a copy of the layout, which goes on from where it has got to
+// without changing it, so that the next commits can be laid out in the
+// background while the layout itself is still in use.
+func (l *Layout) Clone() *Layout {
+	c := *l
+	c.lanes = slices.Clone(l.lanes)
+	return &c
 }
 
 // Width returns the number of lanes needed to draw every row so far.

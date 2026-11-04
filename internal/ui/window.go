@@ -10,6 +10,7 @@ import (
 	qt "github.com/mappu/miqt/qt6"
 	"github.com/mappu/miqt/qt6/mainthread"
 
+	"github.com/nomad-software/delta/internal/diff"
 	"github.com/nomad-software/delta/internal/git"
 	"github.com/nomad-software/delta/internal/instance"
 	"github.com/nomad-software/delta/internal/settings"
@@ -49,6 +50,9 @@ type Window struct {
 	// busy says that a git command that changes something is running, during
 	// which no other can be started.
 	busy bool
+	// reading says that what a dialog needs is being read in the background,
+	// during which no other dialog's is (readFirst).
+	reading bool
 	// stashes is how many stashes there are, quickFix what a quick fix would
 	// do, and canUncommit whether the last commit can be taken back, as the
 	// last rescan read.
@@ -58,6 +62,10 @@ type Window struct {
 	// localBranches are the local branches, as the last rescan read, among
 	// which the main branch is found.
 	localBranches []string
+	// opens counts the repositories asked for, so that only the latest one
+	// looked for in the background is opened, and finding how many are being
+	// looked for.
+	opens, finding int
 	// rescans and diffs count the requests for each, so that the answer to any
 	// but the latest, which may be about something else by now, is dropped.
 	rescans, diffs int
@@ -159,21 +167,60 @@ func (w *Window) Start(argument string) {
 	setPanes(w.changes.lists, w.config.Lists)
 	setPanes(w.changes.editor, w.config.Editor)
 
+	// The repository is looked for in the background, so that the window is
+	// drawn at once.
 	if argument != "" {
-		if err := w.openRepository(argument); err != nil {
-			w.failed("Open Repository", err.Error())
-		}
+		w.findRepository(func() (*git.Repo, error) { return git.Open(argument) }, func(r *git.Repo, err error) {
+			if err != nil {
+				w.failed("Open Repository", err.Error())
+				return
+			}
+			w.useRepository(r)
+		})
 		return
 	}
-	if cwd, err := os.Getwd(); err == nil && w.openRepository(cwd) == nil {
-		return
-	}
+	cwd, cwdErr := os.Getwd()
 	last := w.config.LastRepository
-	if last == "" {
-		w.say("Open a repository from the File menu.")
-	} else if err := w.openRepository(last); err != nil {
-		w.say(fmt.Sprintf("%s could not be opened again: %s", last, firstLine(err.Error())))
-	}
+	w.findRepository(func() (*git.Repo, error) {
+		if cwdErr == nil {
+			if r, err := git.Open(cwd); err == nil {
+				return r, nil
+			}
+		}
+		if last == "" {
+			return nil, nil
+		}
+		return git.Open(last)
+	}, func(r *git.Repo, err error) {
+		switch {
+		case err != nil:
+			w.say(fmt.Sprintf("%s could not be opened again: %s", last, firstLine(err.Error())))
+		case r == nil:
+			w.say("Open a repository from the File menu.")
+		default:
+			w.useRepository(r)
+		}
+	})
+}
+
+// findRepository looks for a repository in the background, with find, which
+// touches nothing of Qt, and gives found what it gave, on the main thread,
+// unless another repository has been asked for since, when it is dropped.
+func (w *Window) findRepository(find func() (*git.Repo, error), found func(*git.Repo, error)) {
+	w.opens++
+	request := w.opens
+	w.finding++
+	w.beginWork()
+	go func() {
+		r, err := find()
+		mainthread.Start(func() {
+			w.endWork()
+			w.finding--
+			if request == w.opens {
+				found(r, err)
+			}
+		})
+	}()
 }
 
 // Activate brings the window to the front, as it is when the program is started
@@ -194,20 +241,20 @@ func (w *Window) Activate(r instance.Request) {
 	if r.Folder == "" {
 		return
 	}
-	repo, err := git.Open(r.Folder)
-	switch {
-	case err != nil:
-		if r.Named {
-			w.failed("Open Repository", err.Error())
+	folder, named := r.Folder, r.Named
+	w.findRepository(func() (*git.Repo, error) { return git.Open(folder) }, func(repo *git.Repo, err error) {
+		switch {
+		case err != nil:
+			if named {
+				w.failed("Open Repository", err.Error())
+			}
+		case w.repo != nil && repo.Root == w.repo.Root:
+		case w.busy:
+			w.say(repo.Root + " was not opened, as a command is running.")
+		default:
+			w.useRepository(repo)
 		}
-	case w.repo != nil && repo.Root == w.repo.Root:
-	case w.busy:
-		w.say(repo.Root + " was not opened, as a command is running.")
-	default:
-		if err := w.openRepository(repo.Root); err != nil {
-			w.failed("Open Repository", err.Error())
-		}
-	}
+	})
 }
 
 // makeStatusBar makes the status bar, with its text at the left and a handle in
@@ -570,12 +617,20 @@ func (w *Window) showTitle() {
 }
 
 // openRepository opens the repository that holds the folder, in place of any
-// that was open.
+// that was open, looking for it here rather than in the background.
 func (w *Window) openRepository(dir string) error {
 	r, err := git.Open(dir)
 	if err != nil {
 		return err
 	}
+	w.useRepository(r)
+	return nil
+}
+
+// useRepository opens the repository found, in place of any that was open. Any
+// still being looked for is dropped.
+func (w *Window) useRepository(r *git.Repo) {
+	w.opens++
 	w.repo = r
 	// It is remembered, to be opened again from the bar and on starting, and
 	// saved at once.
@@ -597,7 +652,6 @@ func (w *Window) openRepository(dir string) error {
 	w.chooseFirst = true
 	w.say("Opened " + r.Root)
 	w.rescanRepository()
-	return nil
 }
 
 // chooseRepository asks for a repository to open.
@@ -611,9 +665,13 @@ func (w *Window) chooseRepository() {
 	if dir == "" {
 		return
 	}
-	if err := w.openRepository(dir); err != nil {
-		w.failed("Open Repository", err.Error())
-	}
+	w.findRepository(func() (*git.Repo, error) { return git.Open(dir) }, func(r *git.Repo, err error) {
+		if err != nil {
+			w.failed("Open Repository", err.Error())
+			return
+		}
+		w.useRepository(r)
+	})
 }
 
 // chooseListedRepository opens the repository chosen in the bar, unless it is
@@ -626,14 +684,22 @@ func (w *Window) chooseListedRepository(index int) {
 	if w.repo != nil && path == w.repo.Root {
 		return
 	}
-	if err := w.openRepository(path); err != nil {
+	w.findRepository(func() (*git.Repo, error) { return git.Open(path) }, func(r *git.Repo, err error) {
+		if err == nil && !w.busy {
+			w.useRepository(r)
+			return
+		}
 		current := ""
 		if w.repo != nil {
 			current = w.repo.Root
 		}
 		w.bar.setRepositories(w.config.Repositories, current)
-		w.failed("Open Repository", err.Error())
-	}
+		if err != nil {
+			w.failed("Open Repository", err.Error())
+		} else {
+			w.say(r.Root + " was not opened, as a command is running.")
+		}
+	})
 }
 
 // chooseBranch checks out the branch chosen in the bar, unless it is the
@@ -659,54 +725,48 @@ func (w *Window) rescanRepository() {
 	request := w.rescans
 	w.beginWork()
 	go func() {
-		s, err := r.Status()
-		// The branches are listed in the bar, and stay as they were if they
-		// can't be read, as do how many stashes there are.
-		local, _, branchErr := r.Branches()
-		stashes, stashErr := r.Stashes()
-		var quickFix git.QuickFix
-		var canUncommit bool
-		if err == nil {
-			tip := r.ReadTip()
-			quickFix = tip.QuickFix(len(s.Unstaged)+len(s.Staged) > 0)
-			canUncommit = tip.UncommitRefused() == ""
-		}
-		var mergeMessage string
-		if err == nil && s.Merging {
-			mergeMessage = r.MergeMessage()
-		}
+		// Everything is read at once.
+		snap := r.Snapshot()
 		mainthread.Start(func() {
 			w.endWork()
 			if request != w.rescans || r != w.repo {
 				return
 			}
-			if err != nil {
-				w.say("Rescan failed: " + firstLine(err.Error()))
-				return
-			}
-			if branchErr == nil {
-				w.bar.setBranches(local, s.Branch)
-				w.localBranches = local
-			}
-			if stashErr == nil {
-				w.stashes = len(stashes)
-			}
-			w.quickFix = quickFix
-			w.canUncommit = canUncommit
-			w.applyStatus(s)
-			w.chooseFirstFile()
-			// The message git prepared for a merge is offered once, and not
-			// again if it is cleared.
-			if !s.Merging {
-				w.mergeFilled = false
-			} else if !w.mergeFilled {
-				w.mergeFilled = true
-				if strings.TrimSpace(w.changes.message.ToPlainText()) == "" {
-					w.changes.message.SetPlainText(mergeMessage)
-				}
-			}
+			w.applySnapshot(snap)
 		})
 	}()
+}
+
+// applySnapshot shows what a rescan read.
+func (w *Window) applySnapshot(snap git.Snapshot) {
+	if snap.Err != nil {
+		w.say("Rescan failed: " + firstLine(snap.Err.Error()))
+		return
+	}
+	s := snap.Status
+	// The branches are listed in the bar, and stay as they were if they can't
+	// be read, as do how many stashes there are.
+	if snap.BranchErr == nil {
+		w.bar.setBranches(snap.Local, s.Branch)
+		w.localBranches = snap.Local
+	}
+	if snap.StashErr == nil {
+		w.stashes = snap.Stashes
+	}
+	w.quickFix = snap.QuickFix
+	w.canUncommit = snap.CanUncommit
+	w.applyStatus(s)
+	w.chooseFirstFile()
+	// The message git prepared for a merge is offered once, and not again if it
+	// is cleared.
+	if !s.Merging {
+		w.mergeFilled = false
+	} else if !w.mergeFilled {
+		w.mergeFilled = true
+		if strings.TrimSpace(w.changes.message.ToPlainText()) == "" {
+			w.changes.message.SetPlainText(snap.MergeMessage)
+		}
+	}
 }
 
 // chooseFirstFile chooses the first unstaged file, showing its diff, once the
@@ -762,21 +822,22 @@ func (w *Window) showDiff() {
 	if staged {
 		side = "Staged"
 	}
-	r := w.repo
+	r, titles := w.repo, v.diff.titles
 	w.beginWork()
 	go func() {
 		text, err := r.Diff(change, staged)
+		if err != nil {
+			text = err.Error()
+		}
+		// It is parsed here, so that the main thread only fills the view.
+		parsed := diff.Parse(text, titles)
 		mainthread.Start(func() {
 			w.endWork()
 			if request != w.diffs {
 				return
 			}
 			v.diffLabel.SetText(side + ": " + change.Path)
-			if err != nil {
-				v.diff.show(err.Error())
-				return
-			}
-			v.diff.show(text)
+			v.diff.showParsed(text, parsed)
 		})
 	}()
 }

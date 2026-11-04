@@ -187,3 +187,33 @@ func TestPagesMatchAllAtOnce(t *testing.T) {
 		t.Errorf("got %+v\nwant %+v", rows, whole)
 	}
 }
+
+// A clone goes on as the layout would, from where it had got to, and leaves the
+// layout itself as it was, as the history lays out its next page in the
+// background in a clone while the layout is in use.
+func TestClone(t *testing.T) {
+	commits := []commit{
+		{"e", []string{"d", "c"}}, {"d", []string{"b"}}, {"c", []string{"b"}}, {"b", []string{"a"}}, {"a", nil},
+	}
+	whole, _ := layOut(commits)
+	l := &Layout{}
+	for _, c := range commits[:2] {
+		l.Add(c.hash, c.parents)
+	}
+	clone := l.Clone()
+	for i, c := range commits[2:] {
+		if row := clone.Add(c.hash, c.parents); !rowsEqual(row, whole[i+2]) {
+			t.Errorf("row %d of the clone %+v, not %+v", i+2, row, whole[i+2])
+		}
+	}
+	// The layout itself goes on from where the clone started.
+	for i, c := range commits[2:] {
+		if row := l.Add(c.hash, c.parents); !rowsEqual(row, whole[i+2]) {
+			t.Errorf("row %d of the layout %+v, not %+v", i+2, row, whole[i+2])
+		}
+	}
+}
+
+func rowsEqual(a, b Row) bool {
+	return a.Lane == b.Lane && a.Colour == b.Colour && slices.Equal(a.Top, b.Top) && slices.Equal(a.Bottom, b.Bottom)
+}

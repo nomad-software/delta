@@ -124,6 +124,8 @@ func newTestWindowAt(t *testing.T, repo, path string) *testWindow {
 		tw.failed = func(_, text string) { tw.failures = append(tw.failures, text) }
 		tw.Start(repo)
 	})
+	// The repository is looked for in the background.
+	waitFor(t, "the repository to be looked for", func() bool { return tw.finding == 0 })
 	t.Cleanup(func() {
 		// It is closed but not deleted, as the answer to a command still running
 		// comes back to it, as it can in the program between closing and leaving.

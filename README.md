@@ -2,7 +2,8 @@
 
 A graphical user interface for git. Stage and commit your changes, and browse the history as a graph. It is
 written in Go with Qt 6, through the [miqt](https://github.com/mappu/miqt)
-bindings, and runs on Linux and macOS.
+bindings, and runs on Linux and macOS. Git runs in the background, with reads
+that don't depend on each other run at once, so that the window never waits on it.
 
 ![The changes in Delta](docs/changes.png)
 

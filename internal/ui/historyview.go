@@ -1,13 +1,16 @@
 package ui
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
+	"sync"
 	"time"
 
 	qt "github.com/mappu/miqt/qt6"
 	"github.com/mappu/miqt/qt6/mainthread"
 
+	"github.com/nomad-software/delta/internal/diff"
 	"github.com/nomad-software/delta/internal/git"
 	"github.com/nomad-software/delta/internal/graph"
 	"github.com/nomad-software/delta/internal/settings"
@@ -83,7 +86,7 @@ func newHistoryView(config settings.Settings) *historyView {
 	h.graph = newGraphColumn(h.commits.QObject)
 	h.commits.SetItemDelegateForColumn(colGraph, h.graph.QAbstractItemDelegate)
 	header.SetSectionResizeMode2(colGraph, qt.QHeaderView__Fixed)
-	h.setLayout(nil)
+	h.resetGraph()
 	header.SetSectionResizeMode2(colSubject, qt.QHeaderView__Stretch)
 	header.ResizeSection(colAuthor, 170)
 	header.ResizeSection(colDate, 140)
@@ -225,7 +228,7 @@ func (w *Window) clearHistory() {
 	h.files.Clear()
 	h.updating = false
 	h.list, h.shownHash, h.shownChanges = nil, "", nil
-	h.setLayout(nil)
+	h.resetGraph()
 	h.diff.show("")
 	h.fileLabel.SetText("Files")
 	h.diffLabel.SetText("Diff")
@@ -245,11 +248,7 @@ func (w *Window) loadHistory() {
 	limit := max(h.pageSize, h.committed())
 	w.beginWork()
 	go func() {
-		commits, err := r.Log(limit, 0)
-		var status git.Status
-		if err == nil {
-			status, err = r.Status()
-		}
+		page, more, err := readHistory(r, limit)
 		mainthread.Start(func() {
 			w.endWork()
 			if request != h.logs || r != w.repo {
@@ -260,15 +259,8 @@ func (w *Window) loadHistory() {
 				w.say("Reading the history failed: " + firstLine(err.Error()))
 				return
 			}
-			h.more = len(commits) == limit
-			if len(status.Unstaged)+len(status.Staged) > 0 {
-				parent := ""
-				if len(commits) > 0 {
-					parent = commits[0].Hash
-				}
-				commits = slices.Insert(commits, 0, git.UncommittedCommit(parent))
-			}
-			w.showCommits(commits)
+			h.more = more
+			w.showCommits(page)
 		})
 	}()
 }
@@ -283,9 +275,17 @@ func (w *Window) loadMoreHistory() {
 	h.logs++
 	request := h.logs
 	skip, limit := h.committed(), h.pageSize
+	// The next page is laid out in the background in a copy of the layout, which
+	// takes the layout's place once it is back. Nothing else changes the layout
+	// meanwhile, as anything that would also counts as a request, dropping this.
+	layout := h.layout.Clone()
 	w.beginWork()
 	go func() {
 		commits, err := r.Log(limit, skip)
+		var page historyPage
+		if err == nil {
+			page = layOutPage(layout, commits)
+		}
 		mainthread.Start(func() {
 			w.endWork()
 			if request != h.logs || r != w.repo {
@@ -298,9 +298,11 @@ func (w *Window) loadMoreHistory() {
 			}
 			h.more = len(commits) == limit
 			h.list = append(h.list, commits...)
-			h.extendGraph(commits)
+			h.layout = page.layout
+			h.graph.rows = append(h.graph.rows, page.rows...)
+			h.sizeGraph()
 			h.updating = true
-			h.commits.AddTopLevelItems(commitItems(commits))
+			h.commits.AddTopLevelItems(commitItems(page))
 			h.updating = false
 		})
 	}()
@@ -314,18 +316,65 @@ func (h *historyView) committed() int {
 	return len(h.list)
 }
 
-// setLayout starts the graph again with the commits.
-func (h *historyView) setLayout(commits []git.Commit) {
-	h.layout = &graph.Layout{}
-	h.graph.rows = nil
-	h.extendGraph(commits)
+// readHistory reads up to limit commits from HEAD, with the uncommitted changes
+// first if there are any, and lays them out, all in the background: the log and
+// the status at once. more says that there may be more commits than were read.
+func readHistory(r *git.Repo, limit int) (page historyPage, more bool, err error) {
+	var commits []git.Commit
+	var status git.Status
+	var logErr, statusErr error
+	var wg sync.WaitGroup
+	wg.Go(func() { commits, logErr = r.Log(limit, 0) })
+	wg.Go(func() { status, statusErr = r.Status() })
+	wg.Wait()
+	if err := cmp.Or(logErr, statusErr); err != nil {
+		return historyPage{}, false, err
+	}
+	more = len(commits) == limit
+	if len(status.Unstaged)+len(status.Staged) > 0 {
+		parent := ""
+		if len(commits) > 0 {
+			parent = commits[0].Hash
+		}
+		commits = slices.Insert(commits, 0, git.UncommittedCommit(parent))
+	}
+	return layOutPage(&graph.Layout{}, commits), more, nil
 }
 
-// extendGraph adds the commits to the graph, with room for what they need.
-func (h *historyView) extendGraph(commits []git.Commit) {
-	for _, c := range commits {
-		h.graph.rows = append(h.graph.rows, h.layout.Add(c.Hash, c.Parents))
+// historyPage is commits with what shows them, worked out in the background:
+// the rows of the graph, laid out in layout, which goes on from them, and the
+// texts of each row's columns.
+type historyPage struct {
+	commits []git.Commit
+	layout  *graph.Layout
+	rows    []graph.Row
+	texts   [][]string
+}
+
+// layOutPage works out how the commits are shown, going on from the layout,
+// which it changes and which no one else may be using. It touches nothing of Qt,
+// so that it runs in the background.
+func layOutPage(layout *graph.Layout, commits []git.Commit) historyPage {
+	p := historyPage{commits: commits, layout: layout, rows: make([]graph.Row, len(commits)), texts: make([][]string, len(commits))}
+	for i, c := range commits {
+		p.rows[i] = layout.Add(c.Hash, c.Parents)
+		p.texts[i] = []string{"", commitTitle(c), c.Author, formatDate(c.Date), c.Short}
+		if c.Hash == git.Uncommitted {
+			p.texts[i] = []string{"", c.Subject, "", "", ""}
+		}
 	}
+	return p
+}
+
+// resetGraph starts the graph again with no commits.
+func (h *historyView) resetGraph() {
+	h.layout = &graph.Layout{}
+	h.graph.rows = nil
+	h.sizeGraph()
+}
+
+// sizeGraph gives the graph's column room for the lanes its rows need.
+func (h *historyView) sizeGraph() {
 	h.commits.Header().ResizeSection(colGraph, graphWidth(h.layout.Width()))
 }
 
@@ -335,10 +384,10 @@ func sameCommit(a, b git.Commit) bool {
 	return a.Hash == b.Hash && a.Refs == b.Refs
 }
 
-// showCommits shows the commits, leaving the list alone if nothing has changed,
-// and keeps the same commit chosen, or else chooses the newest.
-func (w *Window) showCommits(commits []git.Commit) {
-	h := w.history
+// showCommits shows the commits of the page, leaving the list alone if nothing
+// has changed, and keeps the same commit chosen, or else chooses the newest.
+func (w *Window) showCommits(page historyPage) {
+	h, commits := w.history, page.commits
 	if slices.EqualFunc(h.list, commits, sameCommit) && (len(commits) == 0 || h.chosen() != nil) {
 		// What is uncommitted changes without its row changing.
 		if c := h.chosen(); c != nil && c.Hash == git.Uncommitted {
@@ -354,8 +403,9 @@ func (w *Window) showCommits(commits []git.Commit) {
 	h.updating = true
 	h.commits.Clear()
 	h.list = commits
-	h.setLayout(commits)
-	h.commits.AddTopLevelItems(commitItems(commits))
+	h.layout, h.graph.rows = page.layout, page.rows
+	h.sizeGraph()
+	h.commits.AddTopLevelItems(commitItems(page))
 	row := max(slices.IndexFunc(commits, func(c git.Commit) bool { return c.Hash == kept }), 0)
 	if len(commits) > 0 {
 		h.commits.SetCurrentItem(h.commits.TopLevelItem(row))
@@ -365,28 +415,26 @@ func (w *Window) showCommits(commits []git.Commit) {
 	w.showCommit()
 }
 
-// commitItems returns the rows of the commits.
-func commitItems(commits []git.Commit) []*qt.QTreeWidgetItem {
-	items := make([]*qt.QTreeWidgetItem, len(commits))
-	for i, c := range commits {
+// commitItems returns the rows of the commits of the page, from the texts
+// worked out for them.
+func commitItems(page historyPage) []*qt.QTreeWidgetItem {
+	items := make([]*qt.QTreeWidgetItem, len(page.commits))
+	for i, c := range page.commits {
+		items[i] = qt.NewQTreeWidgetItem2(page.texts[i])
 		if c.Hash == git.Uncommitted {
-			items[i] = newUncommittedItem(c)
-			continue
+			italic(items[i])
 		}
-		items[i] = qt.NewQTreeWidgetItem2([]string{"", commitTitle(c), c.Author, formatDate(c.Date), c.Short})
 	}
 	return items
 }
 
-// newUncommittedItem returns the row of the uncommitted changes, in italics as
-// they are not a commit.
-func newUncommittedItem(c git.Commit) *qt.QTreeWidgetItem {
-	item := qt.NewQTreeWidgetItem2([]string{"", c.Subject, "", "", ""})
+// italic puts the row of the uncommitted changes in italics, as they are not a
+// commit.
+func italic(item *qt.QTreeWidgetItem) {
 	font := qt.NewQFont5(item.Font(colSubject))
 	defer font.Delete()
 	font.SetItalic(true)
 	item.SetFont(colSubject, font)
-	return item
 }
 
 // commitTitle returns the subject of a commit after the refs at it, if any.
@@ -428,10 +476,15 @@ func (w *Window) showCommit() {
 		h.shownHash = ""
 		return
 	}
-	commit := *c
+	commit, titles := *c, h.diff.titles
 	w.beginWork()
 	go func() {
 		changes, text, err := r.CommitDetail(commit)
+		// It is parsed here, so that the main thread only fills the view.
+		var parsed diff.Parsed
+		if err == nil {
+			parsed = diff.Parse(text, titles)
+		}
 		mainthread.Start(func() {
 			w.endWork()
 			if request != h.details || r != w.repo {
@@ -454,7 +507,7 @@ func (w *Window) showCommit() {
 				h.setFiles(changes, first)
 			}
 			h.shownHash, h.shownChanges = commit.Hash, changes
-			h.diff.show(text)
+			h.diff.showParsed(text, parsed)
 			if !same {
 				h.diff.scrollToLine(0)
 			}

@@ -94,8 +94,11 @@ func TestChooseRepository(t *testing.T) {
 		}
 	})
 	waitFor(t, "the status", func() bool { return w.idleWith(0, 0) })
+	// Each is looked for in the background.
+	looked := func() bool { return w.finding == 0 }
+	on(func() { w.bar.repos.Activated(slices.Index(w.repoNames(), "one")) })
+	waitFor(t, "the repository to be looked for", looked)
 	on(func() {
-		w.bar.repos.Activated(slices.Index(w.repoNames(), "one"))
 		if w.repo.Root != one {
 			t.Errorf("open %q", w.repo.Root)
 		}
@@ -103,12 +106,56 @@ func TestChooseRepository(t *testing.T) {
 	if err := os.RemoveAll(two); err != nil {
 		t.Fatal(err)
 	}
+	on(func() { w.bar.repos.Activated(slices.Index(w.repoNames(), "two")) })
+	waitFor(t, "the repository to be looked for", looked)
 	on(func() {
-		w.bar.repos.Activated(slices.Index(w.repoNames(), "two"))
 		if w.repo.Root != one || w.bar.repos.CurrentText() != "one" || len(w.failures) != 1 {
 			t.Errorf("open %q, chosen %q, failures %q", w.repo.Root, w.bar.repos.CurrentText(), w.failures)
 		}
 	})
+}
+
+// Of repositories asked for one after another, before the first is found, only
+// the last is opened, as is one opened at once while another is looked for.
+func TestLatestRepositoryOpens(t *testing.T) {
+	one, two, three := namedRepo(t, "one"), namedRepo(t, "two"), namedRepo(t, "three")
+	w := newTestWindow(t, one)
+	waitFor(t, "the status", func() bool { return w.idleWith(0, 0) })
+	on(func() {
+		for _, dir := range []string{two, three} {
+			if err := w.openRepository(dir); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := w.openRepository(one); err != nil {
+			t.Fatal(err)
+		}
+	})
+	waitFor(t, "the status", func() bool { return w.idleWith(0, 0) })
+	opened := func() []string {
+		var roots []string
+		on(func() { roots = append(roots, w.repo.Root) })
+		return roots
+	}
+	on(func() {
+		w.bar.repos.Activated(slices.Index(w.repoNames(), "two"))
+		w.bar.repos.Activated(slices.Index(w.repoNames(), "three"))
+	})
+	waitFor(t, "the repositories to be looked for", func() bool { return w.finding == 0 })
+	if got := opened(); got[0] != three {
+		t.Errorf("open %q, not the last asked for", got)
+	}
+	// One looked for is dropped once another is opened at once.
+	on(func() {
+		w.bar.repos.Activated(slices.Index(w.repoNames(), "two"))
+		if err := w.openRepository(one); err != nil {
+			t.Fatal(err)
+		}
+	})
+	waitFor(t, "the repository to be looked for", func() bool { return w.finding == 0 })
+	if got := opened(); got[0] != one {
+		t.Errorf("open %q, not the one opened since", got)
+	}
 }
 
 // The bar lists the local branches in order, choosing the current one, and

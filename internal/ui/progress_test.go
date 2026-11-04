@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"github.com/nomad-software/delta/internal/git"
+
 	"testing"
 	"time"
 
@@ -98,6 +100,9 @@ func TestWorkPairs(t *testing.T) {
 			w.rescanRepository()
 			w.showDiff()
 			w.loadHistory()
+			// Repositories looked for, and what dialogs need, read for none.
+			w.findRepository(func() (*git.Repo, error) { return git.Open(dir) }, func(*git.Repo, error) {})
+			readFirst(w.Window, "Read", func(*git.Repo) (int, error) { return 0, nil }, func(int) {})
 		}
 		w.changes.unstaged.SetCurrentRow(0)
 	})

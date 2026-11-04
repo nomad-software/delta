@@ -50,6 +50,48 @@ func (w *Window) run(name string, op func() (string, error), after func(error)) 
 	})
 }
 
+// readFirst reads, in the background, what a dialog needs before it opens, and
+// gives it to then on the main thread, so that the window never waits on git.
+// What it read is dropped if by then another repository is open or a command has
+// started, and a failure is told of under the title. One is read at a time:
+// asking again while one is being read does nothing, so that a shortcut pressed
+// twice opens one dialog.
+func readFirst[T any](w *Window, title string, read func(*git.Repo) (T, error), then func(T)) {
+	r := w.repo
+	if r == nil || w.busy || w.reading {
+		return
+	}
+	w.reading = true
+	w.beginWork()
+	go func() {
+		got, err := read(r)
+		mainthread.Start(func() {
+			w.endWork()
+			w.reading = false
+			if r != w.repo || w.busy {
+				return
+			}
+			if err != nil {
+				w.failed(title, err.Error())
+				return
+			}
+			then(got)
+		})
+	}()
+}
+
+// branchLists are the local and remote branches, read together.
+type branchLists struct{ local, remote []string }
+
+// readBranches reads the local and remote branches in the background, as
+// readFirst does, for then.
+func (w *Window) readBranches(then func(local, remote []string)) {
+	readFirst(w, "Branches", func(r *git.Repo) (branchLists, error) {
+		local, remote, err := r.Branches()
+		return branchLists{local, remote}, err
+	}, func(b branchLists) { then(b.local, b.remote) })
+}
+
 // firstLine returns the first line of the text.
 func firstLine(text string) string {
 	line, _, _ := strings.Cut(strings.TrimSpace(text), "\n")
@@ -100,10 +142,23 @@ func (w *Window) pushBranch(force bool) {
 		w.failed("Push Failed", "HEAD is detached, so there is no branch to push.")
 		return
 	}
-	remote, ok := w.pushRemote()
-	if !ok {
+	// A branch with an upstream pushes to it; one without asks where, once the
+	// remotes are read in the background.
+	if w.status.Upstream != "" {
+		w.pushTo("", force)
 		return
 	}
+	readFirst(w, "Push Failed", (*git.Repo).Remotes, func(remotes []string) {
+		if remote, ok := w.pushRemote(remotes); ok {
+			w.pushTo(remote, force)
+		}
+	})
+}
+
+// pushTo pushes the current branch to the remote, or to its upstream if that is
+// empty, asking first if it is forced.
+func (w *Window) pushTo(remote string, force bool) {
+	r := w.repo
 	name := "Push"
 	if force {
 		name = "Force Push"
@@ -124,17 +179,9 @@ func (w *Window) pushBranch(force bool) {
 	})
 }
 
-// pushRemote returns the remote to push to and make the upstream, which is
-// nothing if the branch has an upstream, asking which if there are several.
-func (w *Window) pushRemote() (string, bool) {
-	if w.status.Upstream != "" {
-		return "", true
-	}
-	remotes, err := w.repo.Remotes()
-	if err != nil {
-		w.failed("Push Failed", err.Error())
-		return "", false
-	}
+// pushRemote returns the remote of those given to push to and make the
+// upstream, asking which if there are several.
+func (w *Window) pushRemote(remotes []string) (string, bool) {
 	if len(remotes) == 0 {
 		w.failed("Push Failed", "This repository has no remotes. Add one from the Remote menu.")
 		return "", false
@@ -145,16 +192,6 @@ func (w *Window) pushRemote() (string, bool) {
 	return askChoice(w.QWidget, "Push", "Push to", remotes)
 }
 
-// branches returns the local and remote branches, telling of any failure.
-func (w *Window) branches() (local, remote []string, ok bool) {
-	local, remote, err := w.repo.Branches()
-	if err != nil {
-		w.failed("Branches", err.Error())
-		return nil, nil, false
-	}
-	return local, remote, true
-}
-
 // without returns the items other than the one named.
 func without(items []string, name string) []string {
 	return slices.DeleteFunc(slices.Clone(items), func(item string) bool { return item == name })
@@ -162,19 +199,17 @@ func without(items []string, name string) []string {
 
 // newBranch asks for a new branch and makes it, with its name made fit for one.
 func (w *Window) newBranch() {
-	local, remote, ok := w.branches()
-	if !ok {
-		return
-	}
-	d, name, start, checkout := w.newBranchDialog(local, remote)
-	if !d.run() {
-		return
-	}
-	from := start.CurrentText()
-	if from == "HEAD" {
-		from = ""
-	}
-	w.createBranch(git.SanitiseBranchName(name.Text()), from, checkout.IsChecked())
+	w.readBranches(func(local, remote []string) {
+		d, name, start, checkout := w.newBranchDialog(local, remote)
+		if !d.run() {
+			return
+		}
+		from := start.CurrentText()
+		if from == "HEAD" {
+			from = ""
+		}
+		w.createBranch(git.SanitiseBranchName(name.Text()), from, checkout.IsChecked())
+	})
 }
 
 // newBranchDialog returns the dialog asking for a new branch, with its fields:
@@ -203,23 +238,21 @@ func (w *Window) createBranch(name, start string, checkout bool) {
 // checkoutBranch asks for a branch and switches to it. A remote branch is
 // checked out as a new local branch that tracks it.
 func (w *Window) checkoutBranch() {
-	local, remote, ok := w.branches()
-	if !ok {
-		return
-	}
-	if len(local)+len(remote) == 0 {
-		w.failed("Checkout", "There are no branches yet.")
-		return
-	}
-	fetched := false
-	d, branch, _ := newCheckoutDialog(w.QWidget, w.status.Branch, local, remote, w.checkoutFetch(&fetched))
-	if d.run() {
-		name := branch.CurrentText()
-		w.checkout(name, !slices.Contains(local, name))
-	} else if fetched {
-		// What was fetched changes how far the branch is from its upstream.
-		w.rescanRepository()
-	}
+	w.readBranches(func(local, remote []string) {
+		if len(local)+len(remote) == 0 {
+			w.failed("Checkout", "There are no branches yet.")
+			return
+		}
+		fetched := false
+		d, branch, _ := newCheckoutDialog(w.QWidget, w.status.Branch, local, remote, w.checkoutFetch(&fetched))
+		if d.run() {
+			name := branch.CurrentText()
+			w.checkout(name, !slices.Contains(local, name))
+		} else if fetched {
+			// What was fetched changes how far the branch is from its upstream.
+			w.rescanRepository()
+		}
+	})
 }
 
 // checkoutFetch returns what fetches for the checkout dialog, in the background,
@@ -255,10 +288,11 @@ func (w *Window) checkout(name string, isRemote bool) {
 
 // renameBranch asks for a branch, the current one first, and its new name.
 func (w *Window) renameBranch() {
-	local, _, ok := w.branches()
-	if !ok {
-		return
-	}
+	w.readBranches(func(local, _ []string) { w.askRenameBranch(local) })
+}
+
+// askRenameBranch asks which of the local branches to rename, and to what.
+func (w *Window) askRenameBranch(local []string) {
 	if len(local) == 0 {
 		w.failed("Rename Branch", "There are no branches yet.")
 		return
@@ -280,18 +314,16 @@ func (w *Window) renameBranch() {
 // deleteBranch asks for a branch other than the current one and deletes it,
 // asking again before deleting one that has not been merged.
 func (w *Window) deleteBranch() {
-	local, _, ok := w.branches()
-	if !ok {
-		return
-	}
-	items := without(local, w.status.Branch)
-	if len(items) == 0 {
-		w.failed("Delete Branch", "There are no other branches.")
-		return
-	}
-	if name, ok := askChoice(w.QWidget, "Delete Branch", "Branch", items); ok {
-		w.removeBranch(name)
-	}
+	w.readBranches(func(local, _ []string) {
+		items := without(local, w.status.Branch)
+		if len(items) == 0 {
+			w.failed("Delete Branch", "There are no other branches.")
+			return
+		}
+		if name, ok := askChoice(w.QWidget, "Delete Branch", "Branch", items); ok {
+			w.removeBranch(name)
+		}
+	})
 }
 
 // removeBranch deletes a branch once that is confirmed.
@@ -315,19 +347,17 @@ func (w *Window) removeBranch(name string) {
 
 // mergeBranch asks for a branch and merges it into the current one.
 func (w *Window) mergeBranch() {
-	local, remote, ok := w.branches()
-	if !ok {
-		return
-	}
-	items := append(without(local, w.status.Branch), remote...)
-	if len(items) == 0 {
-		w.failed("Merge", "There are no other branches.")
-		return
-	}
-	if name, ok := askChoice(w.QWidget, "Merge", "Merge into the current branch", items); ok {
-		r := w.repo
-		w.run("Merge", func() (string, error) { return r.Merge(name) }, nil)
-	}
+	w.readBranches(func(local, remote []string) {
+		items := append(without(local, w.status.Branch), remote...)
+		if len(items) == 0 {
+			w.failed("Merge", "There are no other branches.")
+			return
+		}
+		if name, ok := askChoice(w.QWidget, "Merge", "Merge into the current branch", items); ok {
+			r := w.repo
+			w.run("Merge", func() (string, error) { return r.Merge(name) }, nil)
+		}
+	})
 }
 
 // doAbortMerge abandons the merge in progress once that is confirmed.
@@ -359,57 +389,60 @@ func (w *Window) addRemote() {
 	w.run("Add Remote", func() (string, error) { return r.AddRemote(n, u) }, nil)
 }
 
-// chooseRemote asks which remote to act on.
-func (w *Window) chooseRemote(title string) (string, bool) {
-	remotes, err := w.repo.Remotes()
-	if err != nil {
-		w.failed(title, err.Error())
-		return "", false
-	}
-	if len(remotes) == 0 {
-		w.failed(title, "This repository has no remotes.")
-		return "", false
-	}
-	return askChoice(w.QWidget, title, "Remote", remotes)
+// chooseRemote asks which remote to act on, once they are read in the
+// background, and gives it to then.
+func (w *Window) chooseRemote(title string, then func(name string)) {
+	readFirst(w, title, (*git.Repo).Remotes, func(remotes []string) {
+		if len(remotes) == 0 {
+			w.failed(title, "This repository has no remotes.")
+			return
+		}
+		if name, ok := askChoice(w.QWidget, title, "Remote", remotes); ok {
+			then(name)
+		}
+	})
 }
 
 // renameRemote asks for a remote and its new name.
 func (w *Window) renameRemote() {
-	r := w.repo
-	from, ok := w.chooseRemote("Rename Remote")
-	if !ok {
-		return
-	}
-	to, ok := askText(w.QWidget, "Rename Remote", "New name", from, notEmpty)
-	if !ok || to == from {
-		return
-	}
-	w.run("Rename Remote", func() (string, error) { return r.RenameRemote(from, to) }, nil)
+	w.chooseRemote("Rename Remote", func(from string) {
+		to, ok := askText(w.QWidget, "Rename Remote", "New name", from, notEmpty)
+		if !ok || to == from {
+			return
+		}
+		r := w.repo
+		w.run("Rename Remote", func() (string, error) { return r.RenameRemote(from, to) }, nil)
+	})
 }
 
-// changeRemoteURL asks for a remote and its new URL.
+// changeRemoteURL asks for a remote and, once its URL is read in the
+// background, its new URL.
 func (w *Window) changeRemoteURL() {
-	r := w.repo
-	name, ok := w.chooseRemote("Change URL")
-	if !ok {
-		return
-	}
-	current, _ := r.RemoteURL(name)
-	url, ok := askText(w.QWidget, "Change URL", "URL", current, notEmpty)
-	if !ok || url == current {
-		return
-	}
-	w.run("Change URL", func() (string, error) { return r.SetRemoteURL(name, url) }, nil)
+	w.chooseRemote("Change URL", func(name string) {
+		// A URL that can't be read is offered empty.
+		readFirst(w, "Change URL", func(r *git.Repo) (string, error) {
+			current, _ := r.RemoteURL(name)
+			return current, nil
+		}, func(current string) {
+			url, ok := askText(w.QWidget, "Change URL", "URL", current, notEmpty)
+			if !ok || url == current {
+				return
+			}
+			r := w.repo
+			w.run("Change URL", func() (string, error) { return r.SetRemoteURL(name, url) }, nil)
+		})
+	})
 }
 
 // removeRemote asks for a remote and removes it once that is confirmed.
 func (w *Window) removeRemote() {
-	r := w.repo
-	name, ok := w.chooseRemote("Remove Remote")
-	if !ok || !w.confirm("Remove Remote", "Remove the remote "+name+" and its remote tracking branches?") {
-		return
-	}
-	w.run("Remove Remote", func() (string, error) { return r.RemoveRemote(name) }, nil)
+	w.chooseRemote("Remove Remote", func(name string) {
+		if !w.confirm("Remove Remote", "Remove the remote "+name+" and its remote tracking branches?") {
+			return
+		}
+		r := w.repo
+		w.run("Remove Remote", func() (string, error) { return r.RemoveRemote(name) }, nil)
+	})
 }
 
 // rebaseTitle names an interactive rebase, in its questions and what is said of
@@ -421,8 +454,7 @@ const rebaseTitle = "Interactive Rebase"
 // already going.
 func (w *Window) rebaseFrom(c git.Commit) {
 	const title = rebaseTitle
-	r := w.repo
-	if r == nil || w.busy || c.Hash == git.Uncommitted {
+	if w.repo == nil || w.busy || c.Hash == git.Uncommitted {
 		return
 	}
 	switch {
@@ -436,11 +468,29 @@ func (w *Window) rebaseFrom(c git.Commit) {
 		w.failed(title, "Commit or stash the changes first: git rebases only a clean work tree.")
 		return
 	}
-	commits, base, err := r.RebaseCommits(c.Hash)
-	if err != nil {
-		w.failed(title, "Commit "+c.Short+" can't be rebased from: "+err.Error()+".")
-		return
+	// The commits are read in the background, and the plan asked for once they
+	// are.
+	// Why it can't be is told of as git's error is not.
+	type plan struct {
+		commits []git.Commit
+		base    string
+		refused error
 	}
+	readFirst(w, title, func(r *git.Repo) (plan, error) {
+		commits, base, err := r.RebaseCommits(c.Hash)
+		return plan{commits, base, err}, nil
+	}, func(p plan) {
+		if p.refused != nil {
+			w.failed(title, "Commit "+c.Short+" can't be rebased from: "+p.refused.Error()+".")
+			return
+		}
+		w.askRebase(p.commits, p.base)
+	})
+}
+
+// askRebase asks how to rewrite the commits, on top of the base, and rewrites
+// them.
+func (w *Window) askRebase(commits []git.Commit, base string) {
 	d := newRebaseDialog(w.QWidget, w.config, commits)
 	accepted := d.run()
 	w.config.RebaseWidth, w.config.RebaseHeight = d.width, d.height
@@ -589,24 +639,23 @@ func (w *Window) stashChanges(message string, untracked bool) {
 	w.run("Stash Changes", func() (string, error) { return r.StashChanges(message, untracked) }, nil)
 }
 
-// askStash asks for one of the stashes, newest first, and returns its ref.
-func (w *Window) askStash(title string) (string, bool) {
-	stashes, err := w.repo.Stashes()
-	if err != nil {
-		w.failed(title, err.Error())
-		return "", false
-	}
-	if len(stashes) == 0 {
-		w.failed(title, "There are no stashes.")
-		return "", false
-	}
-	var items []string
-	for _, s := range stashes {
-		items = append(items, s.Ref+": "+s.Subject)
-	}
-	chosen, ok := askChoice(w.QWidget, title, "Stash", items)
-	ref, _, _ := strings.Cut(chosen, ": ")
-	return ref, ok
+// askStash asks for one of the stashes, newest first, once they are read in the
+// background, and gives its ref to then.
+func (w *Window) askStash(title string, then func(ref string)) {
+	readFirst(w, title, (*git.Repo).Stashes, func(stashes []git.Stash) {
+		if len(stashes) == 0 {
+			w.failed(title, "There are no stashes.")
+			return
+		}
+		var items []string
+		for _, s := range stashes {
+			items = append(items, s.Ref+": "+s.Subject)
+		}
+		if chosen, ok := askChoice(w.QWidget, title, "Stash", items); ok {
+			ref, _, _ := strings.Cut(chosen, ": ")
+			then(ref)
+		}
+	})
 }
 
 // askApplyStash asks for a stash and applies it, dropping it once it is if pop
@@ -616,9 +665,7 @@ func (w *Window) askApplyStash(pop bool) {
 	if pop {
 		title = "Pop Stash"
 	}
-	if ref, ok := w.askStash(title); ok {
-		w.applyStash(ref, pop, true)
-	}
+	w.askStash(title, func(ref string) { w.applyStash(ref, pop, true) })
 }
 
 // applyStash puts a stash's changes back, with what was staged staged again if
@@ -652,9 +699,7 @@ func (w *Window) applyStash(ref string, pop, index bool) {
 // askDropStash asks for a stash and deletes it, after asking, as it can't be
 // undone.
 func (w *Window) askDropStash() {
-	if ref, ok := w.askStash("Drop Stash"); ok {
-		w.dropStash(ref)
-	}
+	w.askStash("Drop Stash", w.dropStash)
 }
 
 // dropStash deletes a stash, if the question before it is answered yes.
