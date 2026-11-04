@@ -1,6 +1,7 @@
 package git
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -106,4 +107,41 @@ func (r *Repo) foldHead(head string) (string, error) {
 	// The branch moves only if it is still at head, so that nothing done since
 	// the plan was read is lost.
 	return r.run("update-ref", "-m", "quick fix: fold into the commit before", "HEAD", strings.TrimSpace(folded), head)
+}
+
+// UncommitRefused says why the last commit can't be uncommitted, or is empty if
+// it can: there must be one, and it must not be a merge, as taking a merge back
+// would mix the branch merged in with the changes.
+func (r *Repo) UncommitRefused() string {
+	out, err := r.run("rev-list", "--parents", "-n", "1", "HEAD")
+	switch {
+	case err != nil:
+		return "There are no commits yet."
+	case len(strings.Fields(out)) > 2:
+		return "The last commit is a merge."
+	}
+	return ""
+}
+
+// Uncommit takes the last commit back, leaving its changes in the work tree,
+// unstaged as if they were new, as are any staged before. The first commit of a
+// branch is taken back to none, its files untracked.
+func (r *Repo) Uncommit() (string, error) {
+	if refused := r.UncommitRefused(); refused != "" {
+		return "", errors.New(refused)
+	}
+	out, err := r.run("rev-list", "--parents", "-n", "1", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	commits := strings.Fields(out)
+	if len(commits) == 1 {
+		// The branch goes back to having no commits, only if it is still at
+		// this one, and nothing is staged.
+		if _, err := r.run("update-ref", "-d", "HEAD", commits[0]); err != nil {
+			return "", err
+		}
+		return r.run("read-tree", "--empty")
+	}
+	return r.run("reset", "--mixed", "-q", commits[1])
 }

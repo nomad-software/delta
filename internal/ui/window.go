@@ -49,10 +49,12 @@ type Window struct {
 	// busy says that a git command that changes something is running, during
 	// which no other can be started.
 	busy bool
-	// stashes is how many stashes there are, and quickFix what a quick fix
-	// would do, as the last rescan read.
-	stashes  int
-	quickFix git.QuickFix
+	// stashes is how many stashes there are, quickFix what a quick fix would
+	// do, and canUncommit whether the last commit can be taken back, as the
+	// last rescan read.
+	stashes     int
+	quickFix    git.QuickFix
+	canUncommit bool
 	// rescans and diffs count the requests for each, so that the answer to any
 	// but the latest, which may be about something else by now, is dropped.
 	rescans, diffs int
@@ -66,10 +68,10 @@ type Window struct {
 	repoOnly []*qt.QAction
 	open     *qt.QAction
 	// The Branch menu's.
-	newBranchAction, checkoutAction, deleteAction, showHistory   *qt.QAction
+	newBranchAction, checkoutAction, showHistory                 *qt.QAction
 	abortMerge, continueRebase, skipRebase, abortRebase, discard *qt.QAction
 	// The Commit menu's.
-	rescan, stageAll, stageSelected, unstageSelected, unstageAll, commit, quickFixAction *qt.QAction
+	rescan, stageAll, stageSelected, unstageSelected, unstageAll, commit, quickFixAction, uncommit *qt.QAction
 	// The Stash menu's.
 	stashAction, applyStashAction, popStashAction, dropStashAction *qt.QAction
 	// The Remote menu's.
@@ -260,7 +262,7 @@ func (w *Window) say(message string) {
 // message too, and the dropdowns at the right.
 func (w *Window) makeToolBar() {
 	for a, shape := range map[*qt.QAction]iconShape{
-		w.open: openShape, w.newBranchAction: newBranchShape, w.checkoutAction: checkoutShape, w.deleteAction: deleteShape,
+		w.open: openShape, w.newBranchAction: newBranchShape, w.checkoutAction: checkoutShape,
 		w.rescan: rescanShape, w.pull: pullShape, w.push: pushShape, w.pushButton: pushShape, w.showHistory: historyShape,
 	} {
 		icon := toolIcon(shape)
@@ -271,7 +273,6 @@ func (w *Window) makeToolBar() {
 	w.open.SetIconText("Open")
 	w.newBranchAction.SetIconText("New Branch")
 	w.checkoutAction.SetIconText("Checkout")
-	w.deleteAction.SetIconText("Delete")
 	w.showHistory.SetIconText("History")
 
 	w.toolbar = qt.NewQToolBar4("Buttons", w.QWidget)
@@ -286,7 +287,7 @@ func (w *Window) makeToolBar() {
 	noTips.OnEventFilter(func(super func(*qt.QObject, *qt.QEvent) bool, watched *qt.QObject, event *qt.QEvent) bool {
 		return event.Type() == qt.QEvent__ToolTip || super(watched, event)
 	})
-	for _, a := range []*qt.QAction{w.open, nil, w.newBranchAction, w.checkoutAction, w.deleteAction, nil, w.rescan, nil, w.pull, w.pushButton, nil, w.showHistory} {
+	for _, a := range []*qt.QAction{w.open, nil, w.newBranchAction, w.checkoutAction, nil, w.rescan, nil, w.pull, w.pushButton, nil, w.showHistory} {
 		if a == nil {
 			w.toolbar.AddSeparator()
 			continue
@@ -340,8 +341,8 @@ func (w *Window) makeMenus() {
 	w.newBranchAction = w.action(branch, "&New Branch…", "Ctrl+N", w.newBranch)
 	w.checkoutAction = w.action(branch, "&Checkout…", "Ctrl+B", w.checkoutBranch)
 	rename := w.action(branch, "&Rename…", "", w.renameBranch)
-	w.deleteAction = w.action(branch, "&Delete…", "", w.deleteBranch)
-	w.repoOnly = append(w.repoOnly, w.newBranchAction, w.checkoutAction, rename, w.deleteAction)
+	remove := w.action(branch, "&Delete…", "", w.deleteBranch)
+	w.repoOnly = append(w.repoOnly, w.newBranchAction, w.checkoutAction, rename, remove)
 	branch.AddSeparator()
 	// Show History is the toolbar's History too: it shows the history in place
 	// of the changes while it is ticked.
@@ -375,6 +376,8 @@ func (w *Window) makeMenus() {
 	w.unstageAll = w.action(commit, "Unstage &All", "Ctrl+Shift+U", func() { w.unstageChanges(w.status.Staged) })
 	commit.AddSeparator()
 	w.commit = w.action(commit, "&Commit", "Ctrl+Return", w.commitChanges)
+	w.uncommit = w.action(commit, "U&ncommit…", "Ctrl+Shift+Return", w.uncommitLast)
+	commit.AddSeparator()
 	w.quickFixAction = w.action(commit, "&Quick Fix…", "", w.askQuickFix)
 
 	stash := bar.AddMenuWithTitle("&Stash")
@@ -502,6 +505,7 @@ func (w *Window) updateActions() {
 	// fix, which needs one read for the state as it is.
 	stashable := idle && !w.status.Merging && !w.status.Rebasing
 	w.quickFixAction.SetEnabled(stashable && w.quickFix.Head != "" && w.quickFix.Refused == "")
+	w.uncommit.SetEnabled(stashable && w.canUncommit)
 	w.stashAction.SetEnabled(stashable && len(w.status.Unstaged)+len(w.status.Staged) > 0)
 	for _, a := range []*qt.QAction{w.applyStashAction, w.popStashAction, w.dropStashAction} {
 		a.SetEnabled(stashable && w.stashes > 0)
@@ -582,6 +586,7 @@ func (w *Window) openRepository(dir string) error {
 	w.mergeFilled = false
 	w.stashes = 0
 	w.quickFix = git.QuickFix{}
+	w.canUncommit = false
 	w.chooseFirst = true
 	w.say("Opened " + r.Root)
 	w.rescanRepository()
@@ -653,8 +658,10 @@ func (w *Window) rescanRepository() {
 		local, _, branchErr := r.Branches()
 		stashes, stashErr := r.Stashes()
 		var quickFix git.QuickFix
+		var canUncommit bool
 		if err == nil {
 			quickFix = r.PlanQuickFix(len(s.Unstaged)+len(s.Staged) > 0)
+			canUncommit = r.UncommitRefused() == ""
 		}
 		var mergeMessage string
 		if err == nil && s.Merging {
@@ -676,6 +683,7 @@ func (w *Window) rescanRepository() {
 				w.stashes = len(stashes)
 			}
 			w.quickFix = quickFix
+			w.canUncommit = canUncommit
 			w.applyStatus(s)
 			w.chooseFirstFile()
 			// The message git prepared for a merge is offered once, and not

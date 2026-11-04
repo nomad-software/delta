@@ -30,7 +30,6 @@ chosen, if there is one, as it is whenever a repository is opened.
 | **Open** | Opens a repository, as **File > Open Repository…** (`Ctrl+O`) does. |
 | **New Branch** | Makes a branch, and checks it out if you like. |
 | **Checkout** | Switches to another branch. |
-| **Delete** | Deletes a branch, after asking. |
 | **Rescan** | Reads the state of the repository again. |
 | **Pull** | Pulls into the current branch. |
 | **Push** | Pushes the current branch, setting its upstream on the first push. Its arrow opens a **Force push** option. |
@@ -92,6 +91,12 @@ message. It asks first every time, naming the commits, as it rewrites the
 branch's history, and says so if they have been pushed, as the branch will then
 need a force push.
 
+**Commit > Uncommit…** takes the last commit back, after asking: its changes are
+left in your files, unstaged, as if you had just made them, along with anything
+you had staged. It says so if the commit has been pushed, as the branch will then
+need a force push. The first commit of a branch is taken back to none, its files untracked.
+A merge can't be uncommitted.
+
 Forcing uses `--force-with-lease`: git refuses if the remote has commits you have
 not fetched, so you can't overwrite someone else's work without seeing it.
 
@@ -151,7 +156,7 @@ the branch back as it was.
 | ------ | ----- | --------- |
 | File   | Open Repository, Settings, Quit | `Ctrl+O`, `Ctrl+,`, `Ctrl+Q` |
 | Branch | New Branch, Checkout, Rename, Delete, Show History, Merge, Abort Merge, Continue Rebase, Skip Commit, Abort Rebase, Discard All Changes | New Branch `Ctrl+N`, Checkout `Ctrl+B`, Show History `Ctrl+H`, Merge `Ctrl+M`, Discard All Changes `Ctrl+Shift+D` |
-| Commit | Rescan, Stage Changes, Stage Selected, Unstage Selected, Unstage All, Commit, Quick Fix | `F5`, `Ctrl+Shift+S`, `Ctrl+S`, `Ctrl+U`, `Ctrl+Shift+U`, `Ctrl+Return` |
+| Commit | Rescan, Stage Changes, Stage Selected, Unstage Selected, Unstage All, Commit, Uncommit, Quick Fix | `F5`, `Ctrl+Shift+S`, `Ctrl+S`, `Ctrl+U`, `Ctrl+Shift+U`, Commit `Ctrl+Return`, Uncommit `Ctrl+Shift+Return` |
 | Stash  | Stash Changes, Apply Stash, Pop Stash, Drop Stash | Stash Changes `Ctrl+Shift+Z` |
 | Remote | Fetch, Pull, Push, Force Push, Add Remote, Rename Remote, Change URL, Remove Remote | Fetch `Ctrl+Shift+F`, Pull `Ctrl+Shift+L`, Push `Ctrl+P`, Force Push `Ctrl+Shift+P` |
 | Help   | About | `Ctrl+I` |

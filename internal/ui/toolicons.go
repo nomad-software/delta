@@ -69,27 +69,6 @@ var (
 		p.LineTo2(5, 16)
 		p.LineTo2(8.5, 19.5)
 	}
-	// deleteShape is a bin.
-	deleteShape iconShape = func(p *qt.QPainterPath) {
-		p.MoveTo2(4, 6.5)
-		p.LineTo2(20, 6.5)
-		p.MoveTo2(9.5, 6.5)
-		p.LineTo2(9.5, 5)
-		p.ArcTo2(9.5, 3.5, 3, 3, 180, -90)
-		p.LineTo2(13, 3.5)
-		p.ArcTo2(11.5, 3.5, 3, 3, 90, -90)
-		p.LineTo2(14.5, 6.5)
-		p.MoveTo2(6, 6.5)
-		p.LineTo2(6.9, 18.6)
-		p.QuadTo2(7.05, 20.5, 8.9, 20.5)
-		p.LineTo2(15.1, 20.5)
-		p.QuadTo2(16.95, 20.5, 17.1, 18.6)
-		p.LineTo2(18, 6.5)
-		p.MoveTo2(10, 10.5)
-		p.LineTo2(10, 16.5)
-		p.MoveTo2(14, 10.5)
-		p.LineTo2(14, 16.5)
-	}
 	// rescanShape is an arrow going round, clockwise, from the left to the
 	// bottom.
 	rescanShape iconShape = func(p *qt.QPainterPath) {

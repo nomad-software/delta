@@ -215,10 +215,19 @@ func TestRepoComboWidth(t *testing.T) {
 	if got := width(settings.Defaults().Width); got != repoComboMost {
 		t.Errorf("a long name %d wide in a window of the default width", got)
 	}
-	if got := width(1200); got <= repoComboLeast || got >= repoComboMost {
+	// The room the dropdowns have is the window's beyond the buttons, which
+	// stay where they are; they narrow while it is more than they need at the
+	// least, and leave the toolbar once it is less.
+	var buttons, least int
+	on(func() {
+		history := w.toolbar.WidgetForAction(w.showHistory)
+		buttons = history.X() + history.Width()
+		least = w.bar.widget.MinimumSizeHint().Width()
+	})
+	if got := width(buttons + least + 80); got <= repoComboLeast || got >= repoComboMost {
 		t.Errorf("a long name %d wide in a narrower window", got)
 	}
-	if got := width(1100); got != 0 {
+	if got := width(buttons + least - 40); got != 0 {
 		t.Errorf("%d wide in a narrow window, which has no room", got)
 	}
 }

@@ -697,3 +697,26 @@ func quickFixQuestion(q git.QuickFix, s git.Status) string {
 	}
 	return text
 }
+
+// uncommitLast takes the last commit back, its changes left unstaged as if they
+// were new, once asked.
+func (w *Window) uncommitLast() {
+	r := w.repo
+	if r == nil || w.busy || !w.canUncommit {
+		return
+	}
+	if w.confirm("Uncommit", uncommitQuestion(w.quickFix.Last, w.status)) {
+		w.run("Uncommit", r.Uncommit, nil)
+	}
+}
+
+// uncommitQuestion returns what is asked before uncommitting the last commit,
+// of the subject: that its changes are kept, and, if it has been pushed, that
+// the branch will need a force push.
+func uncommitQuestion(subject string, s git.Status) string {
+	text := fmt.Sprintf("Uncommit the last commit, “%s”? Its changes are kept, unstaged.", subject)
+	if s.Upstream != "" && s.Ahead < 1 {
+		text += fmt.Sprintf("\n\nIt has been pushed to %s, so the branch will need a force push.", s.Upstream)
+	}
+	return text
+}

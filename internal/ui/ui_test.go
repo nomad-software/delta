@@ -195,7 +195,7 @@ func TestLayout(t *testing.T) {
 				t.Errorf("%q has no icon", a.IconText())
 			}
 		}
-		if want := []string{"Open", "|", "New Branch", "Checkout", "Delete", "|", "Rescan", "|", "Pull", "Push", "|", "History"}; !slices.Equal(buttons, want) {
+		if want := []string{"Open", "|", "New Branch", "Checkout", "|", "Rescan", "|", "Pull", "Push", "|", "History"}; !slices.Equal(buttons, want) {
 			t.Errorf("buttons %q", buttons)
 		}
 		if size := w.toolbar.IconSize(); size.Width() != 32 || size.Height() != 32 || w.toolbar.ToolButtonStyle() != qt.ToolButtonTextUnderIcon || w.toolbar.IsMovable() {
