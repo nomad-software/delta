@@ -9,8 +9,8 @@ import (
 	"github.com/nomad-software/delta/internal/git"
 )
 
-// Quick Fix, in the Commit menu with no shortcut and a button under Commit,
-// folds every change not committed into the last commit, or with none the last
+// Quick Fix, in the Commit menu on Ctrl+Shift+Q, with no button beside the
+// message, folds every change not committed into the last commit, or with none the last
 // commit into the one before it, asking first every time.
 func TestQuickFix(t *testing.T) {
 	dir := newRepo(t)
@@ -18,25 +18,23 @@ func TestQuickFix(t *testing.T) {
 	w := newTestWindow(t, dir)
 	waitFor(t, "the status", func() bool { return w.idleWith(0, 0) && w.quickFix.Head != "" })
 	on(func() {
-		if key := w.quickFixAction.Shortcut().ToString(); key != "" {
+		if key := w.quickFixAction.Shortcut().ToString(); key != "Ctrl+Shift+Q" {
 			t.Errorf("Quick Fix is on %q", key)
 		}
-		// The button is under Commit, and does what the menu item does.
-		v := w.changes
-		if commit, quick, push := v.commit.Geometry(), v.quickFix.Geometry(), v.push.Geometry(); quick.X() != commit.X() || quick.Y() <= commit.Y() || quick.Y() >= push.Y() {
-			t.Errorf("Quick Fix is at %d, %d; Commit at %d, %d; Push at %d", quick.X(), quick.Y(), commit.X(), commit.Y(), push.Y())
+		if !hasButton(w.changes.page.QObject, "Commit") || hasButton(w.changes.page.QObject, "Quick Fix") {
+			t.Error("there is a Quick Fix button beside the message")
 		}
-		if !w.quickFixAction.IsEnabled() || !w.changes.quickFix.IsEnabled() {
+		if !w.quickFixAction.IsEnabled() {
 			t.Error("Quick Fix is disabled with a commit to fold")
 		}
 		// Answered no, nothing happens.
 		w.answer = false
-		w.changes.quickFix.Click()
+		w.quickFixAction.Trigger()
 		if len(w.asked) != 1 || !strings.Contains(w.asked[0], "“second”, into the one before it, “first”") || w.busy {
 			t.Errorf("asked %q, busy %v", w.asked, w.busy)
 		}
 		w.answer = true
-		w.changes.quickFix.Click()
+		w.quickFixAction.Trigger()
 	})
 	waitFor(t, "the fold", func() bool { return w.working == 0 && !w.busy && len(w.asked) == 2 })
 	if got := strings.TrimSpace(runGitOut(t, dir, "log", "--format=%s")); got != "first" {
@@ -60,7 +58,7 @@ func TestQuickFix(t *testing.T) {
 	}
 	// The root commit can't be folded, so with nothing to commit it is off.
 	on(func() {
-		if w.quickFixAction.IsEnabled() || w.changes.quickFix.IsEnabled() || len(w.failures) != 0 {
+		if w.quickFixAction.IsEnabled() || len(w.failures) != 0 {
 			t.Errorf("enabled with nothing to fold, failures %q", w.failures)
 		}
 	})
@@ -102,7 +100,7 @@ func TestNoQuickFixDuringMerge(t *testing.T) {
 	w := newTestWindow(t, dir)
 	waitFor(t, "the merge", func() bool { return w.working == 0 && w.status.Merging })
 	on(func() {
-		if w.quickFixAction.IsEnabled() || w.changes.quickFix.IsEnabled() || w.uncommit.IsEnabled() {
+		if w.quickFixAction.IsEnabled() || w.uncommit.IsEnabled() {
 			t.Error("Quick Fix or Uncommit is enabled during a merge")
 		}
 	})
@@ -179,4 +177,18 @@ func TestUncommitQuestion(t *testing.T) {
 			t.Errorf("%+v: %q", c.s, text)
 		}
 	}
+}
+
+// hasButton says whether a push button with the text is in the object, at any
+// depth.
+func hasButton(object *qt.QObject, text string) bool {
+	for _, child := range object.Children() {
+		if child.Inherits("QPushButton") && qt.UnsafeNewQPushButton(child.UnsafePointer()).Text() == text {
+			return true
+		}
+		if hasButton(child, text) {
+			return true
+		}
+	}
+	return false
 }

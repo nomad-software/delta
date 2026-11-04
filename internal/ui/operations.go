@@ -720,3 +720,35 @@ func uncommitQuestion(subject string, s git.Status) string {
 	}
 	return text
 }
+
+// finishBranch finishes with the current branch, once asked: it checks out the
+// main branch, main or master, pulls into it, and deletes the branch. There must
+// be nothing uncommitted, as the branch goes. If git won't delete it, as it is
+// not merged, it asks whether to delete it anyway.
+func (w *Window) finishBranch() {
+	r, branch, main := w.repo, w.status.Branch, git.MainBranch(w.localBranches)
+	if r == nil || w.busy || branch == "" || main == "" || branch == main {
+		return
+	}
+	if len(w.status.Unstaged)+len(w.status.Staged) > 0 {
+		w.failed("Finish Branch", "Commit or stash your changes first, as the branch "+branch+" is deleted.")
+		return
+	}
+	if !w.confirm("Finish Branch", fmt.Sprintf("Check out %s, pull into it, and delete the branch %s?", main, branch)) {
+		return
+	}
+	w.background("Finish Branch", func() (string, error) { return r.FinishBranch(branch, main) }, func(_ string, err error) {
+		switch {
+		case err == nil:
+			w.say(fmt.Sprintf("Finished with %s: %s is checked out and pulled, and %s deleted.", branch, main, branch))
+		case errors.Is(err, git.ErrBranchKept):
+			w.say(fmt.Sprintf("%s is checked out and pulled, and %s kept.", main, branch))
+			if w.confirm("Finish Branch", err.Error()+"\n\nDelete it anyway? Its unmerged commits will be lost.") {
+				w.run("Delete Branch", func() (string, error) { return r.DeleteBranch(branch, true) }, nil)
+			}
+		default:
+			w.say("Finish Branch failed")
+			w.failed("Finish Branch Failed", err.Error())
+		}
+	})
+}

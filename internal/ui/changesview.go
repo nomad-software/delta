@@ -29,8 +29,8 @@ type changesView struct {
 	diff                                  *diffView
 	message                               *qt.QPlainTextEdit
 
-	rescan, stage, commit, quickFix, push *qt.QPushButton
-	force                                 *qt.QCheckBox
+	rescan, stage, commit, push *qt.QPushButton
+	force                       *qt.QCheckBox
 
 	// updating says that a list is being changed by the program, so that its
 	// selection changing means nothing.
@@ -62,12 +62,11 @@ func newChangesView(config settings.Settings) *changesView {
 	v.stage.SetMinimumWidth(v.stage.SizeHint().Width())
 	v.stage.SetText(stageText)
 	v.commit = qt.NewQPushButton3("Commit")
-	v.quickFix = qt.NewQPushButton3("Quick Fix")
 	v.push = qt.NewQPushButton3("Push")
 	v.force = qt.NewQCheckBox3("Force push")
 	buttons := qt.NewQVBoxLayout2()
 	buttons.SetContentsMargins(0, 0, 0, 0)
-	for _, b := range []*qt.QPushButton{v.rescan, v.stage, v.commit, v.quickFix, v.push} {
+	for _, b := range []*qt.QPushButton{v.rescan, v.stage, v.commit, v.push} {
 		buttons.AddWidget(b.QWidget)
 	}
 	buttons.AddWidget(v.force.QWidget)
