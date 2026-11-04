@@ -30,6 +30,7 @@ chosen, if there is one, as it is whenever a repository is opened.
 | **Open** | Opens a repository, as **File > Open Repository…** (`Ctrl+O`) does. |
 | **New Branch** | Makes a branch, and checks it out if you like. |
 | **Checkout** | Switches to another branch. |
+| **Finish** | Finishes with the current branch: checks out `main` (or `master`), pulls into it, and deletes the branch, after asking. |
 | **Rescan** | Reads the state of the repository again. |
 | **Pull** | Pulls into the current branch. |
 | **Push** | Pushes the current branch, setting its upstream on the first push. Its arrow opens a **Force push** option. |
@@ -74,7 +75,7 @@ chosen. Choosing another checks it out.
   in red, and without git's file headers. Drag over the list to see each file in
   turn. Double-click a file to stage or unstage it. Ctrl and shift select several.
 * The **message pane** holds the commit message, with **Rescan**, **Stage
-  Changes**, **Commit**, **Quick Fix** and **Push** beside it. **Stage Changes** stages
+  Changes**, **Commit** and **Push** beside it. **Stage Changes** stages
   everything listed; when everything is staged it is **Unstage Changes**, which
   unstages it all.
 * **Force push**, beside them and in the toolbar Push's menu, makes the Push
@@ -83,8 +84,8 @@ chosen. Choosing another checks it out.
   `Ctrl+P` always pushes without forcing, and **Remote > Force Push…** always
   forces.
 
-**Quick Fix**, beside the message and in the Commit menu, folds a quick change
-into the last commit. With changes not committed, it puts all of them, untracked
+**Commit > Quick Fix…** (`Ctrl+Shift+Q`) folds a quick change into the last
+commit. With changes not committed, it puts all of them, untracked
 files included, into the last commit, keeping its message. With nothing to
 commit, it folds the last commit into the one before it, keeping that one's
 message. It asks first every time, naming the commits, as it rewrites the
@@ -155,11 +156,17 @@ the branch back as it was.
 | Menu   | Items | Shortcuts |
 | ------ | ----- | --------- |
 | File   | Open Repository, Settings, Quit | `Ctrl+O`, `Ctrl+,`, `Ctrl+Q` |
-| Branch | New Branch, Checkout, Rename, Delete, Show History, Merge, Abort Merge, Continue Rebase, Skip Commit, Abort Rebase, Discard All Changes | New Branch `Ctrl+N`, Checkout `Ctrl+B`, Show History `Ctrl+H`, Merge `Ctrl+M`, Discard All Changes `Ctrl+Shift+D` |
-| Commit | Rescan, Stage Changes, Stage Selected, Unstage Selected, Unstage All, Commit, Uncommit, Quick Fix | `F5`, `Ctrl+Shift+S`, `Ctrl+S`, `Ctrl+U`, `Ctrl+Shift+U`, Commit `Ctrl+Return`, Uncommit `Ctrl+Shift+Return` |
+| Branch | New Branch, Checkout, Finish Branch, Rename, Delete, Show History, Merge, Abort Merge, Continue Rebase, Skip Commit, Abort Rebase, Discard All Changes | New Branch `Ctrl+N`, Checkout `Ctrl+B`, Show History `Ctrl+H`, Merge `Ctrl+M`, Discard All Changes `Ctrl+Shift+D` |
+| Commit | Rescan, Stage Changes, Stage Selected, Unstage Selected, Unstage All, Commit, Uncommit, Quick Fix | `F5`, `Ctrl+Shift+S`, `Ctrl+S`, `Ctrl+U`, `Ctrl+Shift+U`, Commit `Ctrl+Return`, Uncommit `Ctrl+Shift+Return`, Quick Fix `Ctrl+Shift+Q` |
 | Stash  | Stash Changes, Apply Stash, Pop Stash, Drop Stash | Stash Changes `Ctrl+Shift+Z` |
 | Remote | Fetch, Pull, Push, Force Push, Add Remote, Rename Remote, Change URL, Remove Remote | Fetch `Ctrl+Shift+F`, Pull `Ctrl+Shift+L`, Push `Ctrl+P`, Force Push `Ctrl+Shift+P` |
 | Help   | About | `Ctrl+I` |
+
+**Finish Branch…** is for when you are done with a branch: it checks out `main`,
+or `master` if there is no `main`, pulls into it, and deletes the branch you were
+on. It asks first, and won't start with changes not committed. If the pull
+fails, it stops there and keeps the branch. If git won't delete the branch, as
+its commits are not merged, it asks whether to delete it anyway.
 
 **New Branch** corrects a name git would refuse when you click OK: spaces become
 hyphens, and what git doesn't allow in a branch's name is taken out, so

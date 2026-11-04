@@ -69,6 +69,16 @@ var (
 		p.LineTo2(5, 16)
 		p.LineTo2(8.5, 19.5)
 	}
+	// finishShape is a flag on its pole, for a branch finished with.
+	finishShape iconShape = func(p *qt.QPainterPath) {
+		p.MoveTo2(6, 21)
+		p.LineTo2(6, 3.5)
+		p.MoveTo2(6, 4)
+		p.LineTo2(18.5, 4)
+		p.LineTo2(15, 8.5)
+		p.LineTo2(18.5, 13)
+		p.LineTo2(6, 13)
+	}
 	// rescanShape is an arrow going round, clockwise, from the left to the
 	// bottom.
 	rescanShape iconShape = func(p *qt.QPainterPath) {
