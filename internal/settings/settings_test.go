@@ -182,3 +182,31 @@ func TestChosenDefaultColours(t *testing.T) {
 		t.Errorf("hunk %s, untracked %s", d.HunkColour, d.ChangeColours.Untracked)
 	}
 }
+
+// The settings are kept in a folder of the program's own, only the user's, in
+// the system's folder for configuration, which Path makes.
+func TestPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", home)
+	t.Setenv("HOME", home)
+	path, err := Path()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(path) != "settings.json" || filepath.Base(filepath.Dir(path)) != "delta" {
+		t.Errorf("path %q", path)
+	}
+	if rel, err := filepath.Rel(home, path); err != nil || !filepath.IsLocal(rel) {
+		t.Errorf("%q is not in %q", path, home)
+	}
+	info, err := os.Stat(filepath.Dir(path))
+	if err != nil || !info.IsDir() || info.Mode().Perm() != 0o700 {
+		t.Errorf("folder %v, %v", info, err)
+	}
+	// With no folder for configuration, there is nowhere to keep them.
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("HOME", "")
+	if path, err := Path(); err == nil {
+		t.Errorf("kept at %q with no home", path)
+	}
+}

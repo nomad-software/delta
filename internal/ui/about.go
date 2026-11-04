@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -61,10 +60,7 @@ func newAboutTitle() (*qt.QHBoxLayout, *qt.QLabel) {
 	label.SetFont(small)
 	// Both sit on the bottom, so the smaller is raised by what its letters
 	// hang below the line less than the name's do.
-	nameMetrics, labelMetrics := name.FontMetrics(), label.FontMetrics()
-	label.SetContentsMargins(0, 0, 0, nameMetrics.Descent()-labelMetrics.Descent())
-	runtime.KeepAlive(nameMetrics)
-	runtime.KeepAlive(labelMetrics)
+	label.SetContentsMargins(0, 0, 0, name.FontMetrics().Descent()-label.FontMetrics().Descent())
 	faded := qt.NewQGraphicsOpacityEffect()
 	faded.SetOpacity(versionOpacity)
 	label.SetGraphicsEffect(faded.QGraphicsEffect)

@@ -821,21 +821,29 @@ func (w *Window) showDiff() {
 		side = "Staged"
 	}
 	r := w.repo
+	w.loadDiff(func() (string, error) { return r.Diff(change, staged) }, func() bool { return request == w.diffs },
+		v.diffLabel, side+": "+change.Path, v.diff)
+}
+
+// loadDiff reads a diff with read, and parses it, in the background, so that the
+// main thread only fills the view, and then shows it in the view under the label
+// with the title, unless latest says by then that it is not the latest asked
+// for. What went wrong is shown in its place.
+func (w *Window) loadDiff(read func() (string, error), latest func() bool, label *qt.QLabel, title string, view *diffView) {
 	w.beginWork()
 	go func() {
-		text, err := r.Diff(change, staged)
+		text, err := read()
 		if err != nil {
 			text = err.Error()
 		}
-		// It is parsed here, so that the main thread only fills the view.
 		parsed := diff.Parse(text)
 		mainthread.Start(func() {
 			w.endWork()
-			if request != w.diffs {
+			if !latest() {
 				return
 			}
-			v.diffLabel.SetText(side + ": " + change.Path)
-			v.diff.showParsed(text, parsed)
+			label.SetText(title)
+			view.showParsed(text, parsed)
 		})
 	}()
 }

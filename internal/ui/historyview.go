@@ -1,16 +1,13 @@
 package ui
 
 import (
-	"cmp"
 	"fmt"
 	"slices"
-	"sync"
 	"time"
 
 	qt "github.com/mappu/miqt/qt6"
 	"github.com/mappu/miqt/qt6/mainthread"
 
-	"github.com/nomad-software/delta/internal/diff"
 	"github.com/nomad-software/delta/internal/git"
 	"github.com/nomad-software/delta/internal/graph"
 	"github.com/nomad-software/delta/internal/settings"
@@ -32,7 +29,7 @@ const (
 )
 
 // historyView is the history, shown in place of the changes while History is
-// on, as in gitk: the commits above, and below them the files of the commit
+// on: the commits above, and below them the files of the commit
 // chosen beside its diff.
 type historyView struct {
 	page *qt.QWidget
@@ -306,26 +303,12 @@ func (h *historyView) committed() int {
 }
 
 // readHistory reads up to limit commits from HEAD, with the uncommitted changes
-// first if there are any, and lays them out, all in the background: the log and
-// the status at once. more says that there may be more commits than were read.
+// first if there are any (git.Repo.History), and lays them out, all in the
+// background. more says that there may be more commits than were read.
 func readHistory(r *git.Repo, limit int) (page historyPage, more bool, err error) {
-	var commits []git.Commit
-	var status git.Status
-	var logErr, statusErr error
-	var wg sync.WaitGroup
-	wg.Go(func() { commits, logErr = r.Log(limit, 0) })
-	wg.Go(func() { status, statusErr = r.Status() })
-	wg.Wait()
-	if err := cmp.Or(logErr, statusErr); err != nil {
+	commits, more, err := r.History(limit)
+	if err != nil {
 		return historyPage{}, false, err
-	}
-	more = len(commits) == limit
-	if len(status.Unstaged)+len(status.Staged) > 0 {
-		parent := ""
-		if len(commits) > 0 {
-			parent = commits[0].Hash
-		}
-		commits = slices.Insert(commits, 0, git.UncommittedCommit(parent))
 	}
 	return layOutPage(&graph.Layout{}, commits), more, nil
 }
@@ -461,9 +444,7 @@ func (w *Window) showCommit() {
 	request := h.details
 	c := h.chosen()
 	if c == nil || r == nil {
-		h.setFiles(nil)
-		h.shown, h.shownChanges = git.Commit{}, nil
-		w.showFile()
+		w.showNoCommit()
 		return
 	}
 	commit := *c
@@ -476,9 +457,7 @@ func (w *Window) showCommit() {
 				return
 			}
 			if err != nil {
-				h.setFiles(nil)
-				h.shown, h.shownChanges = git.Commit{}, nil
-				w.showFile()
+				w.showNoCommit()
 				h.diffLabel.SetText(commitName(commit))
 				h.diff.show(err.Error())
 				return
@@ -501,6 +480,14 @@ func (w *Window) showCommit() {
 			w.showFile()
 		})
 	}()
+}
+
+// showNoCommit lists no files, and shows no diff, as when no commit is chosen.
+func (w *Window) showNoCommit() {
+	h := w.history
+	h.setFiles(nil)
+	h.shown, h.shownChanges = git.Commit{}, nil
+	w.showFile()
 }
 
 // commitName names a commit above the diff of one of its files.
@@ -526,23 +513,9 @@ func (w *Window) showFile() {
 	}
 	commit, change := h.shown, h.shownChanges[row]
 	h.shownPath = change.Path
-	w.beginWork()
-	go func() {
-		text, err := r.CommitFileDiff(commit, change)
-		if err != nil {
-			text = err.Error()
-		}
-		// It is parsed here, so that the main thread only fills the view.
-		parsed := diff.Parse(text)
-		mainthread.Start(func() {
-			w.endWork()
-			if request != h.fileDiffs || r != w.repo {
-				return
-			}
-			h.diffLabel.SetText(commitName(commit) + ": " + change.Path)
-			h.diff.showParsed(text, parsed)
-		})
-	}()
+	w.loadDiff(func() (string, error) { return r.CommitFileDiff(commit, change) },
+		func() bool { return request == h.fileDiffs && r == w.repo },
+		h.diffLabel, commitName(commit)+": "+change.Path, h.diff)
 }
 
 // setFiles lists the files of a commit. Nil changes clear the list, where an

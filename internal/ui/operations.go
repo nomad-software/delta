@@ -39,15 +39,26 @@ func (w *Window) background(name string, op func() (string, error), done func(st
 func (w *Window) run(name string, op func() (string, error), after func(error)) {
 	w.background(name, op, func(out string, err error) {
 		if err != nil {
-			w.say(name + " failed")
-			w.failed(name+" Failed", err.Error())
+			w.tellFailed(name, err)
 		} else {
-			w.say(strings.TrimSpace(name + " done. " + lastLine(out)))
+			w.tellDone(name, out)
 		}
 		if after != nil {
 			after(err)
 		}
 	})
+}
+
+// tellDone says in the status bar that the command named is done, with the last
+// line of what git said.
+func (w *Window) tellDone(name, out string) {
+	w.say(strings.TrimSpace(name + " done. " + lastLine(out)))
+}
+
+// tellFailed says that the command named failed, and why.
+func (w *Window) tellFailed(name string, err error) {
+	w.say(name + " failed")
+	w.failed(name+" Failed", err.Error())
 }
 
 // readFirst reads, in the background, what a dialog needs before it opens, and
@@ -329,20 +340,28 @@ func (w *Window) deleteBranch() {
 // removeBranch deletes a branch once that is confirmed.
 func (w *Window) removeBranch(name string) {
 	r := w.repo
-	if !w.confirm("Delete Branch", "Delete the branch "+name+"?") {
+	const title = "Delete Branch"
+	if !w.confirm(title, "Delete the branch "+name+"?") {
 		return
 	}
 	// What git says to deleting it decides what to ask next.
-	w.background("Delete Branch", func() (string, error) { return r.DeleteBranch(name, false) }, func(_ string, err error) {
+	w.background(title, func() (string, error) { return r.DeleteBranch(name, false) }, func(_ string, err error) {
 		if err == nil {
 			w.say("Deleted the branch " + name)
 			return
 		}
 		w.say("Kept the branch " + name)
-		if w.confirm("Delete Branch", err.Error()+"\n\nDelete it anyway? Its unmerged commits will be lost.") {
-			w.run("Delete Branch", func() (string, error) { return r.DeleteBranch(name, true) }, nil)
-		}
+		w.askForceDelete(title, name, err)
 	})
+}
+
+// askForceDelete asks, once git has refused to delete a branch as it is not
+// merged, saying why, whether to delete it anyway, and if so does.
+func (w *Window) askForceDelete(title, name string, refusal error) {
+	r := w.repo
+	if w.confirm(title, refusal.Error()+"\n\nDelete it anyway? Its unmerged commits will be lost.") {
+		w.run("Delete Branch", func() (string, error) { return r.DeleteBranch(name, true) }, nil)
+	}
 }
 
 // mergeBranch asks for a branch and merges it into the current one.
@@ -469,8 +488,7 @@ func (w *Window) rebaseFrom(c git.Commit) {
 		return
 	}
 	// The commits are read in the background, and the plan asked for once they
-	// are.
-	// Why it can't be is told of as git's error is not.
+	// are. A refusal is told of in words of its own, not as an error of git's.
 	type plan struct {
 		commits []git.Commit
 		base    string
@@ -512,13 +530,7 @@ func (w *Window) hasTrackedChanges() bool {
 // asking first if any are dropped.
 func (w *Window) startRebase(base string, steps []git.Step) {
 	r := w.repo
-	dropped := 0
-	for _, s := range steps {
-		if s.Action == git.Drop {
-			dropped++
-		}
-	}
-	if dropped > 0 && !w.confirm(rebaseTitle, fmt.Sprintf("Drop %d of the commits? Their changes will be lost from the branch.", dropped)) {
+	if dropped := countAction(steps, git.Drop); dropped > 0 && !w.confirm(rebaseTitle, fmt.Sprintf("Drop %d of the commits? Their changes will be lost from the branch.", dropped)) {
 		return
 	}
 	w.rebaseStep(rebaseTitle, func() (string, error) { return r.Rebase(base, steps) })
@@ -542,10 +554,9 @@ func (w *Window) rebaseStep(name string, op func() (string, error)) {
 		case stopped:
 			w.say("Stopped to edit a commit: stage what to add to it, then " + next)
 		case err != nil:
-			w.say(name + " failed")
-			w.failed(name+" Failed", err.Error())
+			w.tellFailed(name, err)
 		default:
-			w.say(strings.TrimSpace(name + " done. " + lastLine(out)))
+			w.tellDone(name, out)
 		}
 	})
 }
@@ -662,11 +673,15 @@ func (w *Window) askStash(title string, then func(ref string)) {
 // askApplyStash asks for a stash and applies it, dropping it once it is if pop
 // says so.
 func (w *Window) askApplyStash(pop bool) {
-	title := "Apply Stash"
+	w.askStash(stashTitle(pop), func(ref string) { w.applyStash(ref, pop, true) })
+}
+
+// stashTitle names applying a stash, or popping it if pop says so.
+func stashTitle(pop bool) string {
 	if pop {
-		title = "Pop Stash"
+		return "Pop Stash"
 	}
-	w.askStash(title, func(ref string) { w.applyStash(ref, pop, true) })
+	return "Apply Stash"
 }
 
 // applyStash puts a stash's changes back, with what was staged staged again if
@@ -674,15 +689,12 @@ func (w *Window) askApplyStash(pop bool) {
 // kept, which the status bar says; if what was staged can't be put back as it
 // was, it asks whether to apply it with everything unstaged.
 func (w *Window) applyStash(ref string, pop, index bool) {
-	name := "Apply Stash"
-	if pop {
-		name = "Pop Stash"
-	}
+	name := stashTitle(pop)
 	r := w.repo
 	w.background(name, func() (string, error) { return r.ApplyStash(ref, pop, index) }, func(out string, err error) {
 		switch {
 		case err == nil:
-			w.say(strings.TrimSpace(name + " done. " + lastLine(out)))
+			w.tellDone(name, out)
 		case errors.Is(err, git.ErrStashConflicts):
 			w.say(stashConflictText)
 		case errors.Is(err, git.ErrStashIndex):
@@ -691,8 +703,7 @@ func (w *Window) applyStash(ref string, pop, index bool) {
 				w.applyStash(ref, pop, false)
 			}
 		default:
-			w.say(name + " failed")
-			w.failed(name+" Failed", err.Error())
+			w.tellFailed(name, err)
 		}
 	})
 }
@@ -790,12 +801,9 @@ func (w *Window) finishBranch() {
 			w.say(fmt.Sprintf("Finished with %s: %s is checked out and pulled, and %s deleted.", branch, main, branch))
 		case errors.Is(err, git.ErrBranchKept):
 			w.say(fmt.Sprintf("%s is checked out and pulled, and %s kept.", main, branch))
-			if w.confirm("Finish Branch", err.Error()+"\n\nDelete it anyway? Its unmerged commits will be lost.") {
-				w.run("Delete Branch", func() (string, error) { return r.DeleteBranch(branch, true) }, nil)
-			}
+			w.askForceDelete("Finish Branch", branch, err)
 		default:
-			w.say("Finish Branch failed")
-			w.failed("Finish Branch Failed", err.Error())
+			w.tellFailed("Finish Branch", err)
 		}
 	})
 }

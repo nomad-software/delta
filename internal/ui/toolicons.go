@@ -1,10 +1,6 @@
 package ui
 
-import (
-	"runtime"
-
-	qt "github.com/mappu/miqt/qt6"
-)
+import qt "github.com/mappu/miqt/qt6"
 
 // The toolbar's icons are drawn in code in one style, as apemail's are drawn
 // in SVG: outlines on a grid of iconGrid, iconStroke wide with round ends and
@@ -171,10 +167,9 @@ func paintShape(p *qt.QPainter, x, y, side float64, shape iconShape, mode qt.QIc
 // iconColour returns a new colour that an icon is drawn in, in the mode: that of
 // the text, or of disabled text.
 func iconColour(mode qt.QIcon__Mode) *qt.QColor {
-	// The palette is a copy, which the garbage collector may free once it is
-	// no longer used, and the colour it gives is its own.
+	// The palette is a copy, which miqt frees once neither it nor the colour it
+	// lends is in use; the colour returned is a copy of its own.
 	palette := qt.QGuiApplication_Palette()
-	defer runtime.KeepAlive(palette)
 	group := qt.QPalette__Active
 	if mode == qt.QIcon__Disabled {
 		group = qt.QPalette__Disabled

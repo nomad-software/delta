@@ -65,6 +65,8 @@ func (c *ChangeColours) Fields() []*string {
 	return []*string{&c.Modified, &c.Added, &c.Deleted, &c.Renamed, &c.Copied, &c.TypeChanged, &c.Conflict, &c.Untracked}
 }
 
+// leastWindowSize is the least width and height of a window that is kept; a
+// smaller one is taken as unusable.
 const leastWindowSize = 200
 
 // How many repositories opened can be remembered, and are by default.

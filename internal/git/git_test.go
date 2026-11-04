@@ -734,3 +734,39 @@ func TestSanitisedNamesAreValid(t *testing.T) {
 		}
 	}
 }
+
+// The history is the log with, while anything is uncommitted, the commit
+// standing for it first, on top of HEAD; more says whether the limit was reached.
+func TestHistory(t *testing.T) {
+	r := newRepo(t)
+	commits, more, err := r.History(10)
+	if err != nil || more || len(commits) != 1 || commits[0].Subject != "first" {
+		t.Fatalf("clean: %+v, %v, %v", commits, more, err)
+	}
+	head := commits[0].Hash
+	write(t, r.Root, "loose", "new\n")
+	write(t, r.Root, "file", "two\n")
+	git(t, r.Root, "commit", "-a", "-m", "second")
+	commits, more, err = r.History(1)
+	if err != nil || !more || len(commits) != 2 {
+		t.Fatalf("changed: %+v, %v, %v", commits, more, err)
+	}
+	if c := commits[0]; c.Hash != Uncommitted || len(c.Parents) != 1 || c.Parents[0] != commits[1].Hash || commits[1].Hash == head {
+		t.Errorf("uncommitted %+v on %+v", c, commits[1])
+	}
+
+	// A branch with no commits has only what is uncommitted, on nothing.
+	git(t, r.Root, "switch", "--orphan", "empty")
+	commits, more, err = r.History(10)
+	if err != nil || more || len(commits) != 1 || commits[0].Hash != Uncommitted || len(commits[0].Parents) != 0 {
+		t.Errorf("unborn: %+v, %v, %v", commits, more, err)
+	}
+
+	// A folder that is no longer a repository can't be read.
+	if err := os.RemoveAll(filepath.Join(r.Root, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := r.History(10); err == nil {
+		t.Error("no error without a repository")
+	}
+}

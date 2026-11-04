@@ -370,11 +370,57 @@ func (r *Repo) Log(limit, skip int) ([]Commit, error) {
 		return nil, nil
 	}
 	out, err := r.run("log", "--topo-order", "--no-color", "--no-show-signature", "--max-count="+strconv.Itoa(limit), "--skip="+strconv.Itoa(skip),
-		"--format=%H%x00%h%x00%P%x00%an%x00%at%x00%D%x00%s", "HEAD", "--")
+		"--format="+commitFormat, "HEAD", "--")
 	if err != nil {
 		return nil, err
 	}
 	return parseLog(out)
+}
+
+// History returns up to limit commits reachable from HEAD, as Log does, after
+// the commit standing for the changes not yet committed if there are any. The
+// log and the status are read at once. more says that there may be more commits
+// than were read.
+func (r *Repo) History(limit int) (commits []Commit, more bool, err error) {
+	var s Status
+	var logErr, statusErr error
+	together(
+		func() { commits, logErr = r.Log(limit, 0) },
+		func() { s, statusErr = r.Status() },
+	)
+	// Of those that failed, the error is the first in the order they would have
+	// run one after another.
+	if err := cmp.Or(logErr, statusErr); err != nil {
+		return nil, false, err
+	}
+	more = len(commits) == limit
+	if len(s.Unstaged)+len(s.Staged) > 0 {
+		parent := ""
+		if len(commits) > 0 {
+			parent = commits[0].Hash
+		}
+		commits = slices.Insert(commits, 0, UncommittedCommit(parent))
+	}
+	return commits, more, nil
+}
+
+// commitFormat is the format of git log that commitOf reads: hash, short hash,
+// parents, author, time, refs and subject.
+const commitFormat = "%H%x00%h%x00%P%x00%an%x00%at%x00%D%x00%s"
+
+// commitFields is how many fields commitFormat has.
+const commitFields = 7
+
+// commitOf returns the commit of the fields of a log in commitFormat.
+func commitOf(f []string) (Commit, bool) {
+	seconds, err := strconv.ParseInt(f[4], 10, 64)
+	if err != nil {
+		return Commit{}, false
+	}
+	return Commit{
+		Hash: f[0], Short: f[1], Parents: strings.Fields(f[2]), Author: f[3],
+		Date: time.Unix(seconds, 0), Refs: f[5], Subject: f[6],
+	}, true
 }
 
 // parseLog reads the output of git log in the format Log asks for.
@@ -382,17 +428,14 @@ func parseLog(out string) ([]Commit, error) {
 	var commits []Commit
 	for line := range strings.Lines(out) {
 		f := strings.Split(strings.TrimRight(line, "\n"), "\x00")
-		if len(f) != 7 {
+		if len(f) != commitFields {
 			return nil, fmt.Errorf("unexpected log line: %q", line)
 		}
-		seconds, err := strconv.ParseInt(f[4], 10, 64)
-		if err != nil {
+		c, ok := commitOf(f)
+		if !ok {
 			return nil, fmt.Errorf("unexpected log line: %q", line)
 		}
-		commits = append(commits, Commit{
-			Hash: f[0], Short: f[1], Parents: strings.Fields(f[2]), Author: f[3],
-			Date: time.Unix(seconds, 0), Refs: f[5], Subject: f[6],
-		})
+		commits = append(commits, c)
 	}
 	return commits, nil
 }
@@ -428,8 +471,6 @@ func (r *Repo) CommitFiles(c Commit) ([]Change, error) {
 		func() { out, outErr = r.run("diff", "-z", "-M", "--name-status", base, "--") },
 		func() { s, statusErr = r.Status() },
 	)
-	// Of those that failed, the error is the first in the order they would have
-	// run one after another.
 	if err := cmp.Or(outErr, statusErr); err != nil {
 		return nil, err
 	}

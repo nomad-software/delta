@@ -36,3 +36,20 @@ func TestFailureLeavesTheFolderClean(t *testing.T) {
 		t.Errorf("left behind %v", entries)
 	}
 }
+
+// A file that can't be put in place, as a folder is there, is not written, and
+// the temporary file goes.
+func TestRenameFailureLeavesNothing(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "taken")
+	if err := os.MkdirAll(filepath.Join(path, "inside"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := Write(path, []byte("one"), 0o644); err == nil {
+		t.Error("a file was written over a folder")
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 || entries[0].Name() != "taken" {
+		t.Errorf("left behind %v", entries)
+	}
+}

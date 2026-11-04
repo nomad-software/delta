@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"runtime"
-
 	qt "github.com/mappu/miqt/qt6"
 
 	"github.com/nomad-software/delta/internal/settings"
@@ -93,10 +91,7 @@ func (p *progress) chunk() (left, right int) {
 // text, so that it follows the theme, and the segment on it in its colour, by
 // default Solarized's blue.
 func (p *progress) paint() {
-	// The palette is a copy, whose colours are its own, kept until they have
-	// been used.
 	palette := p.Palette()
-	defer runtime.KeepAlive(palette)
 	track := mix(palette.ColorWithCr(qt.QPalette__WindowText), palette.ColorWithCr(qt.QPalette__Window), 15)
 	defer track.Delete()
 	painter := qt.NewQPainter2(p.QPaintDevice)

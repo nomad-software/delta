@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"runtime"
 	"strings"
 
 	qt "github.com/mappu/miqt/qt6"
@@ -185,5 +184,4 @@ func fitHeight(d *qt.QDialog, width int) {
 	least := layout.MinimumSize()
 	width = max(width, least.Width())
 	d.Resize(width, max(layout.HeightForWidth(width), least.Height()))
-	runtime.KeepAlive(least)
 }

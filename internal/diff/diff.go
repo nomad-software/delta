@@ -3,7 +3,10 @@
 // knows nothing of the UI.
 package diff
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // Kind is what a line of a diff is.
 type Kind int
@@ -80,7 +83,7 @@ func Parse(text string) Parsed {
 		case inHeader && line == "":
 			add(line, Context, 0)
 		case inHeader:
-			if !hasAnyPrefix(line, hiddenHeaders) {
+			if !slices.ContainsFunc(hiddenHeaders, func(prefix string) bool { return strings.HasPrefix(line, prefix) }) {
 				add(line, Meta, 0)
 			}
 		case columns == 0:
@@ -91,16 +94,6 @@ func Parse(text string) Parsed {
 	}
 	p.Text = strings.Join(shown, "\n")
 	return p
-}
-
-// hasAnyPrefix says whether the line starts with any of the prefixes.
-func hasAnyPrefix(line string, prefixes []string) bool {
-	for _, prefix := range prefixes {
-		if strings.HasPrefix(line, prefix) {
-			return true
-		}
-	}
-	return false
 }
 
 // rangeEnd returns where the closing marker of a hunk's heading ends, the marker

@@ -322,7 +322,7 @@ take a few seconds.
 make build        # builds ./delta
 make run          # builds and runs it
 make install      # installs it in $GOBIN or $(go env GOPATH)/bin, to run from anywhere
-make test         # runs the tests
+make test         # runs the tests, which need git and draw offscreen
 make race         # runs the tests with the race detector
 make vet          # runs go vet
 make screenshots  # redraws the pictures in docs/

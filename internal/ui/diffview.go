@@ -33,9 +33,8 @@ func (v *diffView) show(text string) {
 	v.showParsed(text, diff.Parse(text))
 }
 
-// showParsed shows the diff, already parsed. Showing
-// the same text again leaves the view as it is, scrolled where it was, as
-// happens on every rescan.
+// showParsed shows the diff, already parsed. Showing the same text again leaves
+// the view as it is, scrolled where it was, as happens on every rescan.
 func (v *diffView) showParsed(text string, parsed diff.Parsed) {
 	if text == v.raw {
 		return
@@ -68,8 +67,8 @@ func (v *diffView) setColours(added, removed, hunk string) {
 
 // paint colours the text of each line by what it is: the whole of an added or
 // removed line, and the @@ range of a hunk's heading, leaving any text after it
-// as it is. Backgrounds are left alone, and what has no
-// colour of its own follows the palette.
+// as it is. Backgrounds are left alone, and what has no colour of its own
+// follows the palette.
 func (v *diffView) paint() {
 	added, removed, hunk := colourFormat(v.added), colourFormat(v.removed), colourFormat(v.hunk)
 	defer added.Delete()

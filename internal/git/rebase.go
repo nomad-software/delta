@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // Action is what an interactive rebase does with a commit, as its plan, which
@@ -65,7 +64,7 @@ func (r *Repo) RebaseCommits(from string) (commits []Commit, base string, err er
 		revisions = base + "..HEAD"
 	}
 	out, err = r.run("log", "--reverse", "-z", "--no-color", "--no-show-signature",
-		"--format=%H%x00%h%x00%P%x00%an%x00%at%x00%s%x00%B", revisions, "--")
+		"--format="+commitFormat+"%x00%B", revisions, "--")
 	if err != nil {
 		return nil, "", err
 	}
@@ -81,8 +80,9 @@ func (r *Repo) RebaseCommits(from string) (commits []Commit, base string, err er
 	return commits, base, nil
 }
 
-// rebaseFields is how many fields each commit has in the log RebaseCommits reads.
-const rebaseFields = 7
+// rebaseFields is how many fields each commit has in the log RebaseCommits
+// reads: those of commitFormat, then the whole message.
+const rebaseFields = commitFields + 1
 
 // parseRebaseLog reads the log in the format RebaseCommits asks for, in which
 // every field ends in a NUL, as -z ends each commit with one too.
@@ -99,14 +99,12 @@ func parseRebaseLog(out string) ([]Commit, error) {
 		// Each commit after the first starts after the NUL ending the one
 		// before, and git puts a newline there.
 		f[0] = strings.TrimPrefix(f[0], "\n")
-		seconds, err := strconv.ParseInt(f[4], 10, 64)
-		if err != nil {
+		c, ok := commitOf(f)
+		if !ok {
 			return nil, fmt.Errorf("unexpected log: %q", out)
 		}
-		commits = append(commits, Commit{
-			Hash: f[0], Short: f[1], Parents: strings.Fields(f[2]), Author: f[3],
-			Date: time.Unix(seconds, 0), Subject: f[5], Message: strings.TrimSpace(f[6]),
-		})
+		c.Message = strings.TrimSpace(f[commitFields])
+		commits = append(commits, c)
 	}
 	return commits, nil
 }

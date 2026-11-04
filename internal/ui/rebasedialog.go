@@ -26,12 +26,14 @@ const (
 	tipLines     = 20
 	tipWidth     = 100
 	subjectWidth = 300
+	// stepColumns is how many columns the plan has.
+	stepColumns = colStepCommit + 1
 )
 
 // rebaseDialog asks how to rewrite commits: the plan of an interactive rebase,
 // a commit to a row, oldest first, with a list of what to do with each, and
-// below it the message of the one chosen. Commits are dragged into
-// their order. The rows stay where they are, each with its own list, as Qt
+// below it the message of the one chosen. Commits are dragged into their
+// order. The rows stay where they are, each with its own list, as Qt
 // would delete the list of a row it moved: what moves is the commits shown on
 // them.
 type rebaseDialog struct {
@@ -232,7 +234,7 @@ func (d *rebaseDialog) showStep(row int) {
 	item.SetText(colStepSubject, excerpt(s.Commit.Subject, 1, subjectWidth))
 	item.SetText(colStepCommit, s.Commit.Short)
 	tip := excerpt(s.Commit.Message, tipLines, tipWidth)
-	for column := range 3 {
+	for column := range stepColumns {
 		item.SetToolTip(column, tip)
 		font := qt.NewQFont5(item.Font(column))
 		font.SetStrikeOut(s.Action == git.Drop)
@@ -269,7 +271,7 @@ func (d *rebaseDialog) selectedRows() []int {
 	return rows
 }
 
-// currentRow returns the row whose message and diff are shown, or -1.
+// currentRow returns the row whose message is shown, or -1.
 func (d *rebaseDialog) currentRow() int {
 	item := d.list.CurrentItem()
 	if item == nil {
@@ -303,8 +305,7 @@ func (d *rebaseDialog) editMessage() {
 	timer.OnTimeout(func() {
 		timer.DeleteLater()
 		if !d.finished && d.message.IsEnabled() {
-			d.message.SetFocus()
-			d.message.MoveCursor(qt.QTextCursor__End)
+			d.focusMessage()
 		}
 	})
 	timer.Start(0)
@@ -317,9 +318,14 @@ func (d *rebaseDialog) reclaimFocus() bool {
 		return false
 	}
 	d.messageUntil = time.Time{}
+	d.focusMessage()
+	return true
+}
+
+// focusMessage puts the focus in the message, with the cursor at its end.
+func (d *rebaseDialog) focusMessage() {
 	d.message.SetFocus()
 	d.message.MoveCursor(qt.QTextCursor__End)
-	return true
 }
 
 // setRowAction gives the commit on a row the action. A commit reworded starts
@@ -463,13 +469,7 @@ func planProblem(steps []git.Step) string {
 func planSummary(steps []git.Step) string {
 	var parts []string
 	for _, a := range git.Actions[1:] {
-		n := 0
-		for _, s := range steps {
-			if s.Action == a {
-				n++
-			}
-		}
-		if n > 0 {
+		if n := countAction(steps, a); n > 0 {
 			parts = append(parts, fmt.Sprintf("%d to %s", n, a))
 		}
 	}
@@ -477,4 +477,15 @@ func planSummary(steps []git.Step) string {
 		return "The commits will be reordered."
 	}
 	return strings.Join(parts, ", ") + "."
+}
+
+// countAction returns how many of the steps have the action.
+func countAction(steps []git.Step, a git.Action) int {
+	n := 0
+	for _, s := range steps {
+		if s.Action == a {
+			n++
+		}
+	}
+	return n
 }
