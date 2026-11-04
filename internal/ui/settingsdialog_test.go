@@ -17,8 +17,15 @@ func TestSettingsDialog(t *testing.T) {
 		var got settings.Settings
 		d := newSettingsDialog(nil, current, func(s settings.Settings) { got = s })
 		defer d.Delete()
-		if d.tabs.Count() != 1 || d.tabs.TabText(0) != "User interface" || !d.tabs.Widget(0).IsAncestorOf(d.theme.QWidget) || !d.tabs.Widget(0).IsAncestorOf(d.colours.QWidget) {
-			t.Errorf("tabs: %d, first %q", d.tabs.Count(), d.tabs.TabText(0))
+		// General, with History and Repositories, then User interface, with
+		// Appearance and Colours.
+		general, look := d.tabs.Widget(0), d.tabs.Widget(1)
+		if d.tabs.Count() != 2 || d.tabs.TabText(0) != "General" || d.tabs.TabText(1) != "User interface" {
+			t.Fatalf("tabs: %d, %q, %q", d.tabs.Count(), d.tabs.TabText(0), d.tabs.TabText(1))
+		}
+		if !general.IsAncestorOf(d.sections["History"].QWidget) || !general.IsAncestorOf(d.sections["Repositories"].QWidget) ||
+			!look.IsAncestorOf(d.sections["Appearance"].QWidget) || !look.IsAncestorOf(d.sections["Colours"].QWidget) {
+			t.Error("a section is in the wrong tab")
 		}
 		if d.theme.CurrentText() != "Dark" || d.theme.Count() != 3 || d.added.colour != "#123456" {
 			t.Errorf("shown as %q, %s", d.theme.CurrentText(), d.added.colour)
@@ -130,7 +137,10 @@ func TestSettingsSections(t *testing.T) {
 		}
 		in("Appearance", "", d.theme.QWidget, d.codeFamily.QWidget)
 		in("History", "The history is read this many commits at a time.", d.historyPage.QWidget)
-		in("Repositories", "", d.repositoryLimit.QWidget)
+		in("Repositories", "The repositories opened are remembered, up to this many.", d.repositoryLimit.QWidget)
+		if page := d.tabs.Widget(0).Layout(); page.IndexOf(d.sections["Repositories"].QWidget) >= page.IndexOf(d.sections["History"].QWidget) {
+			t.Error("Repositories is not above History")
+		}
 		in("Colours", "", d.colours.QWidget)
 		if len(d.sections) != 4 {
 			t.Errorf("%d frames", len(d.sections))
@@ -201,6 +211,8 @@ func TestSettingsDialogFits(t *testing.T) {
 	on(func() {
 		d := newSettingsDialog(nil, settings.Defaults(), func(settings.Settings) {})
 		defer d.Delete()
+		// The colours are on the second tab.
+		d.tabs.SetCurrentIndex(1)
 		d.Show()
 		var button *qt.QPushButton
 		for _, b := range d.sections["Colours"].Children() {

@@ -75,7 +75,7 @@ chosen. Choosing another checks it out.
   in red, and without git's file headers. Drag over the list to see each file in
   turn. Double-click a file to stage or unstage it. Ctrl and shift select several.
 * The **message pane** holds the commit message, with **Rescan**, **Stage
-  Changes**, **Commit** and **Push** beside it. **Stage Changes** stages
+  Changes**, **Commit**, **Quick Fix** and **Push** beside it. **Stage Changes** stages
   everything listed; when everything is staged it is **Unstage Changes**, which
   unstages it all.
 * **Force push**, beside them and in the toolbar Push's menu, makes the Push
@@ -83,6 +83,14 @@ chosen. Choosing another checks it out.
   together, it is remembered between runs, and a successful push clears it.
   `Ctrl+P` always pushes without forcing, and **Remote > Force Push…** always
   forces.
+
+**Quick Fix**, beside the message and in the Commit menu, folds a quick change
+into the last commit. With changes not committed, it puts all of them, untracked
+files included, into the last commit, keeping its message. With nothing to
+commit, it folds the last commit into the one before it, keeping that one's
+message. It asks first every time, naming the commits, as it rewrites the
+branch's history, and says so if they have been pushed, as the branch will then
+need a force push.
 
 Forcing uses `--force-with-lease`: git refuses if the remote has commits you have
 not fetched, so you can't overwrite someone else's work without seeing it.
@@ -143,7 +151,7 @@ the branch back as it was.
 | ------ | ----- | --------- |
 | File   | Open Repository, Settings, Quit | `Ctrl+O`, `Ctrl+,`, `Ctrl+Q` |
 | Branch | New Branch, Checkout, Rename, Delete, Show History, Merge, Abort Merge, Continue Rebase, Skip Commit, Abort Rebase, Discard All Changes | New Branch `Ctrl+N`, Checkout `Ctrl+B`, Show History `Ctrl+H`, Merge `Ctrl+M`, Discard All Changes `Ctrl+Shift+D` |
-| Commit | Rescan, Stage Changes, Stage Selected, Unstage Selected, Unstage All, Commit | `F5`, `Ctrl+Shift+S`, `Ctrl+S`, `Ctrl+U`, `Ctrl+Shift+U`, `Ctrl+Return` |
+| Commit | Rescan, Stage Changes, Stage Selected, Unstage Selected, Unstage All, Commit, Quick Fix | `F5`, `Ctrl+Shift+S`, `Ctrl+S`, `Ctrl+U`, `Ctrl+Shift+U`, `Ctrl+Return` |
 | Stash  | Stash Changes, Apply Stash, Pop Stash, Drop Stash | Stash Changes `Ctrl+Shift+Z` |
 | Remote | Fetch, Pull, Push, Force Push, Add Remote, Rename Remote, Change URL, Remove Remote | Fetch `Ctrl+Shift+F`, Pull `Ctrl+Shift+L`, Push `Ctrl+P`, Force Push `Ctrl+Shift+P` |
 | Help   | About | `Ctrl+I` |
@@ -176,14 +184,17 @@ message says which.
 
 ## Settings
 
-The **User interface** tab of **File > Settings…** sets:
+The **General** tab of **File > Settings…** sets:
+
+- How many commits of the history are read at a time: 500 to start with, from
+  50 to 10,000.
+- How many repositories opened are remembered: 20 to start with, from 1 to 100.
+
+The **User interface** tab sets:
 
 - The theme: follow the system, light or dark.
 - The font and size of the code (diffs and the commit message). Any installed
   font can be chosen.
-- How many commits of the history are read at a time: 500 to start with, from
-  50 to 10,000.
-- How many repositories opened are remembered: 20 to start with, from 1 to 100.
 
 Its table of colours sets every colour Delta gives itself, each starting as one
 of Solarized's:

@@ -49,8 +49,10 @@ type Window struct {
 	// busy says that a git command that changes something is running, during
 	// which no other can be started.
 	busy bool
-	// stashes is how many stashes there are, as the last rescan read.
-	stashes int
+	// stashes is how many stashes there are, and quickFix what a quick fix
+	// would do, as the last rescan read.
+	stashes  int
+	quickFix git.QuickFix
 	// rescans and diffs count the requests for each, so that the answer to any
 	// but the latest, which may be about something else by now, is dropped.
 	rescans, diffs int
@@ -67,7 +69,7 @@ type Window struct {
 	newBranchAction, checkoutAction, deleteAction, showHistory   *qt.QAction
 	abortMerge, continueRebase, skipRebase, abortRebase, discard *qt.QAction
 	// The Commit menu's.
-	rescan, stageAll, stageSelected, unstageSelected, unstageAll, commit *qt.QAction
+	rescan, stageAll, stageSelected, unstageSelected, unstageAll, commit, quickFixAction *qt.QAction
 	// The Stash menu's.
 	stashAction, applyStashAction, popStashAction, dropStashAction *qt.QAction
 	// The Remote menu's.
@@ -373,6 +375,7 @@ func (w *Window) makeMenus() {
 	w.unstageAll = w.action(commit, "Unstage &All", "Ctrl+Shift+U", func() { w.unstageChanges(w.status.Staged) })
 	commit.AddSeparator()
 	w.commit = w.action(commit, "&Commit", "Ctrl+Return", w.commitChanges)
+	w.quickFixAction = w.action(commit, "&Quick Fix…", "", w.askQuickFix)
 
 	stash := bar.AddMenuWithTitle("&Stash")
 	w.stashAction = w.action(stash, "Stash &Changes…", "Ctrl+Shift+Z", w.askStashChanges)
@@ -415,6 +418,7 @@ func (w *Window) connect() {
 		}
 	})
 	v.commit.OnClicked(w.commit.Trigger)
+	v.quickFix.OnClicked(w.quickFixAction.Trigger)
 	v.push.OnClicked(w.pushButton.Trigger)
 	v.force.OnToggled(func(on bool) {
 		w.forceToggle.SetChecked(on)
@@ -494,8 +498,10 @@ func (w *Window) updateActions() {
 	for _, a := range []*qt.QAction{w.continueRebase, w.skipRebase, w.abortRebase} {
 		a.SetEnabled(idle && w.status.Rebasing)
 	}
-	// Stashes are made and used only outside a merge or rebase.
+	// Stashes are made and used only outside a merge or rebase, as is a quick
+	// fix, which needs one read for the state as it is.
 	stashable := idle && !w.status.Merging && !w.status.Rebasing
+	w.quickFixAction.SetEnabled(stashable && w.quickFix.Head != "" && w.quickFix.Refused == "")
 	w.stashAction.SetEnabled(stashable && len(w.status.Unstaged)+len(w.status.Staged) > 0)
 	for _, a := range []*qt.QAction{w.applyStashAction, w.popStashAction, w.dropStashAction} {
 		a.SetEnabled(stashable && w.stashes > 0)
@@ -518,6 +524,7 @@ func (w *Window) updateActions() {
 		v.stage.SetText(text)
 	}
 	v.commit.SetEnabled(w.commit.IsEnabled())
+	v.quickFix.SetEnabled(w.quickFixAction.IsEnabled())
 	v.push.SetEnabled(w.pushButton.IsEnabled())
 	v.force.SetEnabled(idle)
 	w.forceToggle.SetEnabled(idle)
@@ -574,6 +581,7 @@ func (w *Window) openRepository(dir string) error {
 	w.changes.message.Clear()
 	w.mergeFilled = false
 	w.stashes = 0
+	w.quickFix = git.QuickFix{}
 	w.chooseFirst = true
 	w.say("Opened " + r.Root)
 	w.rescanRepository()
@@ -644,6 +652,10 @@ func (w *Window) rescanRepository() {
 		// can't be read, as do how many stashes there are.
 		local, _, branchErr := r.Branches()
 		stashes, stashErr := r.Stashes()
+		var quickFix git.QuickFix
+		if err == nil {
+			quickFix = r.PlanQuickFix(len(s.Unstaged)+len(s.Staged) > 0)
+		}
 		var mergeMessage string
 		if err == nil && s.Merging {
 			mergeMessage = r.MergeMessage()
@@ -663,6 +675,7 @@ func (w *Window) rescanRepository() {
 			if stashErr == nil {
 				w.stashes = len(stashes)
 			}
+			w.quickFix = quickFix
 			w.applyStatus(s)
 			w.chooseFirstFile()
 			// The message git prepared for a merge is offered once, and not

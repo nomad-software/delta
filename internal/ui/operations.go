@@ -665,3 +665,35 @@ func (w *Window) dropStash(ref string) {
 	r := w.repo
 	w.run("Drop Stash", func() (string, error) { return r.DropStash(ref) }, nil)
 }
+
+// askQuickFix asks, every time, as it rewrites the branch, whether to fold the
+// changes not committed into the last commit, or with none the last commit into
+// the one before it, as the last rescan found, and if so does it.
+func (w *Window) askQuickFix() {
+	q := w.quickFix
+	if w.busy || w.repo == nil || q.Head == "" || q.Refused != "" {
+		return
+	}
+	if w.confirm("Quick Fix", quickFixQuestion(q, w.status)) {
+		r := w.repo
+		w.run("Quick Fix", func() (string, error) { return r.RunQuickFix(q) }, nil)
+	}
+}
+
+// quickFixQuestion returns what is asked before a quick fix: what goes into
+// what, and, if what is rewritten has been pushed, that the branch will need a
+// force push.
+func quickFixQuestion(q git.QuickFix, s git.Status) string {
+	text := fmt.Sprintf("Fold the last commit, “%s”, into the one before it, “%s”, keeping that one's message?", q.Last, q.Previous)
+	rewritten := 2
+	if q.Amend {
+		text = fmt.Sprintf("Fold every change not committed, untracked files included, into the last commit, “%s”, keeping its message?", q.Last)
+		rewritten = 1
+	}
+	text += " This rewrites the branch's history."
+	// Commits not yet pushed are those ahead of the upstream.
+	if s.Upstream != "" && s.Ahead < rewritten {
+		text += fmt.Sprintf("\n\nIt has been pushed to %s, so the branch will need a force push.", s.Upstream)
+	}
+	return text
+}

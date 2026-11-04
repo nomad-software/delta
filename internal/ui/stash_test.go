@@ -6,6 +6,12 @@ import (
 	"testing"
 )
 
+// runGitOutFails runs git in the folder where it is meant to fail, as a merge
+// that stops with a conflict.
+func runGitOutFails(dir string, args ...string) {
+	exec.Command("git", append([]string{"-C", dir}, args...)...).Run()
+}
+
 // runGitOut runs git in the folder and returns what it wrote.
 func runGitOut(t *testing.T, dir string, args ...string) string {
 	t.Helper()
@@ -157,8 +163,7 @@ func TestNoStashDuringMerge(t *testing.T) {
 	runGit(t, dir, "switch", "-q", "main")
 	writeFile(t, dir, "file", "main\n")
 	runGit(t, dir, "commit", "-q", "-am", "main")
-	// The merge stops with a conflict, as it is meant to.
-	exec.Command("git", "-C", dir, "merge", "other").Run()
+	runGitOutFails(dir, "merge", "other")
 	w := newTestWindow(t, dir)
 	waitFor(t, "the merge", func() bool { return w.working == 0 && w.status.Merging })
 	on(func() {

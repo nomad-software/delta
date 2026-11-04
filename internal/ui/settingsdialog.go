@@ -128,17 +128,19 @@ func newSettingsDialog(parent *qt.QWidget, current settings.Settings, accepted f
 	d.repositoryLimit.SetRange(settings.MinRepositoryLimit, settings.MaxRepositoryLimit)
 	d.repositoryLimit.SetSuffix(" repositories")
 
+	// General comes first, as apemail's does, its sections at the top.
 	d.tabs = qt.NewQTabWidget2()
-	page := qt.NewQWidget2()
-	d.tabs.AddTab(page, "User interface")
-	look := qt.NewQVBoxLayout(page)
+	general := d.page("General")
+	repositories := d.section(general, "Repositories", "The repositories opened are remembered, up to this many.")
+	repositories.AddRow3("Remembered:", d.repositoryLimit.QWidget)
+	history := d.section(general, "History", "The history is read this many commits at a time.")
+	history.AddRow3("Commits:", d.historyPage.QWidget)
+	general.AddStretch()
+
+	look := d.page("User interface")
 	appearance := d.section(look, "Appearance", "")
 	appearance.AddRow3("Theme:", d.theme.QWidget)
 	appearance.AddRow4("Code font:", codeRow.QLayout)
-	history := d.section(look, "History", "The history is read this many commits at a time.")
-	history.AddRow3("Commits:", d.historyPage.QWidget)
-	repositories := d.section(look, "Repositories", "")
-	repositories.AddRow3("Remembered:", d.repositoryLimit.QWidget)
 
 	d.colours = qt.NewQTableWidget3(0, colourColumns)
 	d.colours.SetMinimumHeight(colourTableHeight)
@@ -193,6 +195,13 @@ func newSettingsDialog(parent *qt.QWidget, current settings.Settings, accepted f
 	d.SetMinimumHeight(d.Height())
 	d.OnFinished(func(int) { d.DeleteLater() })
 	return d
+}
+
+// page adds a tab, and returns the layout its sections go in.
+func (d *settingsDialog) page(title string) *qt.QVBoxLayout {
+	w := qt.NewQWidget2()
+	d.tabs.AddTab(w, title)
+	return qt.NewQVBoxLayout(w)
 }
 
 // section adds a frame with the title to the layout, with the note, if there is
