@@ -195,7 +195,7 @@ func TestLayout(t *testing.T) {
 				t.Errorf("%q has no icon", a.IconText())
 			}
 		}
-		if want := []string{"Open", "|", "New Branch", "Checkout", "Delete", "|", "Rescan", "Stage", "|", "Pull", "Push", "|", "History"}; !slices.Equal(buttons, want) {
+		if want := []string{"Open", "|", "New Branch", "Checkout", "Delete", "|", "Rescan", "|", "Pull", "Push", "|", "History"}; !slices.Equal(buttons, want) {
 			t.Errorf("buttons %q", buttons)
 		}
 		if size := w.toolbar.IconSize(); size.Width() != 32 || size.Height() != 32 || w.toolbar.ToolButtonStyle() != qt.ToolButtonTextUnderIcon || w.toolbar.IsMovable() {
@@ -398,11 +398,7 @@ func TestStageButtonUnstagesWhenAllStaged(t *testing.T) {
 		if w.changes.stage.Text() != unstageText || !w.changes.stage.IsEnabled() {
 			t.Errorf("button %q, enabled %v", w.changes.stage.Text(), w.changes.stage.IsEnabled())
 		}
-		// The toolbar's says the same, and does the same.
-		if w.stageButton.IconText() != "Unstage" || !w.stageButton.IsEnabled() {
-			t.Errorf("toolbar %q, enabled %v", w.stageButton.IconText(), w.stageButton.IsEnabled())
-		}
-		w.stageButton.Trigger()
+		w.changes.stage.Click()
 	})
 	waitFor(t, "all unstaged", func() bool { return w.idleWith(2, 0) })
 
@@ -413,10 +409,10 @@ func TestStageButtonUnstagesWhenAllStaged(t *testing.T) {
 	})
 	waitFor(t, "one of each", func() bool { return w.idleWith(1, 1) })
 	on(func() {
-		if w.changes.stage.Text() != stageText || w.stageButton.IconText() != "Stage" {
-			t.Errorf("buttons %q, %q", w.changes.stage.Text(), w.stageButton.IconText())
+		if w.changes.stage.Text() != stageText {
+			t.Errorf("button %q", w.changes.stage.Text())
 		}
-		w.stageButton.Trigger()
+		w.changes.stage.Click()
 	})
 	waitFor(t, "all staged again", func() bool { return w.idleWith(0, 2) })
 
@@ -427,8 +423,8 @@ func TestStageButtonUnstagesWhenAllStaged(t *testing.T) {
 	})
 	waitFor(t, "the commit", func() bool { return w.idleWith(0, 0) })
 	on(func() {
-		if w.changes.stage.Text() != stageText || w.changes.stage.IsEnabled() || w.stageButton.IconText() != "Stage" || w.stageButton.IsEnabled() {
-			t.Errorf("buttons %q, %q, enabled %v, %v", w.changes.stage.Text(), w.stageButton.IconText(), w.changes.stage.IsEnabled(), w.stageButton.IsEnabled())
+		if w.changes.stage.Text() != stageText || w.changes.stage.IsEnabled() {
+			t.Errorf("button %q, enabled %v", w.changes.stage.Text(), w.changes.stage.IsEnabled())
 		}
 	})
 }
@@ -1704,6 +1700,87 @@ func TestDraggingShowsEachFile(t *testing.T) {
 		sendMouse(list, qt.QEvent__MouseMove, 0, qt.NoButton, qt.LeftButton, qt.ControlModifier)
 		if got := selected(); !slices.Equal(got, before) {
 			t.Errorf("after ctrl+drag, selected %v, not %v", got, before)
+		}
+	})
+}
+
+// New Branch takes a name git would refuse as it stands, as it is corrected on
+// OK, and refuses only one that can't be: OK is enabled while the name, made fit
+// for a branch, can be one.
+func TestNewBranchName(t *testing.T) {
+	w := newTestWindow(t, newRepo(t))
+	waitFor(t, "the status", func() bool { return w.idleWith(0, 0) })
+	on(func() {
+		d, name, _, _ := w.newBranchDialog([]string{"main"}, nil)
+		defer d.Delete()
+		for text, ok := range map[string]bool{
+			"":              false,
+			"topic":         true,
+			"my new branch": true,
+			"what? ~now~":   true,
+			"~^:?*":         false,
+			"@":             false,
+			"HEAD":          false,
+		} {
+			name.SetText(text)
+			if d.ok.IsEnabled() != ok {
+				t.Errorf("%q: OK enabled %v", text, d.ok.IsEnabled())
+			}
+		}
+	})
+	// What is made is the name corrected.
+	on(func() { w.createBranch(git.SanitiseBranchName("my new branch"), "", true) })
+	waitFor(t, "the branch", func() bool { return w.idleWith(0, 0) && w.status.Branch == "my-new-branch" })
+}
+
+// The files of the staged and unstaged lists have no tooltips; the history's
+// still say what happened to each in words.
+func TestChangeListsHaveNoTooltips(t *testing.T) {
+	dir := newRepo(t)
+	writeFile(t, dir, "file", "changed\n")
+	writeFile(t, dir, "staged", "new\n")
+	runGit(t, dir, "add", "staged")
+	w := newTestWindow(t, dir)
+	waitFor(t, "the status", func() bool { return w.idleWith(1, 1) })
+	on(func() {
+		for _, list := range []*qt.QListWidget{w.changes.unstaged, w.changes.staged} {
+			if tip := list.Item(0).ToolTip(); tip != "" {
+				t.Errorf("%q has the tooltip %q", list.Item(0).Text(), tip)
+			}
+		}
+		w.history.setFiles([]git.Change{{Code: 'M', Path: "file"}}, "message")
+		if tip := w.history.files.Item(1).ToolTip(); tip != "Modified" {
+			t.Errorf("the history's file has the tooltip %q", tip)
+		}
+	})
+}
+
+// Discard All Changes has a shortcut, and no two of the window's actions share
+// one.
+func TestShortcuts(t *testing.T) {
+	w := newTestWindow(t, newRepo(t))
+	on(func() {
+		if key := w.discard.Shortcut().ToString(); key != "Ctrl+Shift+D" {
+			t.Errorf("Discard All Changes is on %q", key)
+		}
+		seen := map[string]string{}
+		// The window's actions are its children.
+		for _, child := range w.Children() {
+			if !child.Inherits("QAction") {
+				continue
+			}
+			a := qt.UnsafeNewQAction(child.UnsafePointer())
+			key := a.Shortcut().ToString()
+			if key == "" {
+				continue
+			}
+			if other, ok := seen[key]; ok {
+				t.Errorf("%q and %q are both on %s", other, a.Text(), key)
+			}
+			seen[key] = a.Text()
+		}
+		if len(seen) < 15 {
+			t.Errorf("only %d shortcuts found", len(seen))
 		}
 	})
 }

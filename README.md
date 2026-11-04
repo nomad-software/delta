@@ -33,7 +33,6 @@ chosen, if there is one, as it is whenever a repository is opened.
 | **Checkout** | Switches to another branch. |
 | **Delete** | Deletes a branch, after asking. |
 | **Rescan** | Reads the state of the repository again. |
-| **Stage** | Stages everything listed. When everything is staged it is **Unstage**, which unstages it all. |
 | **Pull** | Pulls into the current branch. |
 | **Push** | Pushes the current branch, setting its upstream on the first push. Its arrow opens a **Force push** option. |
 | **History** | Shows the history in place of the changes until it is pressed again, as **Branch > Show History** (`Ctrl+H`) does. |
@@ -47,7 +46,8 @@ or a fetch.
 At the toolbar's right, **Repository** lists every repository you have opened,
 including one Delta was started in, by the names of their folders in
 alphabetical order. Hover over one to see its whole path. Choosing one opens it.
-The list is saved with the settings, with each repository in it only once. The
+The list is saved with the settings, with each repository in it only once, and
+holds up to 20 (a setting), the one opened longest ago going first. The
 dropdowns grow to fit a long name, up to a limit, and narrow when the window
 does.
 
@@ -58,8 +58,8 @@ chosen. Choosing another checks it out.
 
 * **Unstaged Changes** and **Staged Changes**, in the sidebar, list the changed
   files, each with a circle in a colour for what happened to it, Solarized's to
-  start with and set in **Settings**. Hover over a file to have it said in words.
-  The history's list of files has the same circles.
+  start with and set in **Settings**. The history's list of files has the same
+  circles, and says what happened to a file when you hover over it.
 
   | Circle | Change |
   | ------ | ------ |
@@ -76,7 +76,9 @@ chosen. Choosing another checks it out.
   in red, and without git's file headers. Drag over the list to see each file in
   turn. Double-click a file to stage or unstage it. Ctrl and shift select several.
 * The **message pane** holds the commit message, with **Rescan**, **Stage
-  Changes** (or **Unstage Changes**), **Commit** and **Push** beside it.
+  Changes**, **Commit** and **Push** beside it. **Stage Changes** stages
+  everything listed; when everything is staged it is **Unstage Changes**, which
+  unstages it all.
 * **Force push**, beside them and in the toolbar Push's menu, makes the Push
   buttons force the next push, after asking you first. The two are ticked
   together, it is remembered between runs, and a successful push clears it.
@@ -141,10 +143,14 @@ the branch back as it was.
 | Menu   | Items | Shortcuts |
 | ------ | ----- | --------- |
 | File   | Open Repository, Settings, Quit | `Ctrl+O`, `Ctrl+,`, `Ctrl+Q` |
-| Branch | New Branch, Checkout, Rename, Delete, Show History, Merge, Abort Merge, Continue Rebase, Skip Commit, Abort Rebase, Discard All Changes | New Branch `Ctrl+N`, Checkout `Ctrl+B`, Show History `Ctrl+H`, Merge `Ctrl+M` |
+| Branch | New Branch, Checkout, Rename, Delete, Show History, Merge, Abort Merge, Continue Rebase, Skip Commit, Abort Rebase, Discard All Changes | New Branch `Ctrl+N`, Checkout `Ctrl+B`, Show History `Ctrl+H`, Merge `Ctrl+M`, Discard All Changes `Ctrl+Shift+D` |
 | Commit | Rescan, Stage Changes, Stage Selected, Unstage Selected, Unstage All, Commit | `F5`, `Ctrl+Shift+S`, `Ctrl+S`, `Ctrl+U`, `Ctrl+Shift+U`, `Ctrl+Return` |
 | Remote | Fetch, Pull, Push, Force Push, Add Remote, Rename Remote, Change URL, Remove Remote | Fetch `Ctrl+Shift+F`, Pull `Ctrl+Shift+L`, Push `Ctrl+P`, Force Push `Ctrl+Shift+P` |
 | Help   | About | `Ctrl+I` |
+
+**New Branch** corrects a name git would refuse when you click OK: spaces become
+hyphens, and what git doesn't allow in a branch's name is taken out, so
+`my new branch?` becomes `my-new-branch`.
 
 **Checkout** lists every local branch by name, with the current one chosen. Tick
 **Include remote branches** to fetch and list the remote ones too: checking one
@@ -162,6 +168,7 @@ The **User interface** tab of **File > Settings…** sets:
   font can be chosen.
 - How many commits of the history are read at a time: 500 to start with, from
   50 to 10,000.
+- How many repositories opened are remembered: 20 to start with, from 1 to 100.
 
 Its table of colours sets every colour Delta gives itself, each starting as one
 of Solarized's:

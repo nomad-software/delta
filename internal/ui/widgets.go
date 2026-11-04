@@ -98,12 +98,11 @@ func describe(c git.Change) string {
 	return c.Path
 }
 
-// newChangeItem returns the row of a list showing a change: its circle, its
-// path, and what happened to it in words when the pointer is over it.
+// newChangeItem returns the row of a list showing a change: its circle and its
+// path. The staged and unstaged lists' rows have no tooltip (the user's choice).
 func newChangeItem(c git.Change) *qt.QListWidgetItem {
 	item := qt.NewQListWidgetItem2(describe(c))
 	item.SetIcon(changeIcon(c.Code))
-	item.SetToolTip(explain(c))
 	return item
 }
 

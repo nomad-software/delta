@@ -100,20 +100,6 @@ var (
 		p.LineTo2(10, 19.5)
 		p.LineTo2(12.5, 22)
 	}
-	// stageShape is a box with a plus, for adding to the index.
-	stageShape iconShape = func(p *qt.QPainterPath) {
-		p.AddRoundedRect2(4, 4, 16, 16, 2.5, 2.5)
-		p.MoveTo2(12, 8.5)
-		p.LineTo2(12, 15.5)
-		p.MoveTo2(8.5, 12)
-		p.LineTo2(15.5, 12)
-	}
-	// unstageShape is a box with a minus, for taking out of the index.
-	unstageShape iconShape = func(p *qt.QPainterPath) {
-		p.AddRoundedRect2(4, 4, 16, 16, 2.5, 2.5)
-		p.MoveTo2(8.5, 12)
-		p.LineTo2(15.5, 12)
-	}
 	// pullShape is an arrow down into a tray.
 	pullShape iconShape = func(p *qt.QPainterPath) {
 		p.MoveTo2(12, 3)

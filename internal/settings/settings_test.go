@@ -1,6 +1,8 @@
 package settings
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -29,6 +31,7 @@ func TestRoundTrip(t *testing.T) {
 	s.ProgressColour = "#abcdef"
 	s.CodeFont, s.CodeFontSize = "Some Font", 14
 	s.Repositories = []string{"/one", "/two"}
+	s.RepositoryLimit = 50
 	s.LastRepository = "/two"
 	if err := s.Save(path); err != nil {
 		t.Fatal(err)
@@ -83,11 +86,16 @@ func TestRepositories(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := Load(path)
-	if want := []string{"/a/b", "/c"}; !slices.Equal(s.Repositories, want) {
+	// The last time each is named is when it was opened last.
+	if want := []string{"/c", "/a/b"}; !slices.Equal(s.Repositories, want) {
 		t.Errorf("loaded %q", s.Repositories)
 	}
-	if s.Remember("/c/") || s.Remember("/a/b") || s.Remember("d") {
-		t.Error("remembered one already there, or a relative path")
+	if s.Remember("/a/b/") || s.Remember("d") {
+		t.Error("remembered the one opened last again, or a relative path")
+	}
+	// One opened again is the one opened last.
+	if !s.Remember("/c") || !slices.Equal(s.Repositories, []string{"/a/b", "/c"}) {
+		t.Errorf("opened again %q", s.Repositories)
 	}
 	if !s.Remember("/d") || !slices.Equal(s.Repositories, []string{"/a/b", "/c", "/d"}) {
 		t.Errorf("remembered %q", s.Repositories)
@@ -123,6 +131,45 @@ func TestChangeColourFields(t *testing.T) {
 	for i, field := range fields {
 		if field != value.Field(i).Addr().Interface().(*string) {
 			t.Errorf("field %d is not %s", i, value.Type().Field(i).Name)
+		}
+	}
+}
+
+// At most RepositoryLimit repositories are remembered, those opened longest ago
+// going first, on remembering one, on loading, and on the limit being lowered.
+func TestRepositoryLimit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if Load(path).RepositoryLimit != DefaultRepositoryLimit || DefaultRepositoryLimit != 20 {
+		t.Errorf("the limit is %d", Load(path).RepositoryLimit)
+	}
+	var paths []string
+	for i := range 25 {
+		paths = append(paths, fmt.Sprintf("/r%d", i))
+	}
+	data, _ := json.Marshal(map[string]any{"repositories": paths})
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := Load(path)
+	if !slices.Equal(s.Repositories, paths[5:]) {
+		t.Errorf("loaded %q", s.Repositories)
+	}
+	if !s.Remember("/new") || len(s.Repositories) != 20 || s.Repositories[0] != "/r6" || s.Repositories[19] != "/new" {
+		t.Errorf("remembered %q", s.Repositories)
+	}
+	s.RepositoryLimit = 3
+	if !s.LimitRepositories() || !slices.Equal(s.Repositories, []string{"/r23", "/r24", "/new"}) {
+		t.Errorf("limited %q", s.Repositories)
+	}
+	if s.LimitRepositories() {
+		t.Error("limited again")
+	}
+	for text, want := range map[string]int{`{"repositoryLimit": 0}`: 20, `{"repositoryLimit": 1}`: 1, `{"repositoryLimit": 100}`: 100, `{"repositoryLimit": 101}`: 20} {
+		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := Load(path).RepositoryLimit; got != want {
+			t.Errorf("%s gave %d", text, got)
 		}
 	}
 }

@@ -478,7 +478,10 @@ func (h *historyView) setFiles(changes []git.Change, first string) {
 	top := qt.NewQListWidgetItem2(first)
 	top.SetIcon(changeIcon(0))
 	h.files.AddItemWithItem(top)
+	// What happened to each file is said in words when the pointer is over it.
 	for _, c := range changes {
-		h.files.AddItemWithItem(newChangeItem(c))
+		item := newChangeItem(c)
+		item.SetToolTip(explain(c))
+		h.files.AddItemWithItem(item)
 	}
 }

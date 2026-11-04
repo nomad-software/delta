@@ -674,3 +674,47 @@ func TestDiscardChangesOnUnbornBranch(t *testing.T) {
 		t.Errorf("left %+v", s)
 	}
 }
+
+// A name is made fit for a branch: what git refuses is corrected or taken out.
+func TestSanitiseBranchName(t *testing.T) {
+	for name, want := range map[string]string{
+		"topic":                 "topic",
+		"  my new   branch  ":   "my-new-branch",
+		"fix\tthe\nbug":         "fix-the-bug",
+		"what? why: *this* ~1^": "what-why-this-1",
+		"a[b]\\c":               "ab]c",
+		"one..two...three":      "one.two.three",
+		"x@{1}":                 "x@1}",
+		"/feature//login/":      "feature/login",
+		".hidden/.dot.":         "hidden/dot",
+		"name.lock":             "name",
+		"part.lock/other":       "part/other",
+		"--option":              "option",
+		"- leading":             "leading",
+		"\x01bell\x7f":          "bell",
+		"café/ünïcode":          "café/ünïcode",
+		"":                      "",
+		"~^:?*":                 "",
+		"@":                     "",
+		" @ ":                   "",
+	} {
+		if got := SanitiseBranchName(name); got != want {
+			t.Errorf("%q gave %q, not %q", name, got, want)
+		}
+	}
+}
+
+// Whatever a name is made into, git takes it as a branch's, unless it is
+// nothing.
+func TestSanitisedNamesAreValid(t *testing.T) {
+	r := newRepo(t)
+	for _, name := range []string{
+		"a b", "a..b", "a/./b", "a/../b", "a.lock/b.lock", "..", "...lock", "a@{b", "@{", "/", "//", "-", "-a-",
+		"a~b^c:d?e*f[g\\h", "tab\tnew\nline", ". .", "x/.lock", "a/.b/c.", "ends.", "dot.lock.lock", "@@{{",
+	} {
+		got := SanitiseBranchName(name)
+		if got != "" && !r.ValidBranchName(got) {
+			t.Errorf("%q gave %q, which git refuses", name, got)
+		}
+	}
+}

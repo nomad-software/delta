@@ -29,8 +29,9 @@ type settingsDialog struct {
 	codeFamily  *qt.QFontComboBox
 	codeSize    *qt.QSpinBox
 	codeDefault *qt.QPushButton
-	// historyPage is how many commits of the history are read at a time.
-	historyPage *qt.QSpinBox
+	// historyPage is how many commits of the history are read at a time, and
+	// repositoryLimit how many repositories opened are remembered.
+	historyPage, repositoryLimit *qt.QSpinBox
 	// defaultFamily and defaultSize are the system's fixed width font, as the
 	// fields show it, which is what is meant when nothing else is chosen.
 	defaultFamily        string
@@ -123,6 +124,9 @@ func newSettingsDialog(parent *qt.QWidget, current settings.Settings, accepted f
 	d.historyPage.SetRange(settings.MinHistoryPageSize, settings.MaxHistoryPageSize)
 	d.historyPage.SetSingleStep(100)
 	d.historyPage.SetSuffix(" commits")
+	d.repositoryLimit = qt.NewQSpinBox2()
+	d.repositoryLimit.SetRange(settings.MinRepositoryLimit, settings.MaxRepositoryLimit)
+	d.repositoryLimit.SetSuffix(" repositories")
 
 	d.tabs = qt.NewQTabWidget2()
 	page := qt.NewQWidget2()
@@ -133,6 +137,8 @@ func newSettingsDialog(parent *qt.QWidget, current settings.Settings, accepted f
 	appearance.AddRow4("Code font:", codeRow.QLayout)
 	history := d.section(look, "History", "The history is read this many commits at a time.")
 	history.AddRow3("Commits:", d.historyPage.QWidget)
+	repositories := d.section(look, "Repositories", "")
+	repositories.AddRow3("Remembered:", d.repositoryLimit.QWidget)
 
 	d.colours = qt.NewQTableWidget3(0, colourColumns)
 	d.colours.SetMinimumHeight(colourTableHeight)
@@ -246,6 +252,7 @@ func (d *settingsDialog) show(s settings.Settings) {
 	}
 	d.showFont(s.CodeFont, s.CodeFontSize)
 	d.historyPage.SetValue(s.HistoryPageSize)
+	d.repositoryLimit.SetValue(s.RepositoryLimit)
 	d.showColours(s)
 }
 
@@ -280,6 +287,7 @@ func (d *settingsDialog) chosen(s settings.Settings) settings.Settings {
 		s.CodeFontSize = size
 	}
 	s.HistoryPageSize = d.historyPage.Value()
+	s.RepositoryLimit = d.repositoryLimit.Value()
 	s.AddedColour = d.added.colour
 	s.RemovedColour = d.removed.colour
 	s.HunkColour = d.hunk.colour

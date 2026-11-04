@@ -130,8 +130,9 @@ func TestSettingsSections(t *testing.T) {
 		}
 		in("Appearance", "", d.theme.QWidget, d.codeFamily.QWidget)
 		in("History", "The history is read this many commits at a time.", d.historyPage.QWidget)
+		in("Repositories", "", d.repositoryLimit.QWidget)
 		in("Colours", "", d.colours.QWidget)
-		if len(d.sections) != 3 {
+		if len(d.sections) != 4 {
 			t.Errorf("%d frames", len(d.sections))
 		}
 		form := qt.UnsafeNewQFormLayout(d.sections["History"].Layout().UnsafePointer())

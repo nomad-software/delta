@@ -549,6 +549,48 @@ func (r *Repo) Branches() (local, remote []string, err error) {
 	return local, remote, nil
 }
 
+// SanitiseBranchName returns the name made fit for a branch, as far as it can
+// be, by git's rules for the names of refs: runs of white space become a single
+// hyphen; control characters and ~ ^ : ? * [ \ go; ".." becomes "." and "@{"
+// becomes "@"; each part between slashes loses the dots it starts with and the
+// dots and ".lock" it ends with, and empty parts go, so that no slash is doubled
+// or at either end; hyphens at the start go, as git would take the name for an
+// option; and "@" alone goes, as git takes it for HEAD. What is left may still
+// not do, as "HEAD", which ValidBranchName tells.
+func SanitiseBranchName(name string) string {
+	name = strings.Join(strings.Fields(name), "-")
+	name = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f || strings.ContainsRune("~^:?*[\\", r) {
+			return -1
+		}
+		return r
+	}, name)
+	for strings.Contains(name, "..") {
+		name = strings.ReplaceAll(name, "..", ".")
+	}
+	for strings.Contains(name, "@{") {
+		name = strings.ReplaceAll(name, "@{", "@")
+	}
+	var parts []string
+	for part := range strings.SplitSeq(name, "/") {
+		for {
+			trimmed := strings.TrimSuffix(strings.Trim(part, "."), ".lock")
+			if trimmed == part {
+				break
+			}
+			part = trimmed
+		}
+		if part != "" {
+			parts = append(parts, part)
+		}
+	}
+	name = strings.TrimLeft(strings.Join(parts, "/"), "-")
+	if name == "@" {
+		return ""
+	}
+	return name
+}
+
 // ValidBranchName says whether a new branch could have the name.
 func (r *Repo) ValidBranchName(name string) bool {
 	_, err := r.run("check-ref-format", "--branch", name)

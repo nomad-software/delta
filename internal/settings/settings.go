@@ -66,6 +66,13 @@ func (c *ChangeColours) Fields() []*string {
 
 const leastWindowSize = 200
 
+// How many repositories opened can be remembered, and are by default.
+const (
+	MinRepositoryLimit     = 1
+	MaxRepositoryLimit     = 100
+	DefaultRepositoryLimit = 20
+)
+
 // How many commits of the history can be read at a time, and are by default.
 const (
 	MinHistoryPageSize     = 50
@@ -131,8 +138,10 @@ type Settings struct {
 	CodeFontSize int    `json:"codeFontSize,omitempty"`
 
 	// Repositories are the top folders of the repositories opened, each once,
-	// as absolute paths, so that they can be opened again quickly.
-	Repositories []string `json:"repositories,omitempty"`
+	// as absolute paths, so that they can be opened again quickly: the one
+	// opened longest ago first, and at most RepositoryLimit of them.
+	Repositories    []string `json:"repositories,omitempty"`
+	RepositoryLimit int      `json:"repositoryLimit"`
 	// LastRepository is the top folder of the repository last opened, which is
 	// opened on starting where no other is to be. Older versions kept one as
 	// "repository", which is ignored.
@@ -157,6 +166,7 @@ func Defaults() Settings {
 		ProgressColour: DefaultProgressColour,
 
 		HistoryPageSize: DefaultHistoryPageSize,
+		RepositoryLimit: DefaultRepositoryLimit,
 	}
 }
 
@@ -225,6 +235,9 @@ func (s *Settings) normalise() {
 	} else {
 		s.LastRepository = ""
 	}
+	if s.RepositoryLimit < MinRepositoryLimit || s.RepositoryLimit > MaxRepositoryLimit {
+		s.RepositoryLimit = d.RepositoryLimit
+	}
 	paths := s.Repositories
 	s.Repositories = nil
 	for _, path := range paths {
@@ -232,17 +245,30 @@ func (s *Settings) normalise() {
 	}
 }
 
-// Remember adds the repository's folder to those opened, unless it is there
-// already or is not an absolute path. It says whether it was added.
+// LimitRepositories drops the repositories opened longest ago beyond
+// RepositoryLimit, and says whether any were.
+func (s *Settings) LimitRepositories() bool {
+	extra := len(s.Repositories) - max(s.RepositoryLimit, MinRepositoryLimit)
+	if extra <= 0 {
+		return false
+	}
+	s.Repositories = slices.Delete(s.Repositories, 0, extra)
+	return true
+}
+
+// Remember makes the repository's folder the one opened last, once, unless it
+// is not an absolute path, dropping the one opened longest ago if there are then
+// more than RepositoryLimit. It says whether the list changed.
 func (s *Settings) Remember(path string) bool {
 	if !filepath.IsAbs(path) {
 		return false
 	}
 	path = filepath.Clean(path)
-	if slices.Contains(s.Repositories, path) {
+	if n := len(s.Repositories); n > 0 && s.Repositories[n-1] == path {
 		return false
 	}
-	s.Repositories = append(s.Repositories, path)
+	s.Repositories = append(slices.DeleteFunc(s.Repositories, func(p string) bool { return p == path }), path)
+	s.LimitRepositories()
 	return true
 }
 

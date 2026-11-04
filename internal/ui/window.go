@@ -69,15 +69,13 @@ type Window struct {
 	// The Remote menu's.
 	pull, push, forcePush *qt.QAction
 
-	// What the buttons do, where it is not a menu's action. stageButton stages
-	// everything listed, or unstages it all if it is all staged, as stageIcons,
-	// for each, show. pushButton pushes, forcing it if Force push is ticked, as
-	// the Remote menu's Push, on Ctrl+P, never does. forceToggle is the
-	// toolbar's Push's option to force it, ticked with the Force push checkbox.
-	stageButton, pushButton, forceToggle *qt.QAction
-	stageIcons                           [2]*qt.QIcon
-	// unstaging says that the Stage buttons are Unstage, as they are while
-	// everything is staged.
+	// What the buttons do, where it is not a menu's action. pushButton pushes,
+	// forcing it if Force push is ticked, as the Remote menu's Push, on Ctrl+P,
+	// never does. forceToggle is the toolbar's Push's option to force it, ticked
+	// with the Force push checkbox.
+	pushButton, forceToggle *qt.QAction
+	// unstaging says that the Stage Changes button beside the message is Unstage
+	// Changes, as it is while everything is staged.
 	unstaging bool
 
 	// confirm asks before doing what can't be taken back, and failed tells of a
@@ -252,8 +250,8 @@ func (w *Window) say(message string) {
 }
 
 // makeToolBar makes the bar of large buttons under the menus, as apemail's: the
-// menus' actions, but Stage and Push, whose actions are those of the buttons
-// beside the message too, and the dropdowns at the right.
+// menus' actions, but Push, whose action is that of the button beside the
+// message too, and the dropdowns at the right.
 func (w *Window) makeToolBar() {
 	for a, shape := range map[*qt.QAction]iconShape{
 		w.open: openShape, w.newBranchAction: newBranchShape, w.checkoutAction: checkoutShape, w.deleteAction: deleteShape,
@@ -269,9 +267,6 @@ func (w *Window) makeToolBar() {
 	w.checkoutAction.SetIconText("Checkout")
 	w.deleteAction.SetIconText("Delete")
 	w.showHistory.SetIconText("History")
-	w.stageIcons = [2]*qt.QIcon{toolIcon(stageShape), toolIcon(unstageShape)}
-	w.stageButton.SetIcon(w.stageIcons[0])
-	w.stageButton.SetIconText("Stage")
 
 	w.toolbar = qt.NewQToolBar4("Buttons", w.QWidget)
 	w.toolbar.SetMovable(false)
@@ -285,7 +280,7 @@ func (w *Window) makeToolBar() {
 	noTips.OnEventFilter(func(super func(*qt.QObject, *qt.QEvent) bool, watched *qt.QObject, event *qt.QEvent) bool {
 		return event.Type() == qt.QEvent__ToolTip || super(watched, event)
 	})
-	for _, a := range []*qt.QAction{w.open, nil, w.newBranchAction, w.checkoutAction, w.deleteAction, nil, w.rescan, w.stageButton, nil, w.pull, w.pushButton, nil, w.showHistory} {
+	for _, a := range []*qt.QAction{w.open, nil, w.newBranchAction, w.checkoutAction, w.deleteAction, nil, w.rescan, nil, w.pull, w.pushButton, nil, w.showHistory} {
 		if a == nil {
 			w.toolbar.AddSeparator()
 			continue
@@ -359,7 +354,7 @@ func (w *Window) makeMenus() {
 	w.skipRebase = w.action(branch, "S&kip Commit", "", func() { w.rebaseStep("Skip Commit", w.repo.SkipRebase) })
 	w.abortRebase = w.action(branch, "A&bort Rebase", "", w.doAbortRebase)
 	branch.AddSeparator()
-	w.discard = w.action(branch, "Discard &All Changes…", "", w.discardChanges)
+	w.discard = w.action(branch, "Discard &All Changes…", "Ctrl+Shift+D", w.discardChanges)
 
 	commit := bar.AddMenuWithTitle("&Commit")
 	w.rescan = w.action(commit, "&Rescan", "F5", w.rescanRepository)
@@ -374,14 +369,6 @@ func (w *Window) makeMenus() {
 	w.unstageAll = w.action(commit, "Unstage &All", "Ctrl+Shift+U", func() { w.unstageChanges(w.status.Staged) })
 	commit.AddSeparator()
 	w.commit = w.action(commit, "&Commit", "Ctrl+Return", w.commitChanges)
-	w.stageButton = qt.NewQAction5(stageText, w.QObject)
-	w.stageButton.OnTriggered(func() {
-		if w.allStaged() {
-			w.unstageAll.Trigger()
-		} else {
-			w.stageAll.Trigger()
-		}
-	})
 
 	remote := bar.AddMenuWithTitle("&Remote")
 	fetch := w.action(remote, "&Fetch", "Ctrl+Shift+F", func() { w.run("Fetch", w.repo.Fetch, nil) })
@@ -407,7 +394,15 @@ func (w *Window) makeMenus() {
 func (w *Window) connect() {
 	v := w.changes
 	v.rescan.OnClicked(w.rescan.Trigger)
-	v.stage.OnClicked(w.stageButton.Trigger)
+	// Stage Changes stages everything listed, or unstages it all if it is all
+	// staged.
+	v.stage.OnClicked(func() {
+		if w.allStaged() {
+			w.unstageAll.Trigger()
+		} else {
+			w.stageAll.Trigger()
+		}
+	})
 	v.commit.OnClicked(w.commit.Trigger)
 	v.push.OnClicked(w.pushButton.Trigger)
 	v.force.OnToggled(func(on bool) {
@@ -490,25 +485,21 @@ func (w *Window) updateActions() {
 	}
 
 	v.rescan.SetEnabled(w.rescan.IsEnabled())
-	// Both Stage buttons unstage instead when everything is staged.
+	// Stage Changes unstages instead when everything is staged.
 	unstage := w.allStaged()
 	if unstage {
-		w.stageButton.SetEnabled(w.unstageAll.IsEnabled())
+		v.stage.SetEnabled(w.unstageAll.IsEnabled())
 	} else {
-		w.stageButton.SetEnabled(w.stageAll.IsEnabled())
+		v.stage.SetEnabled(w.stageAll.IsEnabled())
 	}
 	if unstage != w.unstaging {
 		w.unstaging = unstage
-		text, icon := stageText, w.stageIcons[0]
+		text := stageText
 		if unstage {
-			text, icon = unstageText, w.stageIcons[1]
+			text = unstageText
 		}
 		v.stage.SetText(text)
-		w.stageButton.SetText(text)
-		w.stageButton.SetIconText(strings.Fields(text)[0])
-		w.stageButton.SetIcon(icon)
 	}
-	v.stage.SetEnabled(w.stageButton.IsEnabled())
 	v.commit.SetEnabled(w.commit.IsEnabled())
 	v.push.SetEnabled(w.pushButton.IsEnabled())
 	v.force.SetEnabled(idle)
@@ -554,8 +545,8 @@ func (w *Window) openRepository(dir string) error {
 	w.repo = r
 	// It is remembered, to be opened again from the bar and on starting, and
 	// saved at once.
-	added := w.config.Remember(r.Root)
-	if added || w.config.LastRepository != r.Root {
+	changed := w.config.Remember(r.Root)
+	if changed || w.config.LastRepository != r.Root {
 		w.config.LastRepository = r.Root
 		w.saveSettings()
 	}
@@ -752,6 +743,14 @@ func (w *Window) applySettings(s settings.Settings) {
 	}
 	// It is how many are read from the next read on.
 	w.history.pageSize = s.HistoryPageSize
+	// A lower limit drops those opened longest ago at once.
+	if w.config.LimitRepositories() {
+		current := ""
+		if w.repo != nil {
+			current = w.repo.Root
+		}
+		w.bar.setRepositories(w.config.Repositories, current)
+	}
 	w.applyColours()
 	w.applyCodeFont()
 	w.saveSettings()

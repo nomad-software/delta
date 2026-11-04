@@ -159,19 +159,13 @@ func without(items []string, name string) []string {
 	return slices.DeleteFunc(slices.Clone(items), func(item string) bool { return item == name })
 }
 
-// newBranch asks for a new branch and makes it.
+// newBranch asks for a new branch and makes it, with its name made fit for one.
 func (w *Window) newBranch() {
 	local, remote, ok := w.branches()
 	if !ok {
 		return
 	}
-	r := w.repo
-	d := newFormDialog(w.QWidget, "New Branch")
-	name := d.addText("Name", "", r.ValidBranchName)
-	start := d.addChoice("Start at", append(append([]string{"HEAD"}, local...), remote...))
-	checkout := qt.NewQCheckBox3("Check out the new branch")
-	checkout.SetChecked(true)
-	d.form.AddRowWithWidget(checkout.QWidget)
+	d, name, start, checkout := w.newBranchDialog(local, remote)
 	if !d.run() {
 		return
 	}
@@ -179,7 +173,24 @@ func (w *Window) newBranch() {
 	if from == "HEAD" {
 		from = ""
 	}
-	w.createBranch(strings.TrimSpace(name.Text()), from, checkout.IsChecked())
+	w.createBranch(git.SanitiseBranchName(name.Text()), from, checkout.IsChecked())
+}
+
+// newBranchDialog returns the dialog asking for a new branch, with its fields:
+// the name, where it starts, and whether to check it out. OK is enabled while
+// the name, made fit for a branch as it will be on OK, can be one.
+func (w *Window) newBranchDialog(local, remote []string) (d *formDialog, name *qt.QLineEdit, start *qt.QComboBox, checkout *qt.QCheckBox) {
+	r := w.repo
+	d = newFormDialog(w.QWidget, "New Branch")
+	name = d.addText("Name", "", func(text string) bool {
+		sanitised := git.SanitiseBranchName(text)
+		return sanitised != "" && r.ValidBranchName(sanitised)
+	})
+	start = d.addChoice("Start at", append(append([]string{"HEAD"}, local...), remote...))
+	checkout = qt.NewQCheckBox3("Check out the new branch")
+	checkout.SetChecked(true)
+	d.form.AddRowWithWidget(checkout.QWidget)
+	return d, name, start, checkout
 }
 
 // createBranch makes a branch at the start point, or HEAD if it is empty.

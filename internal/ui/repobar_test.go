@@ -212,8 +212,11 @@ func TestRepoComboWidth(t *testing.T) {
 	if got := width(2000); got != repoComboMost {
 		t.Errorf("a long name %d wide in a wide window", got)
 	}
-	if got := width(settings.Defaults().Width); got <= repoComboLeast || got >= repoComboMost {
+	if got := width(settings.Defaults().Width); got != repoComboMost {
 		t.Errorf("a long name %d wide in a window of the default width", got)
+	}
+	if got := width(1200); got <= repoComboLeast || got >= repoComboMost {
+		t.Errorf("a long name %d wide in a narrower window", got)
 	}
 	if got := width(1100); got != 0 {
 		t.Errorf("%d wide in a narrow window, which has no room", got)
@@ -300,4 +303,37 @@ func TestFirstUnstagedChosen(t *testing.T) {
 			t.Error("a staged file was chosen")
 		}
 	})
+}
+
+// The limit of repositories remembered is a setting: chosen in the dialog, and
+// a lower one drops those opened longest ago at once, from the bar and the file.
+func TestRepositoryLimitSetting(t *testing.T) {
+	one, two, three := namedRepo(t, "one"), namedRepo(t, "two"), namedRepo(t, "three")
+	w := newTestWindow(t, one)
+	waitFor(t, "the status", func() bool { return w.idleWith(0, 0) })
+	on(func() {
+		for _, dir := range []string{two, three} {
+			if err := w.openRepository(dir); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var got settings.Settings
+		d := newSettingsDialog(nil, w.config, func(s settings.Settings) { got = s })
+		defer d.Delete()
+		if d.repositoryLimit.Value() != settings.DefaultRepositoryLimit {
+			t.Errorf("shows %d", d.repositoryLimit.Value())
+		}
+		d.repositoryLimit.SetValue(2)
+		d.box.Button(qt.QDialogButtonBox__Ok).Click()
+		if got.RepositoryLimit != 2 {
+			t.Fatalf("chose %d", got.RepositoryLimit)
+		}
+		w.applySettings(got)
+		if names := w.repoNames(); !slices.Equal(names, []string{"three", "two"}) || w.bar.repos.CurrentText() != "three" {
+			t.Errorf("listed %q, chosen %q", names, w.bar.repos.CurrentText())
+		}
+	})
+	if got := settings.Load(w.path); got.RepositoryLimit != 2 || !slices.Equal(got.Repositories, []string{two, three}) {
+		t.Errorf("saved %d, %q", got.RepositoryLimit, got.Repositories)
+	}
 }
