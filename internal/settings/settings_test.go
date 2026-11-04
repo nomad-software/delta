@@ -173,3 +173,12 @@ func TestRepositoryLimit(t *testing.T) {
 		}
 	}
 }
+
+// Hunk headers are cyan and untracked files green by default, as the user has
+// them.
+func TestChosenDefaultColours(t *testing.T) {
+	d := Defaults()
+	if d.HunkColour != Cyan || d.ChangeColours.Untracked != Green {
+		t.Errorf("hunk %s, untracked %s", d.HunkColour, d.ChangeColours.Untracked)
+	}
+}

@@ -104,12 +104,11 @@ chosen. Choosing another checks it out.
   | Circle | Change |
   | ------ | ------ |
   | Blue   | Modified |
-  | Green  | Added |
+  | Green  | Added or untracked |
   | Red    | Deleted |
   | Violet | Renamed |
   | Cyan   | Copied |
   | Yellow | Type changed |
-  | Grey   | Untracked |
   | Orange | In conflict |
 
 * Choose a file to see its **diff**, with added lines in green and removed lines
@@ -252,7 +251,7 @@ The **User interface** tab sets:
 Its table of colours sets every colour Delta gives itself, each starting as one
 of Solarized's:
 
-- The diff's added lines, removed lines and hunk headers (the grey
+- The diff's added lines, removed lines and hunk headers (the cyan
   `@@ -1,6 +1,7 @@`).
 - The circle beside a changed file, for each thing that can happen to it.
 - The progress bar under the toolbar.

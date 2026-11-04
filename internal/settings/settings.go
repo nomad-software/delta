@@ -20,16 +20,17 @@ const (
 )
 
 // Default colours of a diff: lines added and removed, and the @@ range of a hunk's
-// heading. They are Solarized's green, red and base0 grey, as the circles of
-// changed files are.
+// heading. They are Solarized's green, red and cyan, as the circles of changed
+// files are.
 const (
 	DefaultAdded   = Green
 	DefaultRemoved = Red
-	DefaultHunk    = Base0
+	DefaultHunk    = Cyan
 )
 
 // DefaultChangeColours are the default colours of the circles of changed files:
-// Solarized's accents, and its base0 grey for what git does not track.
+// Solarized's accents, untracked files green as added ones are (the user's
+// choice).
 var DefaultChangeColours = ChangeColours{
 	Modified:    Blue,
 	Added:       Green,
@@ -38,7 +39,7 @@ var DefaultChangeColours = ChangeColours{
 	Copied:      Cyan,
 	TypeChanged: Yellow,
 	Conflict:    Orange,
-	Untracked:   Base0,
+	Untracked:   Green,
 }
 
 // DefaultProgressColour is the default colour of the progress bar's segment,
