@@ -11,6 +11,7 @@ import (
 	"github.com/mappu/miqt/qt6/mainthread"
 
 	"github.com/nomad-software/delta/internal/git"
+	"github.com/nomad-software/delta/internal/instance"
 	"github.com/nomad-software/delta/internal/settings"
 )
 
@@ -166,6 +167,40 @@ func (w *Window) Start(argument string) {
 		return
 	}
 	w.say("Open a repository from the File menu.")
+}
+
+// Activate brings the window to the front, as it is when the program is started
+// again while it runs, and opens the repository the folder handed over is in,
+// unless it is the one open. A folder named on the command line that is in no
+// repository is told of; the folder the program was started in is ignored if it
+// is in none, as on starting. The request's token is the desktop's leave to take
+// the focus under Wayland, which is refused without it; Qt reads it from the
+// environment when it asks for the focus, and then takes it out.
+func (w *Window) Activate(r instance.Request) {
+	if r.Token != "" {
+		os.Setenv("XDG_ACTIVATION_TOKEN", r.Token)
+	}
+	w.SetWindowState(w.WindowState() &^ qt.WindowMinimized)
+	w.Show()
+	w.Raise()
+	w.ActivateWindow()
+	if r.Folder == "" {
+		return
+	}
+	repo, err := git.Open(r.Folder)
+	switch {
+	case err != nil:
+		if r.Named {
+			w.failed("Open Repository", err.Error())
+		}
+	case w.repo != nil && repo.Root == w.repo.Root:
+	case w.busy:
+		w.say(repo.Root + " was not opened, as a command is running.")
+	default:
+		if err := w.openRepository(repo.Root); err != nil {
+			w.failed("Open Repository", err.Error())
+		}
+	}
 }
 
 // makeStatusBar makes the status bar, with its text at the left and a handle in

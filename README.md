@@ -15,6 +15,9 @@ bindings, and runs on Linux and macOS.
 delta [folder]
 ```
 
+Only one copy of Delta runs at a time. Starting it again brings back the
+window there is, opening the repository the new copy would have opened.
+
 It opens the repository holding the folder given. Without one, it opens the
 repository the current folder is in, or else the one you last opened, or else
 none, until you open one from **File > Open Repository…** or **Repository** in
