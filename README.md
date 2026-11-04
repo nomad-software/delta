@@ -1,7 +1,6 @@
 # <img src="internal/appicon/appicon.png" alt="" width="40" height="40"> Delta
 
-A graphical user interface for git, in the spirit of `git gui` and `gitk`.
-Stage and commit your changes, and browse the history as a graph. It is
+A graphical user interface for git. Stage and commit your changes, and browse the history as a graph. It is
 written in Go with Qt 6, through the [miqt](https://github.com/mappu/miqt)
 bindings, and runs on Linux and macOS.
 
@@ -96,7 +95,7 @@ delete, as it can't be undone.
 
 ## The history
 
-As in `gitk`, the commits of the current branch are listed at the top, newest
+The commits of the current branch are listed at the top, newest
 first, with a graph at the left drawing how they branch and merge, and any
 branches and tags at them in brackets. They are read 500 at a time (a setting),
 and more as you scroll to the end. If anything is not committed yet, an
@@ -145,6 +144,7 @@ the branch back as it was.
 | File   | Open Repository, Settings, Quit | `Ctrl+O`, `Ctrl+,`, `Ctrl+Q` |
 | Branch | New Branch, Checkout, Rename, Delete, Show History, Merge, Abort Merge, Continue Rebase, Skip Commit, Abort Rebase, Discard All Changes | New Branch `Ctrl+N`, Checkout `Ctrl+B`, Show History `Ctrl+H`, Merge `Ctrl+M`, Discard All Changes `Ctrl+Shift+D` |
 | Commit | Rescan, Stage Changes, Stage Selected, Unstage Selected, Unstage All, Commit | `F5`, `Ctrl+Shift+S`, `Ctrl+S`, `Ctrl+U`, `Ctrl+Shift+U`, `Ctrl+Return` |
+| Stash  | Stash Changes, Apply Stash, Pop Stash, Drop Stash | Stash Changes `Ctrl+Shift+Z` |
 | Remote | Fetch, Pull, Push, Force Push, Add Remote, Rename Remote, Change URL, Remove Remote | Fetch `Ctrl+Shift+F`, Pull `Ctrl+Shift+L`, Push `Ctrl+P`, Force Push `Ctrl+Shift+P` |
 | Help   | About | `Ctrl+I` |
 
@@ -158,6 +158,21 @@ out makes a local branch that tracks it.
 
 Deleting a branch asks first, and asks again if it has commits that have not been
 merged.
+
+## Stashes
+
+**Stash > Stash Changes…** puts everything uncommitted aside, staged or not,
+with a message if you like, and untracked files too if you tick **Include
+untracked files**. **Apply Stash…** and **Pop Stash…** put a stash's changes back,
+with what was staged staged again; Pop then drops the stash. **Drop Stash…**
+deletes one, after asking. None of them can be used during a merge or rebase.
+
+If a stash clashes with what was committed since, what doesn't clash is applied,
+the files that do are left in conflict, shown in orange, and the stash is kept,
+even by Pop: resolve them and stage them, then drop it. If what was staged can't
+be put back as it was, Delta asks whether to apply it with everything unstaged.
+If changes or untracked files are in the way, nothing is applied and git's
+message says which.
 
 ## Settings
 

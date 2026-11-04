@@ -27,8 +27,8 @@ vet:
 
 # Draws the window into docs/.
 screenshots:
-	DELTA_THEME=dark DELTA_VIEW=changes DELTA_SCREENSHOT=$(CURDIR)/docs/changes.png go test -count=1 -run '^TestScreenshot$$' ./internal/ui/
-	DELTA_THEME=dark DELTA_VIEW=history DELTA_SCREENSHOT=$(CURDIR)/docs/history.png go test -count=1 -run '^TestScreenshot$$' ./internal/ui/
+	DELTA_THEME=light DELTA_VIEW=changes DELTA_SCREENSHOT=$(CURDIR)/docs/changes.png go test -count=1 -run '^TestScreenshot$$' ./internal/ui/
+	DELTA_THEME=light DELTA_VIEW=history DELTA_SCREENSHOT=$(CURDIR)/docs/history.png go test -count=1 -run '^TestScreenshot$$' ./internal/ui/
 
 # Draws the macOS app's icon, packaging/macos/delta.png, from the program's own,
 # within Apple's margin. A test says when the icon has changed since it was run.

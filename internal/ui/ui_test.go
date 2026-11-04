@@ -225,7 +225,7 @@ func TestLayout(t *testing.T) {
 		for _, a := range w.MenuBar().Actions() {
 			menus = append(menus, strings.ReplaceAll(a.Text(), "&", ""))
 		}
-		if want := []string{"File", "Branch", "Commit", "Remote", "Help"}; !slices.Equal(menus, want) {
+		if want := []string{"File", "Branch", "Commit", "Stash", "Remote", "Help"}; !slices.Equal(menus, want) {
 			t.Errorf("menus %v", menus)
 		}
 		// Staging is on S, as unstaging is on U.

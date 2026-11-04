@@ -83,7 +83,16 @@ func Open(dir string) (*Repo, error) {
 // ssh, which would otherwise ask on the terminal the program was started from
 // and hang.
 func (r *Repo) command(args ...string) *exec.Cmd {
-	cmd := exec.Command("git", append([]string{"--literal-pathspecs", "-c", "core.quotePath=false"}, args...)...)
+	return r.commandPaths(true, args...)
+}
+
+// commandPaths is command, with paths taken literally only if literal says so.
+func (r *Repo) commandPaths(literal bool, args ...string) *exec.Cmd {
+	options := []string{"-c", "core.quotePath=false"}
+	if literal {
+		options = append([]string{"--literal-pathspecs"}, options...)
+	}
+	cmd := exec.Command("git", append(options, args...)...)
 	cmd.Dir = r.Root
 	cmd.Env = append(os.Environ(),
 		"GIT_TERMINAL_PROMPT=0",
@@ -695,6 +704,85 @@ func (r *Repo) RemoveRemote(name string) (string, error) {
 // SetRemoteURL changes the URL of a remote.
 func (r *Repo) SetRemoteURL(name, url string) (string, error) {
 	return r.run("remote", "set-url", "--", name, url)
+}
+
+// Stash is a stash: its ref, as stash@{0}, and what git says of it, as "On
+// main: its message".
+type Stash struct {
+	Ref, Subject string
+}
+
+// ErrStashConflicts is in the error of a stash applied with conflicts: what
+// did not clash is applied, the files that did are left unmerged with markers,
+// and the stash is kept, even by a pop.
+var ErrStashConflicts = errors.New("the stash was applied with conflicts")
+
+// ErrStashIndex is in the error of a stash whose staged changes could not be
+// put back as they were: nothing was changed, and it could be applied with
+// everything unstaged instead.
+var ErrStashIndex = errors.New("the stash's staged changes could not be put back")
+
+// runStash runs a stash command. It names no paths, so they are not taken
+// literally: with --literal-pathspecs, git stash push --include-untracked saves
+// the untracked files but leaves them, as it cleans them with a pathspec of its
+// own (":/") that would then be taken as a file's name.
+func (r *Repo) runStash(args ...string) (string, error) {
+	return r.runCommand(r.commandPaths(false, append([]string{"stash"}, args...)...), "")
+}
+
+// StashChanges stashes everything uncommitted, staged or not, and untracked
+// files too if asked, with the message, or git's own if it is empty.
+func (r *Repo) StashChanges(message string, untracked bool) (string, error) {
+	args := []string{"push"}
+	if untracked {
+		args = append(args, "--include-untracked")
+	}
+	if message != "" {
+		args = append(args, "--message", message)
+	}
+	return r.runStash(args...)
+}
+
+// Stashes returns the stashes, newest first.
+func (r *Repo) Stashes() ([]Stash, error) {
+	out, err := r.runStash("list", "-z", "--format=%gd%x1f%gs")
+	if err != nil {
+		return nil, err
+	}
+	var stashes []Stash
+	for entry := range strings.SplitSeq(out, "\x00") {
+		if ref, subject, ok := strings.Cut(entry, "\x1f"); ok {
+			stashes = append(stashes, Stash{Ref: ref, Subject: subject})
+		}
+	}
+	return stashes, nil
+}
+
+// ApplyStash puts the stash's changes back, dropping it once they are if pop
+// says so, and with what was staged staged again if index does. A failure
+// holds ErrStashConflicts or ErrStashIndex where it is one of those.
+func (r *Repo) ApplyStash(ref string, pop, index bool) (string, error) {
+	args := []string{"apply"}
+	if pop {
+		args[0] = "pop"
+	}
+	if index {
+		args = append(args, "--index")
+	}
+	out, err := r.runStash(append(args, ref)...)
+	switch {
+	case err == nil:
+	case strings.Contains(err.Error(), "CONFLICT ("):
+		err = fmt.Errorf("%w: %w", ErrStashConflicts, err)
+	case strings.Contains(strings.ToLower(err.Error()), "conflicts in index"):
+		err = fmt.Errorf("%w: %w", ErrStashIndex, err)
+	}
+	return out, err
+}
+
+// DropStash deletes the stash.
+func (r *Repo) DropStash(ref string) (string, error) {
+	return r.runStash("drop", ref)
 }
 
 // Fetch fetches from every remote.

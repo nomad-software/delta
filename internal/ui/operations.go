@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -556,4 +557,111 @@ func (w *Window) doAbortRebase() {
 		return
 	}
 	w.run("Abort Rebase", r.AbortRebase, nil)
+}
+
+// stashConflictText is what the status bar says of a stash applied with conflicts.
+const stashConflictText = "Stash applied with conflicts: resolve the files in orange and stage them. The stash was kept."
+
+// askStashChanges asks for a message for the stash, and whether untracked files
+// go in it too, then stashes.
+func (w *Window) askStashChanges() {
+	d, message, untracked := w.newStashDialog()
+	if d.run() {
+		w.stashChanges(strings.TrimSpace(message.Text()), untracked.IsChecked())
+	}
+}
+
+// newStashDialog returns the dialog asking for a stash's message, which may be
+// left empty for git's own, and whether to include untracked files, unticked to
+// start with.
+func (w *Window) newStashDialog() (d *formDialog, message *qt.QLineEdit, untracked *qt.QCheckBox) {
+	d = newFormDialog(w.QWidget, "Stash Changes")
+	message = d.addText("Message", "", func(string) bool { return true })
+	message.SetPlaceholderText("Optional")
+	untracked = qt.NewQCheckBox3("Include untracked files")
+	d.form.AddRowWithWidget(untracked.QWidget)
+	return d, message, untracked
+}
+
+// stashChanges stashes everything uncommitted, with the message.
+func (w *Window) stashChanges(message string, untracked bool) {
+	r := w.repo
+	w.run("Stash Changes", func() (string, error) { return r.StashChanges(message, untracked) }, nil)
+}
+
+// askStash asks for one of the stashes, newest first, and returns its ref.
+func (w *Window) askStash(title string) (string, bool) {
+	stashes, err := w.repo.Stashes()
+	if err != nil {
+		w.failed(title, err.Error())
+		return "", false
+	}
+	if len(stashes) == 0 {
+		w.failed(title, "There are no stashes.")
+		return "", false
+	}
+	var items []string
+	for _, s := range stashes {
+		items = append(items, s.Ref+": "+s.Subject)
+	}
+	chosen, ok := askChoice(w.QWidget, title, "Stash", items)
+	ref, _, _ := strings.Cut(chosen, ": ")
+	return ref, ok
+}
+
+// askApplyStash asks for a stash and applies it, dropping it once it is if pop
+// says so.
+func (w *Window) askApplyStash(pop bool) {
+	title := "Apply Stash"
+	if pop {
+		title = "Pop Stash"
+	}
+	if ref, ok := w.askStash(title); ok {
+		w.applyStash(ref, pop, true)
+	}
+}
+
+// applyStash puts a stash's changes back, with what was staged staged again if
+// index says so. With conflicts, what did not clash is applied and the stash is
+// kept, which the status bar says; if what was staged can't be put back as it
+// was, it asks whether to apply it with everything unstaged.
+func (w *Window) applyStash(ref string, pop, index bool) {
+	name := "Apply Stash"
+	if pop {
+		name = "Pop Stash"
+	}
+	r := w.repo
+	w.background(name, func() (string, error) { return r.ApplyStash(ref, pop, index) }, func(out string, err error) {
+		switch {
+		case err == nil:
+			w.say(strings.TrimSpace(name + " done. " + lastLine(out)))
+		case errors.Is(err, git.ErrStashConflicts):
+			w.say(stashConflictText)
+		case errors.Is(err, git.ErrStashIndex):
+			w.say(name + " stopped")
+			if w.confirm(name, "The stash's staged changes can't be put back as they were. Apply it with everything unstaged?") {
+				w.applyStash(ref, pop, false)
+			}
+		default:
+			w.say(name + " failed")
+			w.failed(name+" Failed", err.Error())
+		}
+	})
+}
+
+// askDropStash asks for a stash and deletes it, after asking, as it can't be
+// undone.
+func (w *Window) askDropStash() {
+	if ref, ok := w.askStash("Drop Stash"); ok {
+		w.dropStash(ref)
+	}
+}
+
+// dropStash deletes a stash, if the question before it is answered yes.
+func (w *Window) dropStash(ref string) {
+	if !w.confirm("Drop Stash", "Drop "+ref+"? It can't be undone.") {
+		return
+	}
+	r := w.repo
+	w.run("Drop Stash", func() (string, error) { return r.DropStash(ref) }, nil)
 }
