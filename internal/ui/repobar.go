@@ -21,13 +21,13 @@ const (
 // repoBar is at the toolbar's right, centred on its height: a dropdown of the
 // repositories opened before, by the names of their folders, and one of the
 // local branches of the one open. Choosing in them opens the repository, or
-// checks out the branch. It takes up the toolbar's room beyond
-// its buttons, and is pushed to the right by a stretch of its own, so that it
-// can be narrowed rather than put in the toolbar's menu.
+// checks out the branch. It takes up the toolbar's room beyond its buttons, and
+// is pushed to the right by a stretch of its own, so that it can be narrowed
+// rather than put in the toolbar's menu.
 type repoBar struct {
-	widget             *qt.QWidget
-	repos, branches    *qt.QComboBox
-	reposLabel, branch *qt.QLabel
+	widget                    *qt.QWidget
+	repos, branches           *qt.QComboBox
+	reposLabel, branchesLabel *qt.QLabel
 	// paths are the folders of the repositories, in the order listed.
 	paths []string
 }
@@ -39,17 +39,16 @@ func newRepoBar() *repoBar {
 	b.branches = newBarCombo("No branch")
 	b.reposLabel = qt.NewQLabel3("Repository")
 	b.reposLabel.SetBuddy(b.repos.QWidget)
-	b.branch = qt.NewQLabel3("Branch")
-	b.branch.SetBuddy(b.branches.QWidget)
+	b.branchesLabel = qt.NewQLabel3("Branch")
+	b.branchesLabel.SetBuddy(b.branches.QWidget)
 	layout := qt.NewQHBoxLayout(b.widget)
 	layout.SetContentsMargins(0, 0, 0, 0)
 	layout.AddStretch()
-	for i, w := range []*qt.QWidget{b.reposLabel.QWidget, b.repos.QWidget, b.branch.QWidget, b.branches.QWidget} {
-		if i == 2 {
-			layout.AddSpacing(repoBarGap)
-		}
-		layout.AddWidget3(w, 0, qt.AlignVCenter)
-	}
+	layout.AddWidget3(b.reposLabel.QWidget, 0, qt.AlignVCenter)
+	layout.AddWidget3(b.repos.QWidget, 0, qt.AlignVCenter)
+	layout.AddSpacing(repoBarGap)
+	layout.AddWidget3(b.branchesLabel.QWidget, 0, qt.AlignVCenter)
+	layout.AddWidget3(b.branches.QWidget, 0, qt.AlignVCenter)
 	return b
 }
 

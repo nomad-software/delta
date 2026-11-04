@@ -4,21 +4,12 @@ import (
 	"testing"
 	"time"
 
-	qt "github.com/mappu/miqt/qt6"
 	"github.com/nomad-software/delta/internal/settings"
 )
 
 // progressShown says whether the progress bar is on show.
 func (w *Window) progressShown() bool {
 	return w.progress.IsVisible()
-}
-
-// inWindow returns where the point of the widget is in the window.
-func (w *Window) inWindow(widget *qt.QWidget, x, y int) (int, int) {
-	point := qt.NewQPoint2(x, y)
-	defer point.Delete()
-	at := widget.MapTo2(w.QWidget, point)
-	return at.X(), at.Y()
 }
 
 // TestProgress checks that the progress bar, under the toolbar and the width
@@ -35,14 +26,14 @@ func TestProgress(t *testing.T) {
 			t.Error("shown to start with")
 		}
 		bar := w.progress.QWidget
-		x, y := w.inWindow(bar, 0, 0)
+		x, y := mapPoint(bar, w.QWidget, 0, 0)
 		if x != 0 || bar.Width() != w.Width() || w.progress.Minimum() != 0 || w.progress.Maximum() != 0 || w.progress.IsTextVisible() {
 			t.Errorf("at %d, %d wide in %d, range %d to %d", x, bar.Width(), w.Width(), w.progress.Minimum(), w.progress.Maximum())
 		}
-		if _, below := w.inWindow(w.toolbar.QWidget, 0, w.toolbar.Height()); y != below {
+		if _, below := mapPoint(w.toolbar.QWidget, w.QWidget, 0, w.toolbar.Height()); y != below {
 			t.Errorf("at %d, under a toolbar ending at %d", y, below)
 		}
-		_, top = w.inWindow(w.views.QWidget, 0, 0)
+		_, top = mapPoint(w.views.QWidget, w.QWidget, 0, 0)
 		// Work done in a moment never shows it.
 		w.beginWork()
 		w.endWork()
@@ -69,7 +60,7 @@ func TestProgress(t *testing.T) {
 			t.Error("the progress bar is not moving")
 		}
 		was, _ = w.progress.chunk()
-		if _, moved := w.inWindow(w.views.QWidget, 0, 0); moved != top {
+		if _, moved := mapPoint(w.views.QWidget, w.QWidget, 0, 0); moved != top {
 			t.Errorf("the panes moved from %d to %d", top, moved)
 		}
 		// Two at once: it stays until both are done.
@@ -122,7 +113,7 @@ func TestWorkPairs(t *testing.T) {
 // beyond the bar.
 func TestProgressChunk(t *testing.T) {
 	on(func() {
-		p := newProgress(settings.DefaultProgressColour)
+		p := newProgress()
 		defer p.Delete()
 		p.Resize(400, progressHeight)
 		for phase, want := range map[float64][2]int{
@@ -136,6 +127,26 @@ func TestProgressChunk(t *testing.T) {
 			if left, right := p.chunk(); left != want[0] || right != want[1] {
 				t.Errorf("at %v, %d to %d, not %v", phase, left, right, want)
 			}
+		}
+	})
+}
+
+// The progress bar's segment is in its colour in any theme.
+func TestProgressColour(t *testing.T) {
+	on(func() {
+		defer applyTheme("")
+		for _, theme := range []string{settings.ThemeLight, settings.ThemeDark} {
+			applyTheme(theme)
+			p := newProgress()
+			p.colour = settings.Magenta
+			p.Resize(400, progressHeight)
+			p.phase = 0.5
+			image := p.Grab().ToImage()
+			left, right := p.chunk()
+			if got := image.PixelColor((left+right)/2, progressHeight/2).Name(); got != settings.Magenta {
+				t.Errorf("%s: the segment is %s", theme, got)
+			}
+			p.Delete()
 		}
 	})
 }

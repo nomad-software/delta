@@ -28,20 +28,18 @@ const (
 	DefaultHunk    = Base0
 )
 
-// The default colours of the circles of changed files and the progress bar:
+// DefaultChangeColours are the default colours of the circles of changed files:
 // Solarized's accents, and its base0 grey for what git does not track.
-var (
-	DefaultChangeColours = ChangeColours{
-		Modified:    Blue,
-		Added:       Green,
-		Deleted:     Red,
-		Renamed:     Violet,
-		Copied:      Cyan,
-		TypeChanged: Yellow,
-		Conflict:    Orange,
-		Untracked:   Base0,
-	}
-)
+var DefaultChangeColours = ChangeColours{
+	Modified:    Blue,
+	Added:       Green,
+	Deleted:     Red,
+	Renamed:     Violet,
+	Copied:      Cyan,
+	TypeChanged: Yellow,
+	Conflict:    Orange,
+	Untracked:   Base0,
+}
 
 // DefaultProgressColour is the default colour of the progress bar's segment,
 // Solarized's blue.
@@ -58,6 +56,12 @@ type ChangeColours struct {
 	TypeChanged string `json:"typeChanged"`
 	Conflict    string `json:"conflict"`
 	Untracked   string `json:"untracked"`
+}
+
+// Fields returns where each colour is kept, in the order of the fields: Modified,
+// Added, Deleted, Renamed, Copied, TypeChanged, Conflict, Untracked.
+func (c *ChangeColours) Fields() []*string {
+	return []*string{&c.Modified, &c.Added, &c.Deleted, &c.Renamed, &c.Copied, &c.TypeChanged, &c.Conflict, &c.Untracked}
 }
 
 const leastWindowSize = 200
@@ -211,15 +215,10 @@ func (s *Settings) normalise() {
 	s.AddedColour = colourOr(s.AddedColour, d.AddedColour)
 	s.RemovedColour = colourOr(s.RemovedColour, d.RemovedColour)
 	s.HunkColour = colourOr(s.HunkColour, d.HunkColour)
-	c, dc := &s.ChangeColours, d.ChangeColours
-	c.Modified = colourOr(c.Modified, dc.Modified)
-	c.Added = colourOr(c.Added, dc.Added)
-	c.Deleted = colourOr(c.Deleted, dc.Deleted)
-	c.Renamed = colourOr(c.Renamed, dc.Renamed)
-	c.Copied = colourOr(c.Copied, dc.Copied)
-	c.TypeChanged = colourOr(c.TypeChanged, dc.TypeChanged)
-	c.Conflict = colourOr(c.Conflict, dc.Conflict)
-	c.Untracked = colourOr(c.Untracked, dc.Untracked)
+	fallbacks := d.ChangeColours.Fields()
+	for i, colour := range s.ChangeColours.Fields() {
+		*colour = colourOr(*colour, *fallbacks[i])
+	}
 	s.ProgressColour = colourOr(s.ProgressColour, d.ProgressColour)
 	if filepath.IsAbs(s.LastRepository) {
 		s.LastRepository = filepath.Clean(s.LastRepository)

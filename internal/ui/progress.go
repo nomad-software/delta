@@ -4,6 +4,8 @@ import (
 	"runtime"
 
 	qt "github.com/mappu/miqt/qt6"
+
+	"github.com/nomad-software/delta/internal/settings"
 )
 
 // The progress bar shows only once work has gone on for progressDelay
@@ -21,10 +23,10 @@ const (
 
 // progress is the sign that something is being done in the background: a bar
 // the width of the window under the toolbar, busy rather than counting, as how
-// long git will take is not known. It is painted here, a segment in its
-// colour sweeping across a faint track, as a style's own busy bar may
-// be a still block of colour. It keeps its room while hidden, so that the panes
-// under it don't move as it shows and goes.
+// long git will take is not known. It is painted here, a segment in its colour
+// sweeping across a faint track, as a style's own busy bar may be a still block
+// of colour. It keeps its room while hidden, so that the panes under it don't
+// move as it shows and goes.
 type progress struct {
 	*qt.QProgressBar
 	// delay waits for progressDelay before showing it, and frames moves it.
@@ -35,9 +37,10 @@ type progress struct {
 	colour string
 }
 
-// newProgress returns the bar, its segment in the colour.
-func newProgress(colour string) *progress {
-	p := &progress{QProgressBar: qt.NewQProgressBar2(), colour: colour}
+// newProgress returns the bar, its segment in the default colour until another
+// is given.
+func newProgress() *progress {
+	p := &progress{QProgressBar: qt.NewQProgressBar2(), colour: settings.DefaultProgressColour}
 	p.SetRange(0, 0)
 	p.SetTextVisible(false)
 	p.SetFixedHeight(progressHeight)

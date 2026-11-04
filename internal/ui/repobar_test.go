@@ -148,14 +148,6 @@ func TestUnbornBranchListed(t *testing.T) {
 	waitFor(t, "the branch", func() bool { return w.idleWith(0, 0) && w.bar.branches.CurrentText() == "start" })
 }
 
-// inToolbar returns where the point of the widget is in the toolbar.
-func (w *testWindow) inToolbar(widget *qt.QWidget, x, y int) (int, int) {
-	point := qt.NewQPoint2(x, y)
-	defer point.Delete()
-	at := widget.MapTo2(w.toolbar.QWidget, point)
-	return at.X(), at.Y()
-}
-
 // The dropdowns are the last of the toolbar, at the right, and centred on its
 // height. Both are on show in a window of the default size, rather than in the
 // toolbar's menu of what does not fit.
@@ -173,7 +165,7 @@ func TestRepoBarInToolbar(t *testing.T) {
 				t.Errorf("%q is not on show", c.CurrentText())
 				continue
 			}
-			x, y := w.inToolbar(c.QWidget, 0, c.Height()/2)
+			x, y := mapPoint(c.QWidget, w.toolbar.QWidget, 0, c.Height()/2)
 			if middle := w.toolbar.Height() / 2; y < middle-2 || y > middle+2 {
 				t.Errorf("%q is centred at %d of %d", c.CurrentText(), y, w.toolbar.Height())
 			}
@@ -184,7 +176,7 @@ func TestRepoBarInToolbar(t *testing.T) {
 				t.Errorf("%q is %d wide", c.CurrentText(), c.Width())
 			}
 		}
-		if right, _ := w.inToolbar(w.bar.widget, w.bar.widget.Width(), 0); w.toolbar.Width()-right > 16 {
+		if right, _ := mapPoint(w.bar.widget, w.toolbar.QWidget, w.bar.widget.Width(), 0); w.toolbar.Width()-right > 16 {
 			t.Errorf("the dropdowns end %d short of the right", w.toolbar.Width()-right)
 		}
 	})

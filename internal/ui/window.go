@@ -108,8 +108,7 @@ func NewWindow(path string) *Window {
 	w.bar = newRepoBar()
 	w.bar.setRepositories(w.config.Repositories, "")
 	// The progress bar is under the toolbar, the width of the window.
-	w.progress = newProgress(w.config.ProgressColour)
-	changeColours = changeCodes(w.config.ChangeColours)
+	w.progress = newProgress()
 	central := qt.NewQWidget2()
 	layout := qt.NewQVBoxLayout(central)
 	layout.SetContentsMargins(0, 0, 0, 0)
@@ -121,6 +120,7 @@ func NewWindow(path string) *Window {
 
 	w.makeMenus()
 	w.makeToolBar()
+	w.applyColours()
 	w.applyCodeFont()
 	w.connect()
 	w.connectHistory()
@@ -159,15 +159,12 @@ func (w *Window) Start(argument string) {
 	if cwd, err := os.Getwd(); err == nil && w.openRepository(cwd) == nil {
 		return
 	}
-	if last := w.config.LastRepository; last != "" {
-		err := w.openRepository(last)
-		if err == nil {
-			return
-		}
+	last := w.config.LastRepository
+	if last == "" {
+		w.say("Open a repository from the File menu.")
+	} else if err := w.openRepository(last); err != nil {
 		w.say(fmt.Sprintf("%s could not be opened again: %s", last, firstLine(err.Error())))
-		return
 	}
-	w.say("Open a repository from the File menu.")
 }
 
 // Activate brings the window to the front, as it is when the program is started
@@ -614,11 +611,12 @@ func (w *Window) chooseListedRepository(index int) {
 // current one. Whatever happens, the rescan after it chooses the current one
 // again.
 func (w *Window) chooseBranch(index int) {
-	name := w.bar.branches.ItemText(index)
-	if index < 0 || name == w.status.Branch || w.busy || w.repo == nil {
+	if index < 0 || w.busy || w.repo == nil {
 		return
 	}
-	w.checkout(name, false)
+	if name := w.bar.branches.ItemText(index); name != w.status.Branch {
+		w.checkout(name, false)
+	}
 }
 
 // rescanRepository reads the status of the repository again, in the background.
@@ -754,18 +752,19 @@ func (w *Window) applySettings(s settings.Settings) {
 	}
 	// It is how many are read from the next read on.
 	w.history.pageSize = s.HistoryPageSize
-	w.changes.diff.setColours(s.AddedColour, s.RemovedColour, s.HunkColour)
-	w.history.diff.setColours(s.AddedColour, s.RemovedColour, s.HunkColour)
 	w.applyColours()
 	w.applyCodeFont()
 	w.saveSettings()
 }
 
-// applyColours gives the circles of changed files and the progress bar the
-// colours chosen, and paints again what shows them.
+// applyColours gives the diffs, the circles of changed files and the progress
+// bar the colours chosen, and paints again what shows them.
 func (w *Window) applyColours() {
-	changeColours = changeCodes(w.config.ChangeColours)
-	w.progress.colour = w.config.ProgressColour
+	c := w.config
+	w.changes.diff.setColours(c.AddedColour, c.RemovedColour, c.HunkColour)
+	w.history.diff.setColours(c.AddedColour, c.RemovedColour, c.HunkColour)
+	changeColours = changeCodes(c.ChangeColours)
+	w.progress.colour = c.ProgressColour
 	for _, view := range []*qt.QAbstractItemView{w.changes.unstaged.QAbstractItemView, w.changes.staged.QAbstractItemView, w.history.files.QAbstractItemView} {
 		view.Viewport().Update()
 	}

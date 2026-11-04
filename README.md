@@ -46,9 +46,10 @@ or a fetch.
 
 At the toolbar's right, **Repository** lists every repository you have opened,
 including one Delta was started in, by the names of their folders in
-alphabetical order. Hover over one to see its whole path. Choosing one opens it. The dropdowns grow to fit a long name, up to a limit,
-and narrow when the window does.
-The list is saved with the settings, with each repository in it only once.
+alphabetical order. Hover over one to see its whole path. Choosing one opens it.
+The list is saved with the settings, with each repository in it only once. The
+dropdowns grow to fit a long name, up to a limit, and narrow when the window
+does.
 
 **Branch** lists the open repository's local branches, with the current one
 chosen. Choosing another checks it out.
@@ -56,9 +57,9 @@ chosen. Choosing another checks it out.
 ## The changes
 
 * **Unstaged Changes** and **Staged Changes**, in the sidebar, list the changed
-  files, each with a circle in a Solarized colour for what happened to it. Hover
-  over a file to have it said in words. The history's list of files has the same
-  circles.
+  files, each with a circle in a colour for what happened to it, Solarized's to
+  start with and set in **Settings**. Hover over a file to have it said in words.
+  The history's list of files has the same circles.
 
   | Circle | Change |
   | ------ | ------ |
@@ -171,9 +172,10 @@ of Solarized's:
 - The progress bar under the toolbar.
 
 The settings are kept in `delta/settings.json` under the system's configuration
-folder (`~/.config` on Linux), along with whether **Force push** is ticked, the
-size of the window and its panes, which are saved when it closes, and the size of
-the interactive rebase dialog.
+folder (`~/.config` on Linux), along with the repositories you have opened and
+the last of them, whether **Force push** is ticked, the size of the window and
+its panes, which are saved when it closes, and the size of the interactive rebase
+dialog.
 
 ## Desktop entry
 

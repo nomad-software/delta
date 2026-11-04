@@ -110,3 +110,19 @@ func TestColoursInPart(t *testing.T) {
 		t.Errorf("progress %s", s.ProgressColour)
 	}
 }
+
+// Fields gives every colour of a ChangeColours, each once, in the order of its
+// fields, as normalising and the settings dialog rely on.
+func TestChangeColourFields(t *testing.T) {
+	var c ChangeColours
+	fields := c.Fields()
+	value := reflect.ValueOf(&c).Elem()
+	if len(fields) != value.NumField() {
+		t.Fatalf("%d fields given of %d", len(fields), value.NumField())
+	}
+	for i, field := range fields {
+		if field != value.Field(i).Addr().Interface().(*string) {
+			t.Errorf("field %d is not %s", i, value.Type().Field(i).Name)
+		}
+	}
+}

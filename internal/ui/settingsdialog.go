@@ -20,8 +20,8 @@ const colourTableHeight = 260
 
 // settingsDialog edits the theme, the font of the code, the history, and the
 // colours the program gives itself. As apemail's, each section is a frame with
-// its name, a note on what it is for, and its fields; the colours are in a
-// table in theirs.
+// its name, a note on what it is for where it has one, and its fields; the
+// colours are in a table in theirs.
 type settingsDialog struct {
 	*qt.QDialog
 	tabs        *qt.QTabWidget
@@ -37,7 +37,8 @@ type settingsDialog struct {
 	defaultSize          int
 	added, removed, hunk *colourButton
 	// changes are the colours of the circles of changed files, in the order of
-	// changeNames, and progress that of the progress bar's segment.
+	// changeNames and ChangeColours.Fields, and progress that of the progress
+	// bar's segment.
 	changes  []*colourButton
 	progress *colourButton
 	// colours is the table of the colours.
@@ -87,21 +88,9 @@ func (b *colourButton) set(colour string) {
 // room.
 const settingsDialogWidth = 560
 
-// changeNames are what can happen to a file, as the settings list them, each
-// with where its colour is kept.
-var changeNames = []struct {
-	name   string
-	colour func(*settings.ChangeColours) *string
-}{
-	{"Modified", func(c *settings.ChangeColours) *string { return &c.Modified }},
-	{"Added", func(c *settings.ChangeColours) *string { return &c.Added }},
-	{"Deleted", func(c *settings.ChangeColours) *string { return &c.Deleted }},
-	{"Renamed", func(c *settings.ChangeColours) *string { return &c.Renamed }},
-	{"Copied", func(c *settings.ChangeColours) *string { return &c.Copied }},
-	{"Type changed", func(c *settings.ChangeColours) *string { return &c.TypeChanged }},
-	{"In conflict", func(c *settings.ChangeColours) *string { return &c.Conflict }},
-	{"Untracked", func(c *settings.ChangeColours) *string { return &c.Untracked }},
-}
+// changeNames are what can happen to a file, as the dialog names them, in the
+// order of ChangeColours.Fields.
+var changeNames = []string{"Modified", "Added", "Deleted", "Renamed", "Copied", "Type changed", "In conflict", "Untracked"}
 
 // newSettingsDialog returns the dialog showing the settings. accepted is called
 // with what was chosen, on top of current, if it is accepted.
@@ -136,8 +125,9 @@ func newSettingsDialog(parent *qt.QWidget, current settings.Settings, accepted f
 	d.historyPage.SetSuffix(" commits")
 
 	d.tabs = qt.NewQTabWidget2()
-
-	look := d.page("User interface")
+	page := qt.NewQWidget2()
+	d.tabs.AddTab(page, "User interface")
+	look := qt.NewQVBoxLayout(page)
 	appearance := d.section(look, "Appearance", "")
 	appearance.AddRow3("Theme:", d.theme.QWidget)
 	appearance.AddRow4("Code font:", codeRow.QLayout)
@@ -160,8 +150,8 @@ func newSettingsDialog(parent *qt.QWidget, current settings.Settings, accepted f
 	d.removed = d.addColour("Removed lines")
 	d.hunk = d.addColour("Hunk headers")
 	d.addColourSection("Changed files")
-	for _, c := range changeNames {
-		d.changes = append(d.changes, d.addColour(c.name))
+	for _, name := range changeNames {
+		d.changes = append(d.changes, d.addColour(name))
 	}
 	d.addColourSection("Progress bar")
 	d.progress = d.addColour("Progress")
@@ -199,16 +189,9 @@ func newSettingsDialog(parent *qt.QWidget, current settings.Settings, accepted f
 	return d
 }
 
-// page adds a tab, and returns the layout its sections go in.
-func (d *settingsDialog) page(title string) *qt.QVBoxLayout {
-	w := qt.NewQWidget2()
-	d.tabs.AddTab(w, title)
-	return qt.NewQVBoxLayout(w)
-}
-
 // section adds a frame with the title to the layout, with the note, if there is
-// one, above its fields, and returns the form they go in. Its fields grow to its width, as
-// some styles keep them narrow.
+// one, above its fields, and returns the form they go in. Its fields grow to its
+// width, as some styles keep them narrow.
 func (d *settingsDialog) section(layout *qt.QVBoxLayout, title, note string) *qt.QFormLayout {
 	box := qt.NewQGroupBox3(title)
 	form := qt.NewQFormLayout(box.QWidget)
@@ -271,8 +254,8 @@ func (d *settingsDialog) showColours(s settings.Settings) {
 	d.added.set(s.AddedColour)
 	d.removed.set(s.RemovedColour)
 	d.hunk.set(s.HunkColour)
-	for i, c := range changeNames {
-		d.changes[i].set(*c.colour(&s.ChangeColours))
+	for i, colour := range s.ChangeColours.Fields() {
+		d.changes[i].set(*colour)
 	}
 	d.progress.set(s.ProgressColour)
 }
@@ -300,8 +283,8 @@ func (d *settingsDialog) chosen(s settings.Settings) settings.Settings {
 	s.AddedColour = d.added.colour
 	s.RemovedColour = d.removed.colour
 	s.HunkColour = d.hunk.colour
-	for i, c := range changeNames {
-		*c.colour(&s.ChangeColours) = d.changes[i].colour
+	for i, colour := range s.ChangeColours.Fields() {
+		*colour = d.changes[i].colour
 	}
 	s.ProgressColour = d.progress.colour
 	return s

@@ -46,25 +46,6 @@ func TestColoursAreSolarized(t *testing.T) {
 	}
 }
 
-// The progress bar's segment is in its colour in any theme.
-func TestProgressColour(t *testing.T) {
-	on(func() {
-		defer applyTheme("")
-		for _, theme := range []string{settings.ThemeLight, settings.ThemeDark} {
-			applyTheme(theme)
-			p := newProgress(settings.Blue)
-			p.Resize(400, progressHeight)
-			p.phase = 0.5
-			image := p.Grab().ToImage()
-			left, right := p.chunk()
-			if got := image.PixelColor((left+right)/2, progressHeight/2).Name(); got != settings.Blue {
-				t.Errorf("%s: the segment is %s", theme, got)
-			}
-			p.Delete()
-		}
-	})
-}
-
 // Colours chosen in the settings are put into effect at once, and saved: the
 // circles of changed files and the progress bar's.
 func TestColoursApplied(t *testing.T) {
@@ -90,54 +71,5 @@ func TestColoursApplied(t *testing.T) {
 		if changeColours['M'] != "#010101" || again.progress.colour != "#030303" {
 			t.Error("a new window started without them")
 		}
-	})
-}
-
-// A colour button shows its colour as it is: under Fusion, a style sheet's
-// background alone was shaded paler by the style.
-func TestColourButtonIsItsColour(t *testing.T) {
-	on(func() {
-		defer applyTheme("")
-		for _, theme := range []string{settings.ThemeLight, settings.ThemeDark} {
-			applyTheme(theme)
-			b := newColourButton("Test")
-			b.set(settings.Red)
-			b.Resize(140, 32)
-			image := b.Grab().ToImage()
-			if got := image.PixelColor(10, image.Height()/2).Name(); got != settings.Red {
-				t.Errorf("%s: shows %s", theme, got)
-			}
-			b.Delete()
-		}
-	})
-}
-
-// The settings dialog is tall enough for what is in it: its notes wrap onto
-// more lines than Qt allowed for, and Use Default Colours lay over the table.
-func TestSettingsDialogFits(t *testing.T) {
-	on(func() {
-		d := newSettingsDialog(nil, settings.Defaults(), func(settings.Settings) {})
-		defer d.Delete()
-		d.Show()
-		var button *qt.QPushButton
-		for _, b := range d.sections["Colours"].Children() {
-			if b.Inherits("QPushButton") && qt.UnsafeNewQPushButton(b.UnsafePointer()).Text() == "Use Default Colours" {
-				button = qt.UnsafeNewQPushButton(b.UnsafePointer())
-			}
-		}
-		if button == nil {
-			t.Fatal("no Use Default Colours")
-		}
-		frame := d.sections["Colours"]
-		at := func(w *qt.QWidget, y int) int {
-			point := qt.NewQPoint2(0, y)
-			defer point.Delete()
-			return w.MapTo2(frame.QWidget, point).Y()
-		}
-		top, bottom := at(button.QWidget, 0), at(d.colours.QWidget, d.colours.Height())
-		if top < bottom || top+button.Height() > frame.Height() {
-			t.Errorf("the button is at %d to %d, the table ends at %d, the frame at %d", top, top+button.Height(), bottom, frame.Height())
-		}
-		d.Close()
 	})
 }

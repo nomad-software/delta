@@ -136,19 +136,6 @@ func newAboutDialog(parent *qt.QWidget, icon *qt.QIcon) *qt.QDialog {
 // aboutWidth is the narrowest the about box is.
 const aboutWidth = 560
 
-// fitHeight sizes a dialog to the width, or the least it can be, and to the
-// height its contents need at that width, as apemail's are. The height Qt
-// would give it is that of its text wrapped narrower, which leaves a gap.
-func fitHeight(d *qt.QDialog, width int) {
-	layout := d.Layout()
-	layout.Activate()
-	// The size is miqt's to free, by its finalizer, as Qt gives it by value.
-	least := layout.MinimumSize()
-	width = max(width, least.Width())
-	d.Resize(width, max(layout.HeightForWidth(width), least.Height()))
-	runtime.KeepAlive(least)
-}
-
 // linkLabel returns a label of wrapped rich text whose links open in a browser.
 func linkLabel(text string) *qt.QLabel {
 	label := qt.NewQLabel3(text)
