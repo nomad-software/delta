@@ -27,8 +27,10 @@ type Window struct {
 	views   *qt.QStackedWidget
 	changes *changesView
 	history *historyView
-	// toolbar is the bar of buttons under the menus.
+	// toolbar is the bar of buttons under the menus, and bar the dropdowns of
+	// the repositories and branches at its right.
 	toolbar *qt.QToolBar
+	bar     *repoBar
 	// where and said are the status bar's text: what branch is checked out, and
 	// what last happened.
 	where, said *qt.QLabel
@@ -39,6 +41,9 @@ type Window struct {
 	// mergeFilled says that the message git prepared for the merge in progress
 	// has been offered.
 	mergeFilled bool
+	// chooseFirst says that a repository has just been opened, so that the first
+	// rescan's first unstaged file is chosen, if there is one.
+	chooseFirst bool
 
 	// busy says that a git command that changes something is running, during
 	// which no other can be started.
@@ -47,9 +52,9 @@ type Window struct {
 	// but the latest, which may be about something else by now, is dropped.
 	rescans, diffs int
 	// working is how many pieces of work are going on in the background, which
-	// spinner, at the toolbar's right, shows.
-	working int
-	spinner *spinner
+	// progress, under the toolbar, shows.
+	working  int
+	progress *progress
 
 	// The menus' actions, many of them the toolbar's too. repoOnly are those
 	// needing only an open repository.
@@ -99,7 +104,17 @@ func NewWindow(path string) *Window {
 	w.views = qt.NewQStackedWidget2()
 	w.views.AddWidget(w.changes.page)
 	w.views.AddWidget(w.history.page)
-	w.SetCentralWidget(w.views.QWidget)
+	w.bar = newRepoBar()
+	w.bar.setRepositories(w.config.Repositories, "")
+	// The progress bar is under the toolbar, the width of the window.
+	w.progress = newProgress()
+	central := qt.NewQWidget2()
+	layout := qt.NewQVBoxLayout(central)
+	layout.SetContentsMargins(0, 0, 0, 0)
+	layout.SetSpacing(0)
+	layout.AddWidget(w.progress.QWidget)
+	layout.AddWidget2(w.views.QWidget, 1)
+	w.SetCentralWidget(central)
 	w.makeStatusBar()
 
 	w.makeMenus()
@@ -120,8 +135,8 @@ func NewWindow(path string) *Window {
 }
 
 // Start shows the window with a repository: the one named by the argument if
-// there is one, or else the one the current folder is in, or else none, until
-// one is opened from the File menu. The one last open is not remembered.
+// there is one, or else the one the current folder is in, or else the one last
+// opened, or else none, until one is opened from the File menu.
 func (w *Window) Start(argument string) {
 	if w.config.Maximized {
 		w.ShowMaximized()
@@ -140,6 +155,14 @@ func (w *Window) Start(argument string) {
 		return
 	}
 	if cwd, err := os.Getwd(); err == nil && w.openRepository(cwd) == nil {
+		return
+	}
+	if last := w.config.LastRepository; last != "" {
+		err := w.openRepository(last)
+		if err == nil {
+			return
+		}
+		w.say(fmt.Sprintf("%s could not be opened again: %s", last, firstLine(err.Error())))
 		return
 	}
 	w.say("Open a repository from the File menu.")
@@ -174,19 +197,19 @@ func fade(label *qt.QLabel) {
 }
 
 // beginWork notes that a piece of work has gone into the background, which the
-// spinner shows, and endWork that one has come back, every time, whether what it
+// progress bar shows, and endWork that one has come back, every time, whether what it
 // gave is used or not, so that the two always pair.
 func (w *Window) beginWork() {
 	w.working++
 	if w.working == 1 {
-		w.spinner.start()
+		w.progress.start()
 	}
 }
 
 func (w *Window) endWork() {
 	w.working--
 	if w.working == 0 {
-		w.spinner.stop()
+		w.progress.stop()
 	}
 }
 
@@ -197,10 +220,10 @@ func (w *Window) say(message string) {
 
 // makeToolBar makes the bar of large buttons under the menus, as apemail's: the
 // menus' actions, but Stage and Push, whose actions are those of the buttons
-// beside the message too, and the spinner at the right.
+// beside the message too, and the dropdowns at the right.
 func (w *Window) makeToolBar() {
 	for a, shape := range map[*qt.QAction]iconShape{
-		w.newBranchAction: newBranchShape, w.checkoutAction: checkoutShape, w.deleteAction: deleteShape,
+		w.open: openShape, w.newBranchAction: newBranchShape, w.checkoutAction: checkoutShape, w.deleteAction: deleteShape,
 		w.rescan: rescanShape, w.pull: pullShape, w.push: pushShape, w.pushButton: pushShape, w.showHistory: historyShape,
 	} {
 		icon := toolIcon(shape)
@@ -208,6 +231,7 @@ func (w *Window) makeToolBar() {
 		icon.Delete()
 	}
 	// The buttons are named without the ellipsis of their menu items.
+	w.open.SetIconText("Open")
 	w.newBranchAction.SetIconText("New Branch")
 	w.checkoutAction.SetIconText("Checkout")
 	w.deleteAction.SetIconText("Delete")
@@ -228,7 +252,7 @@ func (w *Window) makeToolBar() {
 	noTips.OnEventFilter(func(super func(*qt.QObject, *qt.QEvent) bool, watched *qt.QObject, event *qt.QEvent) bool {
 		return event.Type() == qt.QEvent__ToolTip || super(watched, event)
 	})
-	for _, a := range []*qt.QAction{w.newBranchAction, w.checkoutAction, w.deleteAction, nil, w.rescan, w.stageButton, nil, w.pull, w.pushButton, nil, w.showHistory} {
+	for _, a := range []*qt.QAction{w.open, nil, w.newBranchAction, w.checkoutAction, w.deleteAction, nil, w.rescan, w.stageButton, nil, w.pull, w.pushButton, nil, w.showHistory} {
 		if a == nil {
 			w.toolbar.AddSeparator()
 			continue
@@ -250,14 +274,8 @@ func (w *Window) makeToolBar() {
 	push.SetMenu(pushMenu)
 	push.SetPopupMode(qt.QToolButton__MenuButtonPopup)
 
-	// The spinner is at the far right, beyond a space that takes up the rest.
-	space := qt.NewQWidget2()
-	space.SetSizePolicy2(qt.QSizePolicy__Expanding, qt.QSizePolicy__Preferred)
-	w.toolbar.AddWidget(space)
-	w.spinner = newSpinner()
-	held := w.toolbar.AddWidget(w.spinner.QWidget)
-	w.spinner.shown = held.SetVisible
-	held.SetVisible(false)
+	// The dropdowns take up the rest, at the right.
+	w.toolbar.AddWidget(w.bar.widget)
 	w.AddToolBar(qt.TopToolBarArea, w.toolbar)
 }
 
@@ -369,6 +387,8 @@ func (w *Window) connect() {
 		w.pushButton.SetIconText(text)
 	})
 	v.message.OnTextChanged(w.updateActions)
+	w.bar.repos.OnActivated(w.chooseListedRepository)
+	w.bar.branches.OnActivated(w.chooseBranch)
 
 	v.unstaged.OnItemSelectionChanged(func() { w.selectionChanged(v.unstaged, v.staged) })
 	v.staged.OnItemSelectionChanged(func() { w.selectionChanged(v.staged, v.unstaged) })
@@ -415,6 +435,8 @@ func (w *Window) updateActions() {
 	}
 	message := strings.TrimSpace(v.message.ToPlainText()) != ""
 	w.open.SetEnabled(!w.busy)
+	w.bar.repos.SetEnabled(!w.busy && len(w.bar.paths) > 0)
+	w.bar.branches.SetEnabled(idle && w.bar.branches.Count() > 0)
 	w.showHistory.SetEnabled(w.repo != nil)
 	w.rescan.SetEnabled(idle)
 	w.stageAll.SetEnabled(idle && len(w.status.Unstaged) > 0)
@@ -497,10 +519,20 @@ func (w *Window) openRepository(dir string) error {
 		return err
 	}
 	w.repo = r
+	// It is remembered, to be opened again from the bar and on starting, and
+	// saved at once.
+	added := w.config.Remember(r.Root)
+	if added || w.config.LastRepository != r.Root {
+		w.config.LastRepository = r.Root
+		w.saveSettings()
+	}
+	w.bar.setRepositories(w.config.Repositories, r.Root)
+	w.bar.setBranches(nil, "")
 	w.applyStatus(git.Status{})
 	w.clearHistory()
 	w.changes.message.Clear()
 	w.mergeFilled = false
+	w.chooseFirst = true
 	w.say("Opened " + r.Root)
 	w.rescanRepository()
 	return nil
@@ -522,6 +554,37 @@ func (w *Window) chooseRepository() {
 	}
 }
 
+// chooseListedRepository opens the repository chosen in the bar, unless it is
+// the one open. If it can't be, the one open is chosen again.
+func (w *Window) chooseListedRepository(index int) {
+	if index < 0 || index >= len(w.bar.paths) || w.busy {
+		return
+	}
+	path := w.bar.paths[index]
+	if w.repo != nil && path == w.repo.Root {
+		return
+	}
+	if err := w.openRepository(path); err != nil {
+		current := ""
+		if w.repo != nil {
+			current = w.repo.Root
+		}
+		w.bar.setRepositories(w.config.Repositories, current)
+		w.failed("Open Repository", err.Error())
+	}
+}
+
+// chooseBranch checks out the branch chosen in the bar, unless it is the
+// current one. Whatever happens, the rescan after it chooses the current one
+// again.
+func (w *Window) chooseBranch(index int) {
+	name := w.bar.branches.ItemText(index)
+	if index < 0 || name == w.status.Branch || w.busy || w.repo == nil {
+		return
+	}
+	w.checkout(name, false)
+}
+
 // rescanRepository reads the status of the repository again, in the background.
 func (w *Window) rescanRepository() {
 	r := w.repo
@@ -534,6 +597,9 @@ func (w *Window) rescanRepository() {
 	w.beginWork()
 	go func() {
 		s, err := r.Status()
+		// The branches are listed in the bar, and stay as they were if they
+		// can't be read.
+		local, _, branchErr := r.Branches()
 		var mergeMessage string
 		if err == nil && s.Merging {
 			mergeMessage = r.MergeMessage()
@@ -547,7 +613,11 @@ func (w *Window) rescanRepository() {
 				w.say("Rescan failed: " + firstLine(err.Error()))
 				return
 			}
+			if branchErr == nil {
+				w.bar.setBranches(local, s.Branch)
+			}
 			w.applyStatus(s)
+			w.chooseFirstFile()
 			// The message git prepared for a merge is offered once, and not
 			// again if it is cleared.
 			if !s.Merging {
@@ -560,6 +630,19 @@ func (w *Window) rescanRepository() {
 			}
 		})
 	}()
+}
+
+// chooseFirstFile chooses the first unstaged file, showing its diff, once the
+// status of a repository just opened is read, unless a file has been chosen.
+func (w *Window) chooseFirstFile() {
+	if !w.chooseFirst {
+		return
+	}
+	w.chooseFirst = false
+	v := w.changes
+	if v.unstaged.Count() > 0 && len(v.unstaged.SelectedItems())+len(v.staged.SelectedItems()) == 0 {
+		v.unstaged.SetCurrentRow(0)
+	}
 }
 
 // applyStatus shows the status.

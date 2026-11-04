@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/nomad-software/delta/internal/atomicfile"
@@ -88,12 +89,20 @@ type Settings struct {
 	// 0 for that font's size.
 	CodeFont     string `json:"codeFont,omitempty"`
 	CodeFontSize int    `json:"codeFontSize,omitempty"`
+
+	// Repositories are the top folders of the repositories opened, each once,
+	// as absolute paths, so that they can be opened again quickly.
+	Repositories []string `json:"repositories,omitempty"`
+	// LastRepository is the top folder of the repository last opened, which is
+	// opened on starting where no other is to be. Older versions kept one as
+	// "repository", which is ignored.
+	LastRepository string `json:"lastRepository,omitempty"`
 }
 
 // Defaults returns the settings of a first run.
 func Defaults() Settings {
 	return Settings{
-		Width:         1100,
+		Width:         1320,
 		Height:        760,
 		Sidebar:       Panes{300, 800},
 		Lists:         Panes{340, 340},
@@ -163,6 +172,30 @@ func (s *Settings) normalise() {
 	s.AddedColour = colourOr(s.AddedColour, d.AddedColour)
 	s.RemovedColour = colourOr(s.RemovedColour, d.RemovedColour)
 	s.HunkColour = colourOr(s.HunkColour, d.HunkColour)
+	if filepath.IsAbs(s.LastRepository) {
+		s.LastRepository = filepath.Clean(s.LastRepository)
+	} else {
+		s.LastRepository = ""
+	}
+	paths := s.Repositories
+	s.Repositories = nil
+	for _, path := range paths {
+		s.Remember(path)
+	}
+}
+
+// Remember adds the repository's folder to those opened, unless it is there
+// already or is not an absolute path. It says whether it was added.
+func (s *Settings) Remember(path string) bool {
+	if !filepath.IsAbs(path) {
+		return false
+	}
+	path = filepath.Clean(path)
+	if slices.Contains(s.Repositories, path) {
+		return false
+	}
+	s.Repositories = append(s.Repositories, path)
+	return true
 }
 
 // or returns the sizes if both panes have some, or else the fallback.

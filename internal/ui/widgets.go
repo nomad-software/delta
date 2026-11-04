@@ -9,6 +9,9 @@ import (
 	"github.com/nomad-software/delta/internal/settings"
 )
 
+// pageMargin is the space around the changes and the history.
+const pageMargin = 8
+
 // The handles between panes are paneHandleWidth pixels thick, which also serves
 // as the gap between the panes, with a grip of gripDots dots of gripDotSize
 // pixels, gripDotGap apart.

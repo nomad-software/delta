@@ -16,14 +16,16 @@ delta [folder]
 ```
 
 It opens the repository holding the folder given. Without one, it opens the
-repository the current folder is in, or else none, until you open one from
-**File > Open Repository…**. It doesn't remember the last one open. It always
-starts on the changes.
+repository the current folder is in, or else the one you last opened, or else
+none, until you open one from **File > Open Repository…** or **Repository** in
+the toolbar. It always starts on the changes, with the first unstaged file
+chosen, if there is one, as it is whenever a repository is opened.
 
 ## The toolbar
 
 | Button | Does |
 | ------ | ---- |
+| **Open** | Opens a repository, as **File > Open Repository…** (`Ctrl+O`) does. |
 | **New Branch** | Makes a branch, and checks it out if you like. |
 | **Checkout** | Switches to another branch. |
 | **Delete** | Deletes a branch, after asking. |
@@ -33,8 +35,20 @@ starts on the changes.
 | **Push** | Pushes the current branch, setting its upstream on the first push. Its arrow opens a **Force push** option. |
 | **History** | Shows the history in place of the changes until it is pressed again, as **Branch > Show History** (`Ctrl+H`) does. |
 
-At the toolbar's right end, a spinner says **Working** while anything takes more
-than a moment: a command, reading the status, a diff or the history, or a fetch.
+Under the toolbar, a progress bar the width of the window shows while anything
+takes more than a moment: a command, reading the status, a diff or the history,
+or a fetch.
+
+## Repository and Branch
+
+At the toolbar's right, **Repository** lists every repository you have opened,
+including one Delta was started in, by the names of their folders in
+alphabetical order. Hover over one to see its whole path. Choosing one opens it. The dropdowns grow to fit a long name, up to a limit,
+and narrow when the window does.
+The list is saved with the settings, with each repository in it only once.
+
+**Branch** lists the open repository's local branches, with the current one
+chosen. Choosing another checks it out.
 
 ## The changes
 

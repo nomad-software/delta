@@ -24,6 +24,25 @@ type iconShape func(p *qt.QPainterPath)
 
 // The icons of the toolbar.
 var (
+	// openShape is an open folder.
+	openShape iconShape = func(p *qt.QPainterPath) {
+		p.MoveTo2(20, 10)
+		p.LineTo2(20, 8)
+		p.QuadTo2(20, 6.5, 18.5, 6.5)
+		p.LineTo2(11.5, 6.5)
+		p.LineTo2(9.5, 4)
+		p.LineTo2(4.5, 4)
+		p.QuadTo2(3, 4, 3, 5.5)
+		p.LineTo2(3, 18.5)
+		p.QuadTo2(3, 20, 4.5, 20)
+		p.LineTo2(18, 20)
+		p.QuadTo2(19.2, 20, 19.6, 18.9)
+		p.LineTo2(21.8, 11.7)
+		p.QuadTo2(22.2, 10, 20.5, 10)
+		p.LineTo2(9, 10)
+		p.QuadTo2(7.8, 10, 7.3, 11)
+		p.LineTo2(3.4, 19.4)
+	}
 	// newBranchShape is a branch leaving a line, with a plus.
 	newBranchShape iconShape = func(p *qt.QPainterPath) {
 		p.MoveTo2(6, 3)

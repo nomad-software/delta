@@ -212,7 +212,7 @@ func (w *Window) checkoutBranch() {
 
 // checkoutFetch returns what fetches for the checkout dialog, in the background,
 // and gives the remote branches after it, noting that it has in fetched. Both
-// that and the spinner's count are only touched on the main thread, as the
+// that and the count of work are only touched on the main thread, as the
 // window reads them there, perhaps while the fetch is still going on.
 func (w *Window) checkoutFetch(fetched *bool) func() ([]string, error) {
 	r := w.repo

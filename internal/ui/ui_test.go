@@ -162,7 +162,7 @@ func TestLayout(t *testing.T) {
 				buttons = append(buttons, "|")
 				continue
 			}
-			// The space and the spinner after the buttons are not buttons.
+			// The dropdowns after the buttons are not buttons.
 			if !w.toolbar.WidgetForAction(a).Inherits("QToolButton") {
 				continue
 			}
@@ -186,7 +186,7 @@ func TestLayout(t *testing.T) {
 				t.Errorf("%q has no icon", a.IconText())
 			}
 		}
-		if want := []string{"New Branch", "Checkout", "Delete", "|", "Rescan", "Stage", "|", "Pull", "Push", "|", "History"}; !slices.Equal(buttons, want) {
+		if want := []string{"Open", "|", "New Branch", "Checkout", "Delete", "|", "Rescan", "Stage", "|", "Pull", "Push", "|", "History"}; !slices.Equal(buttons, want) {
 			t.Errorf("buttons %q", buttons)
 		}
 		if size := w.toolbar.IconSize(); size.Width() != 32 || size.Height() != 32 || w.toolbar.ToolButtonStyle() != qt.ToolButtonTextUnderIcon || w.toolbar.IsMovable() {
@@ -742,7 +742,7 @@ func TestCheckoutDialog(t *testing.T) {
 }
 
 // TestCheckoutFetch checks that the checkout dialog's fetch, run in the
-// background, gives the remote branches, has the spinner show it, and notes
+// background, gives the remote branches, has the progress bar show it, and notes
 // that it fetched on the main thread, where the window reads it, perhaps while
 // the fetch is still going on: noted in the background, it was a race, which
 // go test -race finds.
@@ -772,7 +772,7 @@ func TestCheckoutFetch(t *testing.T) {
 	if got.err != nil || !slices.Equal(got.remote, []string{"origin/main"}) {
 		t.Errorf("remote %q, %v", got.remote, got.err)
 	}
-	waitFor(t, "the spinner's count", func() bool { return w.working == 0 })
+	waitFor(t, "the count of work", func() bool { return w.working == 0 })
 }
 
 // TestFirstTextFieldHasTheFocus checks that a dialog opens with the cursor in
@@ -1307,7 +1307,11 @@ func TestScreenshot(t *testing.T) {
 	if path == "" {
 		t.Skip("no path given")
 	}
-	dir := screenshotRepo(t)
+	// The bar shows the name of the repository's folder.
+	dir := filepath.Join(t.TempDir(), "example")
+	if err := os.Rename(screenshotRepo(t), dir); err != nil {
+		t.Fatal(err)
+	}
 	writeFile(t, dir, "file", "one\nTWO\nthree\nfour\n")
 	writeFile(t, dir, "staged.go", "package main\n")
 	runGit(t, dir, "add", "staged.go")

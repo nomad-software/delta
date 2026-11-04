@@ -93,7 +93,7 @@ func newChangesView(config settings.Settings) *changesView {
 	}
 
 	layout := qt.NewQVBoxLayout(v.page)
-	layout.SetContentsMargins(8, 8, 8, 8)
+	layout.SetContentsMargins(pageMargin, pageMargin, pageMargin, pageMargin)
 	layout.AddWidget(v.sidebar.QWidget)
 	return v
 }

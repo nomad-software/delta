@@ -3,11 +3,13 @@ package settings
 import (
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"testing"
 )
 
 func TestMissingFileGivesDefaults(t *testing.T) {
-	if got := Load(filepath.Join(t.TempDir(), "none.json")); got != Defaults() {
+	if got := Load(filepath.Join(t.TempDir(), "none.json")); !reflect.DeepEqual(got, Defaults()) {
 		t.Errorf("got %+v", got)
 	}
 }
@@ -24,10 +26,12 @@ func TestRoundTrip(t *testing.T) {
 	s.Theme = ThemeDark
 	s.AddedColour, s.RemovedColour, s.HunkColour = "#010203", "#040506", "#070809"
 	s.CodeFont, s.CodeFontSize = "Some Font", 14
+	s.Repositories = []string{"/one", "/two"}
+	s.LastRepository = "/two"
 	if err := s.Save(path); err != nil {
 		t.Fatal(err)
 	}
-	if got := Load(path); got != s {
+	if got := Load(path); !reflect.DeepEqual(got, s) {
 		t.Errorf("got %+v\nwant %+v", got, s)
 	}
 }
@@ -40,12 +44,12 @@ func TestUnusableValues(t *testing.T) {
 		}
 	}
 	write(`{"width": 5, "height": 5, "sidebar": [0, 10], "lists": [-1, 2], "editor": [3, 0], "history": [0, 1], "historyDetail": [1, -1], "rebaseWidth": 900, "rebaseHeight": 3, "historyPageSize": 10,
-		"codeFont": "  ", "codeFontSize": 500, "theme": "purple", "addedColour": "green", "removedColour": "#12", "hunkColour": "grey"}`)
-	if got := Load(path); got != Defaults() {
+		"codeFont": "  ", "codeFontSize": 500, "lastRepository": "relative", "theme": "purple", "addedColour": "green", "removedColour": "#12", "hunkColour": "grey"}`)
+	if got := Load(path); !reflect.DeepEqual(got, Defaults()) {
 		t.Errorf("got %+v", got)
 	}
 	write("not json")
-	if got := Load(path); got != Defaults() {
+	if got := Load(path); !reflect.DeepEqual(got, Defaults()) {
 		t.Errorf("got %+v", got)
 	}
 }
@@ -65,5 +69,24 @@ func TestHistoryPageSizeBounds(t *testing.T) {
 		if got := Load(path).HistoryPageSize; got != want {
 			t.Errorf("%s gives %d, not %d", text, got, want)
 		}
+	}
+}
+
+// The repositories remembered are absolute paths, each once, however they are
+// written in the file.
+func TestRepositories(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(path, []byte(`{"repositories": ["/a/b", "/a/b/", "relative", "", "/a/./b", "/c", "/a/b"]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := Load(path)
+	if want := []string{"/a/b", "/c"}; !slices.Equal(s.Repositories, want) {
+		t.Errorf("loaded %q", s.Repositories)
+	}
+	if s.Remember("/c/") || s.Remember("/a/b") || s.Remember("d") {
+		t.Error("remembered one already there, or a relative path")
+	}
+	if !s.Remember("/d") || !slices.Equal(s.Repositories, []string{"/a/b", "/c", "/d"}) {
+		t.Errorf("remembered %q", s.Repositories)
 	}
 }

@@ -113,7 +113,7 @@ func newHistoryView(config settings.Settings) *historyView {
 	}
 
 	layout := qt.NewQVBoxLayout(h.page)
-	layout.SetContentsMargins(8, 8, 8, 8)
+	layout.SetContentsMargins(pageMargin, pageMargin, pageMargin, pageMargin)
 	layout.AddWidget(h.split.QWidget)
 	return h
 }
