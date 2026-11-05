@@ -224,30 +224,33 @@ func (d *settingsDialog) section(layout *qt.QVBoxLayout, title, note string) *qt
 // addColourSection adds a bold row as wide as the table, heading those after it.
 func (d *settingsDialog) addColourSection(title string) {
 	item := qt.NewQTableWidgetItem2(title)
-	item.SetFlags(qt.ItemIsEnabled)
 	font := qt.NewQFont5(item.Font())
 	defer font.Delete()
 	font.SetBold(true)
 	item.SetFont(font)
+	row := d.addColourRow(item)
+	d.colours.SetSpan(row, colColourName, 1, colourColumns)
+}
+
+// addColourRow adds a row to the table of colours, named by the item, which
+// can't be edited, and returns its number.
+func (d *settingsDialog) addColourRow(item *qt.QTableWidgetItem) int {
+	item.SetFlags(qt.ItemIsEnabled)
 	row := d.colours.RowCount()
 	d.colours.InsertRow(row)
 	d.colours.SetItem(row, colColourName, item)
-	d.colours.SetSpan(row, colColourName, 1, colourColumns)
+	return row
 }
 
 // addColour adds a row with the name of a colour and the button to choose it,
 // which stands a little clear of the lines of its cell.
 func (d *settingsDialog) addColour(name string) *colourButton {
 	button := newColourButton(name)
-	item := qt.NewQTableWidgetItem2(name)
-	item.SetFlags(qt.ItemIsEnabled)
 	cell := qt.NewQWidget2()
 	layout := qt.NewQHBoxLayout(cell)
 	layout.SetContentsMargins(6, 3, 6, 3)
 	layout.AddWidget(button.QWidget)
-	row := d.colours.RowCount()
-	d.colours.InsertRow(row)
-	d.colours.SetItem(row, colColourName, item)
+	row := d.addColourRow(qt.NewQTableWidgetItem2(name))
 	d.colours.SetCellWidget(row, colColourSwatch, cell)
 	return button
 }

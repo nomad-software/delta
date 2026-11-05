@@ -32,6 +32,8 @@ bindings.
   * **Uncommit** takes the last commit back into your files.
   * **Finish Branch** checks out `main`, pulls, and deletes the branch you were
     done with, in one go.
+  * **Tag Release** tags the next semantic version and pushes it with the
+    branch, in one go.
 * **Safe by default.** Anything that rewrites history or throws work away asks
   first, with No as the answer, and says when what it rewrites has been pushed.
   Force pushes use `--force-with-lease`, and Discard All Changes tells you how
@@ -136,8 +138,8 @@ need a force push.
 **Commit > Uncommit…** takes the last commit back, after asking: its changes are
 left in your files, unstaged, as if you had just made them, along with anything
 you had staged. It says so if the commit has been pushed, as the branch will then
-need a force push. The first commit of a branch is taken back to none, its files untracked.
-A merge can't be uncommitted.
+need a force push. The first commit of a branch is taken back to none, its
+files untracked. A merge can't be uncommitted.
 
 Forcing uses `--force-with-lease`: git refuses if the remote has commits you have
 not fetched, so you can't overwrite someone else's work without seeing it.
@@ -201,7 +203,7 @@ the branch back as it was.
 | Branch | New Branch, Checkout, Finish Branch, Rename, Delete, Show History, Merge, Abort Merge, Continue Rebase, Skip Commit, Abort Rebase, Discard All Changes | New Branch `Ctrl+N`, Checkout `Ctrl+B`, Show History `Ctrl+H`, Merge `Ctrl+M`, Discard All Changes `Ctrl+Shift+D` |
 | Commit | Rescan, Stage Changes, Stage Selected, Unstage Selected, Unstage All, Commit, Uncommit, Quick Fix | `F5`, `Ctrl+Shift+S`, `Ctrl+S`, `Ctrl+U`, `Ctrl+Shift+U`, Commit `Ctrl+Return`, Uncommit `Ctrl+Shift+Return`, Quick Fix `Ctrl+Shift+Q` |
 | Stash  | Stash Changes, Apply Stash, Pop Stash, Drop Stash | Stash Changes `Ctrl+Shift+Z` |
-| Remote | Fetch, Pull, Push, Force Push, Add Remote, Rename Remote, Change URL, Remove Remote | Fetch `Ctrl+Shift+F`, Pull `Ctrl+Shift+L`, Push `Ctrl+P`, Force Push `Ctrl+Shift+P` |
+| Remote | Fetch, Pull, Push, Force Push, Tag Release, Add Remote, Rename Remote, Change URL, Remove Remote | Fetch `Ctrl+Shift+F`, Pull `Ctrl+Shift+L`, Push `Ctrl+P`, Force Push `Ctrl+Shift+P`, Tag Release `Ctrl+T` |
 | Help   | About | `Ctrl+I` |
 
 **Finish Branch…** is for when you are done with a branch: it checks out `main`,
@@ -209,6 +211,19 @@ or `master` if there is no `main`, pulls into it, and deletes the branch you wer
 on. It asks first, and won't start with changes not committed. If the pull
 fails, it stops there and keeps the branch. If git won't delete the branch, as
 its commits are not merged, it asks whether to delete it anyway.
+
+**Remote > Tag Release…** (`Ctrl+T`) tags a release of the current branch with
+the next [semantic version](https://semver.org). It reads the highest version
+tagged, here and on the remote the branch goes to (its upstream's, or the only
+remote), and starts at the next patch release. Change any of major, minor and
+patch, as many as you like, but none below what keeps the version above the
+latest, so that a release never goes backwards. Tags such as `v1.2.3` or
+`1.2.3` count, and the new tag keeps their `v`; pre-releases and other tags are
+ignored. The tag is annotated, with the message you give or else its name, and
+pushed together with the branch, so that both arrive or neither does: if the
+push is refused, the tag is deleted again. The dialog notes when the commit is
+tagged already, and when you have changes not committed, which are not in the
+release.
 
 **New Branch** corrects a name git would refuse when you click OK: spaces become
 hyphens, and what git doesn't allow in a branch's name is taken out, so

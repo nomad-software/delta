@@ -63,6 +63,12 @@ type Status struct {
 	Staged   []Change
 }
 
+// HasChanges says whether anything is not committed: staged, unstaged or
+// untracked.
+func (s Status) HasChanges() bool {
+	return len(s.Unstaged)+len(s.Staged) > 0
+}
+
 // Repo is a git repository.
 type Repo struct {
 	// Root is the top of the work tree.
@@ -394,7 +400,7 @@ func (r *Repo) History(limit int) (commits []Commit, more bool, err error) {
 		return nil, false, err
 	}
 	more = len(commits) == limit
-	if len(s.Unstaged)+len(s.Staged) > 0 {
+	if s.HasChanges() {
 		parent := ""
 		if len(commits) > 0 {
 			parent = commits[0].Hash

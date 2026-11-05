@@ -232,12 +232,7 @@ func (w *Window) loadHistory() {
 		page, more, err := readHistory(r, limit)
 		mainthread.Start(func() {
 			w.endWork()
-			if request != h.logs || r != w.repo {
-				return
-			}
-			h.loading = false
-			if err != nil {
-				w.historyFailed(err)
+			if !w.historyRead(request, r, err) {
 				return
 			}
 			h.more = more
@@ -269,12 +264,7 @@ func (w *Window) loadMoreHistory() {
 		}
 		mainthread.Start(func() {
 			w.endWork()
-			if request != h.logs || r != w.repo {
-				return
-			}
-			h.loading = false
-			if err != nil {
-				w.historyFailed(err)
+			if !w.historyRead(request, r, err) {
 				return
 			}
 			h.more = len(commits) == limit
@@ -287,6 +277,22 @@ func (w *Window) loadMoreHistory() {
 			h.updating = false
 		})
 	}()
+}
+
+// historyRead takes in the answer to a read of the history, and says whether
+// what it read is to be shown: not if it is not the answer to the latest read
+// of the repository open, which is dropped, nor if it failed, which is told of.
+func (w *Window) historyRead(request int, r *git.Repo, err error) bool {
+	h := w.history
+	if request != h.logs || r != w.repo {
+		return false
+	}
+	h.loading = false
+	if err != nil {
+		w.historyFailed(err)
+		return false
+	}
+	return true
 }
 
 // historyFailed says why the history could not be read.

@@ -770,3 +770,19 @@ func TestHistory(t *testing.T) {
 		t.Error("no error without a repository")
 	}
 }
+
+// Anything staged, unstaged or untracked is a change.
+func TestHasChanges(t *testing.T) {
+	r := newRepo(t)
+	if status(t, r).HasChanges() {
+		t.Error("a clean tree has changes")
+	}
+	write(t, r.Root, "new", "new\n")
+	if !status(t, r).HasChanges() {
+		t.Error("an untracked file is not a change")
+	}
+	git(t, r.Root, "add", "new")
+	if s := status(t, r); !s.HasChanges() || len(s.Unstaged) != 0 {
+		t.Errorf("a staged file is not a change: %+v", s)
+	}
+}

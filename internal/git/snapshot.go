@@ -45,7 +45,7 @@ func (r *Repo) Snapshot() Snapshot {
 	}
 	snap.Stashes = len(stashes)
 	s := snap.Status
-	snap.QuickFix = tip.QuickFix(len(s.Unstaged)+len(s.Staged) > 0)
+	snap.QuickFix = tip.QuickFix(s.HasChanges())
 	snap.CanUncommit = tip.UncommitRefused() == ""
 	if s.Merging {
 		snap.MergeMessage = message

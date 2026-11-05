@@ -16,15 +16,16 @@ func Write(path string, data []byte, perm fs.FileMode) error {
 		return err
 	}
 	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
+	// The file is closed whatever happens, and the first failure is the one
+	// returned.
+	_, err = tmp.Write(data)
+	if err == nil {
+		err = tmp.Chmod(perm)
 	}
-	if err := tmp.Chmod(perm); err != nil {
-		tmp.Close()
-		return err
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
 	}
-	if err := tmp.Close(); err != nil {
+	if err != nil {
 		return err
 	}
 	return os.Rename(tmp.Name(), path)

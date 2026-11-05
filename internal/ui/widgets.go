@@ -178,10 +178,31 @@ func codeFont(family string, size int) *qt.QFont {
 // height its contents need at that width, as apemail's are. The height Qt
 // would give it is that of its text wrapped narrower, which leaves a gap.
 func fitHeight(d *qt.QDialog, width int) {
+	width = max(width, fittedSize(d, width).Width())
+	d.Resize(width, fittedSize(d, width).Height())
+}
+
+// fittedSize returns the least width the dialog's contents can have, and the
+// height they need at the width. The size is miqt's to free, by its finalizer,
+// as Qt gives the least by value.
+func fittedSize(d *qt.QDialog, width int) *qt.QSize {
 	layout := d.Layout()
 	layout.Activate()
-	// The size is miqt's to free, by its finalizer, as Qt gives it by value.
 	least := layout.MinimumSize()
-	width = max(width, least.Width())
-	d.Resize(width, max(layout.HeightForWidth(width), least.Height()))
+	least.SetHeight(max(layout.HeightForWidth(width), least.Height()))
+	return least
+}
+
+// keepFitted keeps a dialog with nothing to fill more height at the height its
+// contents need at its width, whatever its width, so that making it taller
+// leaves no gap under them: it is as tall as its notes need once wrapped, and
+// widens and narrows freely.
+func keepFitted(d *qt.QDialog) {
+	d.OnResizeEvent(func(super func(*qt.QResizeEvent), event *qt.QResizeEvent) {
+		super(event)
+		height := fittedSize(d, d.Width()).Height()
+		if d.MinimumHeight() != height || d.MaximumHeight() != height {
+			d.SetFixedHeight(height)
+		}
+	})
 }

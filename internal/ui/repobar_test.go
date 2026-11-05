@@ -21,11 +21,11 @@ func namedRepo(t *testing.T, name string) string {
 	}
 	// git names it by its real path, as where temporary folders are may be a
 	// link, as on macOS.
-	real, err := filepath.EvalSymlinks(dir)
+	resolved, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return real
+	return resolved
 }
 
 // repoNames returns the names the bar lists the repositories by.

@@ -86,7 +86,7 @@ type Window struct {
 	// The Stash menu's.
 	stashAction, applyStashAction, popStashAction, dropStashAction *qt.QAction
 	// The Remote menu's.
-	pull, push, forcePush *qt.QAction
+	pull, push, forcePush, tagAction *qt.QAction
 
 	// What the buttons do, where it is not a menu's action. pushButton pushes,
 	// forcing it if Force push is ticked, as the Remote menu's Push, on Ctrl+P,
@@ -442,6 +442,8 @@ func (w *Window) makeMenus() {
 	w.pushButton.OnTriggered(func() { w.pushBranch(w.changes.force.IsChecked()) })
 	w.forcePush = w.action(remote, "&Force Push…", "Ctrl+Shift+P", func() { w.pushBranch(true) })
 	remote.AddSeparator()
+	w.tagAction = w.action(remote, "&Tag Release…", "Ctrl+T", w.tagRelease)
+	remote.AddSeparator()
 	w.repoOnly = append(w.repoOnly,
 		w.action(remote, "&Add Remote…", "", w.addRemote),
 		w.action(remote, "&Rename Remote…", "", w.renameRemote),
@@ -542,19 +544,20 @@ func (w *Window) updateActions() {
 	w.forcePush.SetEnabled(idle)
 	w.abortMerge.SetEnabled(idle && w.status.Merging)
 	// A rebase has its own way back, Abort Rebase.
-	w.discard.SetEnabled(idle && !w.status.Rebasing && (len(w.status.Unstaged)+len(w.status.Staged) > 0 || w.status.Merging))
+	w.discard.SetEnabled(idle && !w.status.Rebasing && (w.status.HasChanges() || w.status.Merging))
 	for _, a := range []*qt.QAction{w.continueRebase, w.skipRebase, w.abortRebase} {
 		a.SetEnabled(idle && w.status.Rebasing)
 	}
-	// Stashes, quick fixes, uncommitting and finishing a branch are only for
-	// outside a merge or rebase.
+	// Stashes, quick fixes, uncommitting, finishing a branch and tagging a
+	// release are only for outside a merge or rebase.
 	settled := idle && !w.status.Merging && !w.status.Rebasing
 	w.quickFixAction.SetEnabled(settled && w.quickFix.Head != "" && w.quickFix.Refused == "")
 	w.uncommit.SetEnabled(settled && w.canUncommit)
 	// A branch is finished with from any but the main one.
 	main := git.MainBranch(w.localBranches)
 	w.finishAction.SetEnabled(settled && main != "" && w.status.Branch != "" && w.status.Branch != main)
-	w.stashAction.SetEnabled(settled && len(w.status.Unstaged)+len(w.status.Staged) > 0)
+	w.tagAction.SetEnabled(settled && w.status.Branch != "")
+	w.stashAction.SetEnabled(settled && w.status.HasChanges())
 	for _, a := range []*qt.QAction{w.applyStashAction, w.popStashAction, w.dropStashAction} {
 		a.SetEnabled(settled && w.stashes > 0)
 	}

@@ -6,6 +6,8 @@ import (
 
 	qt "github.com/mappu/miqt/qt6"
 	"github.com/mappu/miqt/qt6/mainthread"
+
+	"github.com/nomad-software/delta/internal/git"
 )
 
 // formDialog is a small dialog of labelled fields with OK and Cancel.
@@ -74,6 +76,9 @@ func (d *formDialog) addText(label, initial string, valid func(string) bool) *qt
 	}
 	return edit
 }
+
+// anyText accepts any text, for a field that may be left empty.
+func anyText(string) bool { return true }
 
 // check enables OK if every field can be used.
 func (d *formDialog) check() {
@@ -221,4 +226,84 @@ func byName(names []string) []string {
 		return strings.Compare(strings.ToLower(a), strings.ToLower(b))
 	})
 	return names
+}
+
+// versionMost is the highest number a part of a version can be set to.
+const versionMost = 1_000_000
+
+// newTagDialog returns the dialog asking for a release's version and message,
+// and what returns the version set. The version starts as the next patch
+// release, and each of its parts can be changed, but never to below what keeps
+// it above the latest, so that none goes backwards. It notes a HEAD tagged
+// already, and changes not committed, which are not in the release.
+func newTagDialog(parent *qt.QWidget, rel git.Release, uncommitted bool) (*formDialog, func() git.Version, *qt.QLineEdit) {
+	d := newFormDialog(parent, "Tag Release")
+	current := rel.Latest.String()
+	if !rel.Found {
+		current = "No version tags"
+	}
+	d.form.AddRow3("Current", qt.NewQLabel3(current).QWidget)
+	next := rel.Next()
+	// The new version is one row: its prefix, if any, then a spin box for
+	// each of major, minor and patch, side by side.
+	row := qt.NewQWidget2()
+	line := qt.NewQHBoxLayout(row)
+	line.SetContentsMargins(0, 0, 0, 0)
+	if next.Prefix != "" {
+		line.AddWidget(qt.NewQLabel3(next.Prefix).QWidget)
+	}
+	spin := func(name string, value int) *qt.QSpinBox {
+		s := qt.NewQSpinBox2()
+		s.SetRange(0, versionMost)
+		s.SetValue(value)
+		s.SetAccessibleName(name)
+		// They share the row's width, growing with the dialog's.
+		line.AddWidget2(s.QWidget, 1)
+		return s
+	}
+	major, minor, patch := spin("Major", next.Major), spin("Minor", next.Minor), spin("Patch", next.Patch)
+	d.form.AddRow3("New", row)
+	d.focus = patch.QWidget
+	version := func() git.Version {
+		return git.Version{Prefix: next.Prefix, Major: major.Value(), Minor: minor.Value(), Patch: patch.Value()}
+	}
+	// No spin box goes below what keeps the version above the latest: the
+	// major never below its major, the minor not below its minor while the
+	// major is the same, and the patch not to its patch while both are. A
+	// spin box raised to its minimum changes the next one's in turn.
+	latest := rel.Latest
+	major.SetMinimum(latest.Major)
+	limit := func(int) {
+		minor.SetMinimum(0)
+		if major.Value() == latest.Major {
+			minor.SetMinimum(latest.Minor)
+		}
+		patch.SetMinimum(0)
+		if major.Value() == latest.Major && minor.Value() == latest.Minor {
+			patch.SetMinimum(latest.Patch + 1)
+		}
+		d.check()
+	}
+	// OK can't be had for one not above the latest all the same.
+	d.fieldsValid = append(d.fieldsValid, func() bool { return version().Compare(latest) > 0 })
+	for _, s := range []*qt.QSpinBox{major, minor, patch} {
+		s.OnValueChanged(limit)
+	}
+	limit(0)
+	message := d.addText("Message", "", anyText)
+	message.SetPlaceholderText("The tag's name")
+	d.form.AddRow3("Remote", qt.NewQLabel3(rel.Remote).QWidget)
+	var notes []string
+	if len(rel.Tagged) > 0 {
+		notes = append(notes, "This commit is tagged "+strings.Join(rel.Tagged, ", ")+" already.")
+	}
+	if uncommitted {
+		notes = append(notes, "Changes not committed are not in the release.")
+	}
+	notes = append(notes, "The tag and the branch are pushed together.")
+	note := qt.NewQLabel3(strings.Join(notes, "\n"))
+	note.SetWordWrap(true)
+	d.form.AddRowWithWidget(note.QWidget)
+	keepFitted(d.QDialog)
+	return d, version, message
 }

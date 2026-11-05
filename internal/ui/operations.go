@@ -638,7 +638,7 @@ func (w *Window) askStashChanges() {
 // start with.
 func (w *Window) newStashDialog() (d *formDialog, message *qt.QLineEdit, untracked *qt.QCheckBox) {
 	d = newFormDialog(w.QWidget, "Stash Changes")
-	message = d.addText("Message", "", func(string) bool { return true })
+	message = d.addText("Message", "", anyText)
 	message.SetPlaceholderText("Optional")
 	untracked = qt.NewQCheckBox3("Include untracked files")
 	d.form.AddRowWithWidget(untracked.QWidget)
@@ -788,7 +788,7 @@ func (w *Window) finishBranch() {
 	if r == nil || w.busy || branch == "" || main == "" || branch == main {
 		return
 	}
-	if len(w.status.Unstaged)+len(w.status.Staged) > 0 {
+	if w.status.HasChanges() {
 		w.failed("Finish Branch", "Commit or stash your changes first, as the branch "+branch+" is deleted.")
 		return
 	}
@@ -805,5 +805,28 @@ func (w *Window) finishBranch() {
 		default:
 			w.tellFailed("Finish Branch", err)
 		}
+	})
+}
+
+// tagRelease tags a release of the current branch: once the latest version is
+// read in the background, from the tags here and on the remote it goes to, it
+// asks for the version, above the latest, and the message, then tags HEAD with
+// it, annotated, and pushes the branch and the tag together.
+func (w *Window) tagRelease() {
+	branch := w.status.Branch
+	if w.repo == nil || w.busy || branch == "" {
+		return
+	}
+	readFirst(w, "Tag Release", func(r *git.Repo) (git.Release, error) { return r.ReadRelease(branch) }, func(rel git.Release) {
+		d, version, message := newTagDialog(w.QWidget, rel, w.status.HasChanges())
+		if !d.run() {
+			return
+		}
+		r, v, text := w.repo, version(), strings.TrimSpace(message.Text())
+		w.run("Tag Release", func() (string, error) { return r.TagRelease(branch, v, text, rel.Remote) }, func(err error) {
+			if err == nil {
+				w.say(fmt.Sprintf("Tagged %s and pushed it with %s to %s.", v, branch, rel.Remote))
+			}
+		})
 	})
 }
