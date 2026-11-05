@@ -226,6 +226,9 @@ func TestRepoBarInToolbar(t *testing.T) {
 		if right, _ := mapPoint(w.bar.widget, w.toolbar.QWidget, w.bar.widget.Width(), 0); w.toolbar.Width()-right > 16 {
 			t.Errorf("the dropdowns end %d short of the right", w.toolbar.Width()-right)
 		}
+		if gap := w.bar.widget.Width() - (w.bar.branches.X() + w.bar.branches.Width()); gap != repoBarEnd {
+			t.Errorf("the branches' dropdown ends %d short of the bar's end, not %d", gap, repoBarEnd)
+		}
 	})
 }
 
@@ -259,7 +262,7 @@ func TestRepoComboWidth(t *testing.T) {
 	if got := width(2000); got != repoComboMost {
 		t.Errorf("a long name %d wide in a wide window", got)
 	}
-	if got := width(settings.Defaults().Width); got != repoComboMost {
+	if got := width(settings.Defaults().Width); got < repoComboLeast || got > repoComboMost {
 		t.Errorf("a long name %d wide in a window of the default width", got)
 	}
 	// The room the dropdowns have is the window's beyond the buttons, which

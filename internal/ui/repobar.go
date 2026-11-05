@@ -14,7 +14,7 @@ import (
 // They narrow, to the least, where the toolbar has no room for more, so that
 // they leave it for its menu of what does not fit only once they can't.
 const (
-	repoComboLeast = 150
+	repoComboLeast = 225
 	repoComboMost  = 300
 )
 
@@ -49,11 +49,16 @@ func newRepoBar() *repoBar {
 	layout.AddSpacing(repoBarGap)
 	layout.AddWidget3(b.branchesLabel.QWidget, 0, qt.AlignVCenter)
 	layout.AddWidget3(b.branches.QWidget, 0, qt.AlignVCenter)
+	layout.AddSpacing(repoBarEnd)
 	return b
 }
 
-// repoBarGap is the space between the two dropdowns.
-const repoBarGap = 12
+// repoBarGap is the space between the two dropdowns, and repoBarEnd the space
+// after the branches' dropdown, before the toolbar's end.
+const (
+	repoBarGap = 12
+	repoBarEnd = 12
+)
 
 // newBarCombo returns a dropdown of the bar, saying the placeholder while
 // nothing is chosen.
