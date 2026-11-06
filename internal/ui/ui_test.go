@@ -329,6 +329,48 @@ func TestPanesLook(t *testing.T) {
 	})
 }
 
+// The dark theme has no light line along the toolbar's top, its first row
+// being the row below's colour, and keeps the lines along its bottom, the
+// light one a little darker than Fusion's; the light theme keeps Fusion's.
+func TestToolBarLines(t *testing.T) {
+	w := newTestWindow(t, newRepo(t))
+	on(func() {
+		defer func() {
+			w.config.Theme = ""
+			applyTheme("")
+		}()
+		for _, theme := range []string{settings.ThemeLight, settings.ThemeDark} {
+			w.config.Theme = theme
+			applyTheme(theme)
+			// The palette reaches the toolbar through posted events.
+			qt.QCoreApplication_ProcessEvents()
+			image := w.toolbar.Grab().ToImage()
+			x, last := image.Width()-1, image.Height()-1
+			lined := image.Pixel(x, 0) != image.Pixel(x, 1)
+			if want := theme != settings.ThemeDark; lined != want {
+				t.Errorf("%s: a line along the top is %v, not %v", theme, lined, want)
+			}
+			if image.Pixel(x, last) == image.Pixel(x, last-3) || image.Pixel(x, last-1) == image.Pixel(x, last-3) {
+				t.Errorf("%s: the lines along the bottom are gone", theme)
+			}
+		}
+		// Fusion's own line is what is drawn while the theme is not known to
+		// be dark.
+		lineAt := func() int {
+			image := w.toolbar.Grab().ToImage()
+			return image.PixelColor(image.Width()-1, image.Height()-1).Red()
+		}
+		w.config.Theme = ""
+		fusion := lineAt()
+		w.config.Theme = settings.ThemeDark
+		ours := lineAt()
+		window := w.toolbar.Palette().ColorWithCr(qt.QPalette__Window).Red()
+		if ours >= fusion || ours <= window {
+			t.Errorf("the bottom line is %d, not between the window's %d and Fusion's %d", ours, window, fusion)
+		}
+	})
+}
+
 func TestStatusBar(t *testing.T) {
 	w := newTestWindow(t, newRepo(t))
 	waitFor(t, "the branch", func() bool { return w.where.Text() == "main" })
@@ -1251,7 +1293,8 @@ func TestScreenshot(t *testing.T) {
 		if os.Getenv("DELTA_VIEW") == "history" {
 			w.showHistory.SetChecked(true)
 		}
-		applyTheme(os.Getenv("DELTA_THEME"))
+		w.config.Theme = os.Getenv("DELTA_THEME")
+		applyTheme(w.config.Theme)
 		w.changes.unstaged.SetCurrentRow(0)
 		w.changes.message.SetPlainText("Make the file shout")
 		w.say("")

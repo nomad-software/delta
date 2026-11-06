@@ -322,6 +322,11 @@ func (w *Window) makeToolBar() {
 
 	w.toolbar = qt.NewQToolBar4("Buttons", w.QWidget)
 	w.toolbar.SetMovable(false)
+	// Fusion draws the toolbar, then the dark theme's own lines over it.
+	w.toolbar.OnPaintEvent(func(super func(*qt.QPaintEvent), event *qt.QPaintEvent) {
+		super(event)
+		w.paintDarkToolBar()
+	})
 	w.toolbar.SetToolButtonStyle(qt.ToolButtonTextUnderIcon)
 	size := qt.NewQSize2(toolIconSize, toolIconSize)
 	defer size.Delete()
@@ -358,6 +363,32 @@ func (w *Window) makeToolBar() {
 	w.toolbar.AddWidget(w.bar.widget)
 	w.AddToolBar(qt.TopToolBarArea, w.toolbar)
 }
+
+// paintDarkToolBar paints over the light lines Fusion draws along the
+// toolbar's top and bottom whatever the palette, in the dark theme only, where
+// they stand out. The top's goes, painted in the colour of the row below it,
+// the top of Fusion's gradient (the window's colour 4% lighter). The bottom's
+// is painted a little darker than Fusion's: white at toolBarLine over the
+// window's colour, the bottom of the gradient.
+func (w *Window) paintDarkToolBar() {
+	if w.config.Theme != settings.ThemeDark {
+		return
+	}
+	painter := qt.NewQPainter2(w.toolbar.QPaintDevice)
+	defer painter.Delete()
+	window := w.toolbar.Palette().ColorWithCr(qt.QPalette__Window)
+	width, bottom := w.toolbar.Width(), w.toolbar.Height()-1
+	painter.FillRect5(0, 0, width, 1, window.LighterWithInt(104))
+	painter.FillRect5(0, bottom, width, 1, window)
+	line := qt.NewQColor11(255, 255, 255, toolBarLine)
+	defer line.Delete()
+	painter.FillRect5(0, bottom, width, 1, line)
+	painter.End()
+}
+
+// toolBarLine is the opacity, out of 255, of the white of the dark theme's
+// line along the toolbar's bottom: Fusion's is 90.
+const toolBarLine = 70
 
 // action adds an action of the window to a menu.
 func (w *Window) action(menu *qt.QMenu, text, key string, triggered func()) *qt.QAction {

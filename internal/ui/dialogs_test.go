@@ -295,7 +295,8 @@ func TestRemoteDialogs(t *testing.T) {
 // With no remote at all, a branch with no upstream has nowhere to go.
 func TestPushWithNoRemotes(t *testing.T) {
 	w := newTestWindow(t, newRepo(t))
-	waitFor(t, "the status", func() bool { return w.idleWith(0, 0) })
+	// Until the status is read, there is no branch to push.
+	waitFor(t, "the status", func() bool { return w.idleWith(0, 0) && w.status.Branch == "main" })
 	on(w.push.Trigger)
 	waitFor(t, "the remotes", func() bool { return w.idle() && len(w.failures) == 1 })
 	on(func() {
