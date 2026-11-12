@@ -696,14 +696,18 @@ func (w *Window) chooseRepository() {
 }
 
 // openFolder opens the repository that holds the folder, once it is found in
-// the background, telling of it if there is none.
+// the background, telling of it if there is none. A command started meanwhile
+// keeps it from being opened, as what the command does next would go to it.
 func (w *Window) openFolder(dir string) {
 	w.findRepository(func() (*git.Repo, error) { return git.Open(dir) }, func(r *git.Repo, err error) {
-		if err != nil {
+		switch {
+		case err != nil:
 			w.failed("Open Repository", err.Error())
-			return
+		case w.busy:
+			w.notOpened(r)
+		default:
+			w.useRepository(r)
 		}
-		w.useRepository(r)
 	})
 }
 
@@ -894,7 +898,7 @@ func (w *Window) loadDiff(read func() (string, error), latest func() bool, label
 
 // showSettings opens the settings dialog, without waiting for it.
 func (w *Window) showSettings() {
-	newSettingsDialog(w, w.config, w.applySettings).Open()
+	newSettingsDialog(w, func() settings.Settings { return w.config }, w.applySettings).Open()
 }
 
 // applySettings puts settings chosen into effect and saves them.

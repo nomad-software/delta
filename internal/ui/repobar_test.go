@@ -376,7 +376,7 @@ func TestRepositoryLimitSetting(t *testing.T) {
 			}
 		}
 		var got settings.Settings
-		d := newSettingsDialog(nil, w.config, func(s settings.Settings) { got = s })
+		d := newSettingsDialog(nil, func() settings.Settings { return w.config }, func(s settings.Settings) { got = s })
 		defer d.Delete()
 		if d.repositoryLimit.Value() != settings.DefaultRepositoryLimit {
 			t.Errorf("shows %d", d.repositoryLimit.Value())

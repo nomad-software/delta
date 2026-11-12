@@ -91,9 +91,11 @@ const settingsDialogWidth = 560
 // order of ChangeColours.Fields.
 var changeNames = []string{"Modified", "Added", "Deleted", "Renamed", "Copied", "Type changed", "In conflict", "Untracked"}
 
-// newSettingsDialog returns the dialog showing the settings. accepted is called
-// with what was chosen, on top of current, if it is accepted.
-func newSettingsDialog(parent qtwidgets.QWidgetLike, current settings.Settings, accepted func(settings.Settings)) *settingsDialog {
+// newSettingsDialog returns the dialog showing the settings current gives.
+// accepted is called with what was chosen if it is accepted, on top of what
+// current gives then: the window keeps working while the dialog is open, and may
+// open a repository meanwhile, which must not be forgotten.
+func newSettingsDialog(parent qtwidgets.QWidgetLike, current func() settings.Settings, accepted func(settings.Settings)) *settingsDialog {
 	d := &settingsDialog{QDialog: qtwidgets.NewQDialog(parent), sections: map[string]*qtwidgets.QGroupBox{}}
 	d.SetWindowTitle("Settings")
 	d.SetMinimumWidth(settingsDialogWidth)
@@ -172,14 +174,14 @@ func newSettingsDialog(parent qtwidgets.QWidgetLike, current settings.Settings, 
 	// The table takes what room the page has.
 	look.SetStretchFactor(d.sections["Colours"], 1)
 
-	d.show(current)
+	d.show(current())
 
 	d.box = qtwidgets.NewQDialogButtonBoxWithButtonsOriented(qtwidgets.QDialogButtonBoxOk|qtwidgets.QDialogButtonBoxCancel|qtwidgets.QDialogButtonBoxRestoreDefaults, qtcore.Horizontal, nil)
 	d.box.Button(qtwidgets.QDialogButtonBoxRestoreDefaults).OnClicked(func(bool) { d.show(settings.Defaults()) })
 	d.box.OnRejected(d.Reject)
 	d.box.OnAccepted(func() {
 		d.Accept()
-		accepted(d.chosen(current))
+		accepted(d.chosen(current()))
 	})
 
 	layout := qtwidgets.NewQVBoxLayout(d)

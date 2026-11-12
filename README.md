@@ -64,7 +64,8 @@ It opens the repository holding the folder given. Without one, it opens the
 repository the current folder is in, or else the one you last opened, or else
 none, until you open one from **File > Open Repository…** or **Repository** in
 the toolbar. It always starts on the changes, with the first unstaged file
-chosen, if there is one, as it is whenever a repository is opened.
+chosen, if there is one, as it is whenever a repository is opened. No other
+repository is opened while a git command is running; the status bar says so.
 
 ## The toolbar
 

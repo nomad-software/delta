@@ -533,3 +533,28 @@ func TestShowSettings(t *testing.T) {
 		t.Errorf("saved %d", s.HistoryPageSize)
 	}
 }
+
+// The settings dialog does not stop the window opening a repository, as one
+// started again with a folder makes it, so what it chose goes on top of the
+// settings as they are when it is accepted, not as they were when it opened:
+// the repository opened meanwhile stays remembered, and the last opened.
+func TestSettingsKeepRepositoryOpenedMeanwhile(t *testing.T) {
+	first, second := namedRepo(t, "first"), namedRepo(t, "second")
+	w := newTestWindow(t, first)
+	waitFor(t, "the status", func() bool { return w.idleWith(0, 0) })
+	answer(t, w.showSettings, func(d *qtwidgets.QDialog) {
+		if err := w.openRepository(second); err != nil {
+			t.Fatal(err)
+		}
+		boxes := children(d.AsQObject(), "QDialogButtonBox", qtwidgets.QDialogButtonBoxCast)
+		boxes[0].Button(qtwidgets.QDialogButtonBoxOk).Click()
+	})
+	on(func() {
+		if !slices.Equal(w.config.Repositories, []string{first, second}) || w.config.LastRepository != second {
+			t.Errorf("remembered %q, last %q", w.config.Repositories, w.config.LastRepository)
+		}
+	})
+	if s := settings.Load(w.path); !slices.Equal(s.Repositories, []string{first, second}) || s.LastRepository != second {
+		t.Errorf("saved %q, last %q", s.Repositories, s.LastRepository)
+	}
+}

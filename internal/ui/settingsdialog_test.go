@@ -14,7 +14,7 @@ func TestSettingsDialog(t *testing.T) {
 		current.Theme = settings.ThemeDark
 		current.AddedColour = "#123456"
 		var got settings.Settings
-		d := newSettingsDialog(nil, current, func(s settings.Settings) { got = s })
+		d := newSettingsDialog(nil, func() settings.Settings { return current }, func(s settings.Settings) { got = s })
 		defer d.Delete()
 		// General, with History and Repositories, then User interface, with
 		// Appearance and Colours.
@@ -51,7 +51,7 @@ func TestCodeFontSetting(t *testing.T) {
 		system := codeFont("", 0)
 		defer system.Delete()
 		var got settings.Settings
-		d := newSettingsDialog(nil, settings.Defaults(), func(s settings.Settings) { got = s })
+		d := newSettingsDialog(nil, settings.Defaults, func(s settings.Settings) { got = s })
 		defer d.Delete()
 
 		// Left alone, it follows the system.
@@ -107,7 +107,7 @@ func TestCodeFontSetting(t *testing.T) {
 func TestSettingsSections(t *testing.T) {
 	on(func() {
 		var got settings.Settings
-		d := newSettingsDialog(nil, settings.Defaults(), func(s settings.Settings) { got = s })
+		d := newSettingsDialog(nil, settings.Defaults, func(s settings.Settings) { got = s })
 		defer d.Delete()
 		// note is the section's note, or empty if it has none.
 		in := func(title, note string, widgets ...*qtwidgets.QWidget) {
@@ -208,7 +208,7 @@ func TestColourButtonIsItsColour(t *testing.T) {
 // more lines than Qt allowed for, and Use Default Colours lay over the table.
 func TestSettingsDialogFits(t *testing.T) {
 	on(func() {
-		d := newSettingsDialog(nil, settings.Defaults(), func(settings.Settings) {})
+		d := newSettingsDialog(nil, settings.Defaults, func(settings.Settings) {})
 		defer d.Delete()
 		// The colours are on the second tab.
 		d.tabs.SetCurrentIndex(1)
