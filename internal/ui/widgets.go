@@ -1,9 +1,12 @@
 package ui
 
 import (
+	"math"
 	"strings"
 
-	qt "github.com/mappu/miqt/qt6"
+	"github.com/nomad-software/qute/qtcore"
+	"github.com/nomad-software/qute/qtgui"
+	"github.com/nomad-software/qute/qtwidgets"
 
 	"github.com/nomad-software/delta/internal/git"
 	"github.com/nomad-software/delta/internal/settings"
@@ -22,68 +25,97 @@ const (
 	gripDotGap      = 2
 )
 
-// newPaneSplitter returns a splitter whose handles are a gap between the panes
-// with a row of dots at its centre, rather than what the style draws, which on
-// some is coloured. A handle's painting can only be replaced on one made here.
-func newPaneSplitter(orientation qt.Orientation) *qt.QSplitter {
-	s := qt.NewQSplitter3(orientation)
+// paneSplitter is a splitter whose handles are a gap between the panes with a
+// row of dots at its centre, rather than what the style draws, which on some is
+// coloured.
+type paneSplitter struct{ qtwidgets.QSplitterBase }
+
+// newPaneSplitter returns a splitter whose handles are a gap with a grip.
+func newPaneSplitter(orientation qtcore.Orientation) *qtwidgets.QSplitter {
+	s := &paneSplitter{}
+	qtwidgets.NewQSplitterWithOrientationWith(s, orientation, nil)
 	s.SetHandleWidth(paneHandleWidth)
-	s.OnCreateHandle(func(func() *qt.QSplitterHandle) *qt.QSplitterHandle {
-		handle := qt.NewQSplitterHandle(s.Orientation(), s)
-		handle.OnPaintEvent(func(func(*qt.QPaintEvent), *qt.QPaintEvent) { paintGrip(handle) })
-		return handle
-	})
-	return s
+	return s.QSplitter
 }
 
-// paintGrip draws the dots at the centre of a handle, in a colour half way
+// CreateHandle makes each handle of the splitter one that paints its grip.
+func (s *paneSplitter) CreateHandle() *qtwidgets.QSplitterHandle {
+	return qtwidgets.NewQSplitterHandleWith(&gripHandle{}, s.Orientation(), s)
+}
+
+// gripHandle is a handle between panes that is painted as its grip only.
+type gripHandle struct{ qtwidgets.QSplitterHandleBase }
+
+// PaintEvent draws the dots at the centre of a handle, in a colour half way
 // between the window and its text, which shows in any theme.
-func paintGrip(handle *qt.QSplitterHandle) {
-	palette := handle.Palette()
-	colour := mix(palette.ColorWithCr(qt.QPalette__WindowText), palette.ColorWithCr(qt.QPalette__Window), 50)
-	defer colour.Delete()
-	painter := qt.NewQPainter2(handle.QPaintDevice)
-	defer painter.Delete()
+func (h *gripHandle) PaintEvent(*qtgui.QPaintEvent) {
+	palette := h.Palette()
+	colour := mix(palette.Color(qtgui.QPaletteWindowText), palette.Color(qtgui.QPaletteWindow), 50)
+	painter := qtgui.NewQPainterOn(h)
+	defer painter.End()
 	span := gripDots*gripDotSize + (gripDots-1)*gripDotGap
 	for i := range gripDots {
 		along := i * (gripDotSize + gripDotGap)
-		x, y := (handle.Width()-span)/2+along, (handle.Height()-gripDotSize)/2
-		if handle.Orientation() == qt.Horizontal {
-			x, y = (handle.Width()-gripDotSize)/2, (handle.Height()-span)/2+along
+		x, y := (h.Width()-span)/2+along, (h.Height()-gripDotSize)/2
+		if h.Orientation() == qtcore.Horizontal {
+			x, y = (h.Width()-gripDotSize)/2, (h.Height()-span)/2+along
 		}
-		painter.FillRect5(x, y, gripDotSize, gripDotSize, colour)
+		painter.FillRect(qtcore.QRect{X: x, Y: y, Width: gripDotSize, Height: gripDotSize}, colour)
 	}
-	painter.End()
 }
 
 // mix returns the percentage of the colour mixed into the background.
-func mix(colour, background *qt.QColor, percent int) *qt.QColor {
-	channel := func(c, b int) int { return (c*percent + b*(100-percent)) / 100 }
-	return qt.NewQColor3(
-		channel(colour.Red(), background.Red()),
-		channel(colour.Green(), background.Green()),
-		channel(colour.Blue(), background.Blue()),
-	)
+func mix(colour, background qtgui.QColor, percent int) qtgui.QColor {
+	channel := func(c, b uint8) uint8 { return uint8((int(c)*percent + int(b)*(100-percent)) / 100) }
+	return qtgui.RGB(channel(colour.R, background.R), channel(colour.G, background.G), channel(colour.B, background.B))
+}
+
+// colour returns the colour of a name of the form #rrggbb, or else an invalid
+// one, as Qt gives for a name it does not know.
+func colour(name string) qtgui.QColor {
+	c, err := qtgui.ParseColor(name)
+	if err != nil {
+		return qtgui.QColor{}
+	}
+	return c
+}
+
+// alpha returns the opacity of the fraction, out of 255, as Qt rounds it where it
+// paints.
+func alpha(fraction float64) uint8 {
+	return uint8(math.Round(fraction * 255))
+}
+
+// lighter returns the colour made lighter by the factor, in percent, as Qt's
+// QColor::lighter does for a colour it does not take past white: its value, and
+// so each channel, is scaled in Qt's sixteen bits a channel, then rounded back
+// to eight.
+func lighter(c qtgui.QColor, factor int) qtgui.QColor {
+	channel := func(v uint8) uint8 {
+		wide := uint32(v) * 257 * uint32(factor) / 100
+		return uint8(min((wide-(wide>>8)+0x80)>>8, 255))
+	}
+	return qtgui.QColor{R: channel(c.R), G: channel(c.G), B: channel(c.B), A: c.A}
 }
 
 // labelled returns the widget with a label above it.
-func labelled(label *qt.QLabel, widget *qt.QWidget) *qt.QWidget {
-	pane := qt.NewQWidget2()
-	layout := qt.NewQVBoxLayout(pane)
-	layout.SetContentsMargins(0, 0, 0, 0)
+func labelled(label *qtwidgets.QLabel, widget qtwidgets.QWidgetLike) *qtwidgets.QWidget {
+	pane := qtwidgets.NewQWidget(nil)
+	layout := qtwidgets.NewQVBoxLayout(pane)
+	layout.SetContentsMargins(qtcore.QMargins{})
 	layout.SetSpacing(4)
-	layout.AddWidget(label.QWidget)
-	layout.AddWidget2(widget, 1)
+	layout.AddWidget(label)
+	layout.AddWidgetFull(widget, 1, 0)
 	return pane
 }
 
 // setPanes sizes the panes of a splitter.
-func setPanes(s *qt.QSplitter, panes settings.Panes) {
+func setPanes(s *qtwidgets.QSplitter, panes settings.Panes) {
 	s.SetSizes(panes[:])
 }
 
 // panes returns the sizes of the panes of a splitter.
-func panes(s *qt.QSplitter) settings.Panes {
+func panes(s *qtwidgets.QSplitter) settings.Panes {
 	sizes := s.Sizes()
 	return settings.Panes{sizes[0], sizes[1]}
 }
@@ -99,17 +131,15 @@ func describe(c git.Change) string {
 
 // newChangeItem returns the row of a list showing a change: its circle and its
 // path. The staged and unstaged lists' rows have no tooltip (the user's choice).
-func newChangeItem(c git.Change) *qt.QListWidgetItem {
-	item := qt.NewQListWidgetItem2(describe(c))
+func newChangeItem(c git.Change) *qtwidgets.QListWidgetItem {
+	item := qtwidgets.NewQListWidgetItemWithText(describe(c), nil)
 	item.SetIcon(changeIcon(c.Code))
 	return item
 }
 
 // setChangeIconSize gives a list's icons the size of the circles of changes.
-func setChangeIconSize(list *qt.QListWidget) {
-	size := qt.NewQSize2(changeDotSize, changeDotSize)
-	defer size.Delete()
-	list.SetIconSize(size)
+func setChangeIconSize(list *qtwidgets.QListWidget) {
+	list.SetIconSize(qtcore.QSize{Width: changeDotSize, Height: changeDotSize})
 }
 
 // explain returns what the code of a change means.
@@ -144,10 +174,9 @@ func upperFirst(text string) string {
 }
 
 // heading returns a label for a section.
-func heading(text string) *qt.QLabel {
-	label := qt.NewQLabel3(text)
-	font := qt.NewQFont5(label.Font())
-	defer font.Delete()
+func heading(text string) *qtwidgets.QLabel {
+	label := qtwidgets.NewQLabelWithText(text, nil)
+	font := label.Font()
 	font.SetBold(true)
 	label.SetFont(font)
 	return label
@@ -159,8 +188,8 @@ const fallbackCodeFontSize = 10
 
 // codeFont returns a new font of the family and size in points, each the system's
 // fixed width font's if it is not given.
-func codeFont(family string, size int) *qt.QFont {
-	font := qt.NewQFont5(qt.QFontDatabase_SystemFont(qt.QFontDatabase__FixedFont))
+func codeFont(family string, size int) *qtgui.QFont {
+	font := qtgui.QFontDatabaseGetSystemFont(qtgui.QFontDatabaseFixedFont)
 	if family != "" {
 		font.SetFamily(family)
 	}
@@ -177,32 +206,43 @@ func codeFont(family string, size int) *qt.QFont {
 // fitHeight sizes a dialog to the width, or the least it can be, and to the
 // height its contents need at that width, as apemail's are. The height Qt
 // would give it is that of its text wrapped narrower, which leaves a gap.
-func fitHeight(d *qt.QDialog, width int) {
-	width = max(width, fittedSize(d, width).Width())
-	d.Resize(width, fittedSize(d, width).Height())
+func fitHeight(d *qtwidgets.QDialog, width int) {
+	width = max(width, fittedSize(d, width).Width)
+	d.Resize(width, fittedSize(d, width).Height)
 }
 
 // fittedSize returns the least width the dialog's contents can have, and the
-// height they need at the width. The size is miqt's to free, by its finalizer,
-// as Qt gives the least by value.
-func fittedSize(d *qt.QDialog, width int) *qt.QSize {
+// height they need at the width.
+func fittedSize(d *qtwidgets.QDialog, width int) qtcore.QSize {
 	layout := d.Layout()
 	layout.Activate()
 	least := layout.MinimumSize()
-	least.SetHeight(max(layout.HeightForWidth(width), least.Height()))
+	least.Height = max(layout.AsQLayoutItem().HeightForWidth(width), least.Height)
 	return least
 }
 
 // keepFitted keeps a dialog with nothing to fill more height at the height its
 // contents need at its width, whatever its width, so that making it taller
 // leaves no gap under them: it is as tall as its notes need once wrapped, and
-// widens and narrows freely.
-func keepFitted(d *qt.QDialog) {
-	d.OnResizeEvent(func(super func(*qt.QResizeEvent), event *qt.QResizeEvent) {
-		super(event)
-		height := fittedSize(d, d.Width()).Height()
-		if d.MinimumHeight() != height || d.MaximumHeight() != height {
-			d.SetFixedHeight(height)
-		}
-	})
+// widens and narrows freely. It is called whenever the dialog is resized.
+func keepFitted(d *qtwidgets.QDialog) {
+	height := fittedSize(d, d.Width()).Height
+	if d.MinimumHeight() != height || d.MaximumHeight() != height {
+		d.SetFixedHeight(height)
+	}
+}
+
+// setSizePolicy sets how a widget takes up room across and down, keeping the
+// kind of control it is, as QWidget::setSizePolicy does given the two.
+func setSizePolicy(widget qtwidgets.QWidgetLike, horizontal, vertical qtwidgets.QSizePolicyPolicy) {
+	w := widget.AsQWidget()
+	policy := w.SizePolicy()
+	policy.SetHorizontalPolicy(horizontal)
+	policy.SetVerticalPolicy(vertical)
+	w.SetSizePolicy(policy)
+}
+
+// margins returns margins of the same width on every side.
+func margins(width int) qtcore.QMargins {
+	return qtcore.QMargins{Left: width, Top: width, Right: width, Bottom: width}
 }

@@ -4,9 +4,8 @@ import (
 	"slices"
 	"testing"
 
-	qt "github.com/mappu/miqt/qt6"
-
 	"github.com/nomad-software/delta/internal/settings"
+	"github.com/nomad-software/qute/qtgui"
 )
 
 // solarized are Solarized's sixteen colours.
@@ -40,7 +39,7 @@ func TestColoursAreSolarized(t *testing.T) {
 		t.Errorf("diffs are %s, %s and %s", settings.DefaultAdded, settings.DefaultRemoved, settings.DefaultHunk)
 	}
 	for _, palette := range []paletteColours{lightPalette, darkPalette} {
-		if slices.Contains(solarized, palette.normal[qt.QPalette__Window]) {
+		if slices.Contains(solarized, palette.normal[qtgui.QPaletteWindow]) {
 			t.Error("a theme was changed")
 		}
 	}

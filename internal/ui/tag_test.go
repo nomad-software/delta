@@ -5,9 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	qt "github.com/mappu/miqt/qt6"
+	"github.com/nomad-software/qute/qtcore"
 
 	"github.com/nomad-software/delta/internal/git"
+	"github.com/nomad-software/qute/qtwidgets"
 )
 
 // releaseRepo returns a repository on main, tagged v1.2.3, with an upstream in
@@ -25,19 +26,19 @@ func releaseRepo(t *testing.T) (string, string) {
 }
 
 // spinners returns the dialog's spin boxes: major, minor and patch.
-func spinners(d *qt.QDialog) []*qt.QSpinBox {
-	return children(d.QObject, "QSpinBox", qt.UnsafeNewQSpinBox)
+func spinners(d *qtwidgets.QDialog) []*qtwidgets.QSpinBox {
+	return children(d.AsQObject(), "QSpinBox", qtwidgets.QSpinBoxCast)
 }
 
 // spunVersion returns the version the spin boxes are set to.
-func spunVersion(s []*qt.QSpinBox) string {
+func spunVersion(s []*qtwidgets.QSpinBox) string {
 	return fmt.Sprintf("%d.%d.%d", s[0].Value(), s[1].Value(), s[2].Value())
 }
 
 // labelTexts returns the texts of the dialog's labels, joined.
-func labelTexts(d *qt.QDialog) string {
+func labelTexts(d *qtwidgets.QDialog) string {
 	var said []string
-	for _, l := range children(d.QObject, "QLabel", qt.UnsafeNewQLabel) {
+	for _, l := range children(d.AsQObject(), "QLabel", qtwidgets.QLabelCast) {
 		said = append(said, l.Text())
 	}
 	return strings.Join(said, "|")
@@ -59,18 +60,18 @@ func TestTagRelease(t *testing.T) {
 			if !o.Inherits("QMenu") {
 				continue
 			}
-			actions := qt.UnsafeNewQMenu(o.UnsafePointer()).Actions()
+			actions := qtwidgets.QMenuCast(o).Actions()
 			for i, a := range actions {
-				if a.UnsafePointer() == w.tagAction.UnsafePointer() && (i == 0 || !actions[i-1].IsSeparator()) {
+				if a.Ptr() == w.tagAction.Ptr() && (i == 0 || !actions[i-1].IsSeparator()) {
 					t.Error("Tag Release has no separator above it")
 				}
 			}
 		}
 	})
 	// Cancelled, nothing is done.
-	answer(t, w.tagAction.Trigger, func(d *qt.QDialog) { d.Reject() })
-	answer(t, w.tagAction.Trigger, func(d *qt.QDialog) {
-		ok := children(d.QObject, "QPushButton", qt.UnsafeNewQPushButton)[0]
+	answer(t, w.tagAction.Trigger, func(d *qtwidgets.QDialog) { d.Reject() })
+	answer(t, w.tagAction.Trigger, func(d *qtwidgets.QDialog) {
+		ok := children(d.AsQObject(), "QPushButton", qtwidgets.QPushButtonCast)[0]
 		s := spinners(d)
 		if len(s) != 3 || s[0].Value() != 1 || s[1].Value() != 2 || s[2].Value() != 4 || !ok.IsEnabled() {
 			t.Fatalf("starts at %d.%d.%d", s[0].Value(), s[1].Value(), s[2].Value())
@@ -133,7 +134,7 @@ func TestTagRelease(t *testing.T) {
 	writeFile(t, dir, "file", "changed\n")
 	on(w.rescanRepository)
 	waitFor(t, "the rescan", func() bool { return w.idleWith(1, 0) })
-	answer(t, w.tagAction.Trigger, func(d *qt.QDialog) {
+	answer(t, w.tagAction.Trigger, func(d *qtwidgets.QDialog) {
 		said := labelTexts(d)
 		if !strings.Contains(said, "tagged v1.3.0 already") || !strings.Contains(said, "not committed") {
 			t.Errorf("said %q", said)
@@ -167,7 +168,7 @@ func TestTagReleaseFails(t *testing.T) {
 	runGit(t, other, "push", "-q", "origin", "main")
 	w = newTestWindow(t, dir)
 	waitFor(t, "the status", func() bool { return w.idleWith(0, 0) && w.tagAction.IsEnabled() })
-	answer(t, w.tagAction.Trigger, func(d *qt.QDialog) { d.Accept() })
+	answer(t, w.tagAction.Trigger, func(d *qtwidgets.QDialog) { d.Accept() })
 	waitFor(t, "the failure", func() bool { return w.idle() && w.working == 0 && len(w.failures) == 1 })
 	if !strings.Contains(w.failures[0], "deleted again") || runGitOut(t, dir, "tag", "--list") != "v1.2.3\n" {
 		t.Errorf("failures %q, tags %q", w.failures, runGitOut(t, dir, "tag", "--list"))
@@ -181,18 +182,18 @@ func TestTagDialogResizes(t *testing.T) {
 		rel := git.Release{Remote: "origin", Latest: git.Version{Prefix: "v", Major: 1, Minor: 2, Patch: 3}, Found: true}
 		d, _, message := newTagDialog(nil, rel, true)
 		d.Show()
-		qt.QCoreApplication_ProcessEvents()
+		qtcore.QCoreApplicationProcessEvents()
 		s := spinners(d.QDialog)
 		before := s[0].Width()
 		d.Resize(800, 500)
-		qt.QCoreApplication_ProcessEvents()
-		if d.Width() != 800 || d.Height() >= 500 || d.Height() != d.Layout().HeightForWidth(800) {
+		qtcore.QCoreApplicationProcessEvents()
+		if d.Width() != 800 || d.Height() >= 500 || d.Height() != d.Layout().AsQLayoutItem().HeightForWidth(800) {
 			t.Errorf("%d×%d", d.Width(), d.Height())
 		}
 		if s[0].Width() <= before || s[1].Width() != s[0].Width() || s[2].Width() < s[0].Width()-1 || s[2].Width() > s[0].Width()+1 {
 			t.Errorf("spin boxes %d, %d and %d wide, from %d", s[0].Width(), s[1].Width(), s[2].Width(), before)
 		}
-		if end, _ := mapPoint(s[2].QWidget, d.QWidget, s[2].Width(), 0); end != message.X()+message.Width() {
+		if end, _ := mapPoint(s[2].AsQWidget(), d.AsQWidget(), s[2].Width(), 0); end != message.X()+message.Width() {
 			t.Errorf("the spin boxes end at %d, the message at %d", end, message.X()+message.Width())
 		}
 		d.Close()

@@ -7,8 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	qt "github.com/mappu/miqt/qt6"
-	"github.com/mappu/miqt/qt6/mainthread"
+	"github.com/nomad-software/qute"
+	"github.com/nomad-software/qute/qtcore"
+	"github.com/nomad-software/qute/qtgui"
+	"github.com/nomad-software/qute/qtwidgets"
 
 	"github.com/nomad-software/delta/internal/diff"
 	"github.com/nomad-software/delta/internal/git"
@@ -18,24 +20,24 @@ import (
 
 // Window is the program's main window.
 type Window struct {
-	*qt.QMainWindow
+	qtwidgets.QMainWindowBase
 	// path is where the settings are saved.
 	path   string
 	config settings.Settings
-	icon   *qt.QIcon
+	icon   *qtgui.QIcon
 
 	// views shows the changes, or the history in their place while
 	// showHistory is on.
-	views   *qt.QStackedWidget
+	views   *qtwidgets.QStackedWidget
 	changes *changesView
 	history *historyView
 	// toolbar is the bar of buttons under the menus, and bar the dropdowns of
 	// the repositories and branches at its right.
-	toolbar *qt.QToolBar
+	toolbar *qtwidgets.QToolBar
 	bar     *repoBar
 	// where and said are the status bar's text: what branch is checked out, and
 	// what last happened.
-	where, said *qt.QLabel
+	where, said *qtwidgets.QLabel
 
 	// repo is the repository open, or nil, and status what was last read of it.
 	repo   *git.Repo
@@ -76,23 +78,23 @@ type Window struct {
 
 	// The menus' actions, many of them the toolbar's too. repoOnly are those
 	// needing only an open repository.
-	repoOnly []*qt.QAction
-	open     *qt.QAction
+	repoOnly []*qtgui.QAction
+	open     *qtgui.QAction
 	// The Branch menu's.
-	newBranchAction, checkoutAction, finishAction, showHistory   *qt.QAction
-	abortMerge, continueRebase, skipRebase, abortRebase, discard *qt.QAction
+	newBranchAction, checkoutAction, finishAction, showHistory   *qtgui.QAction
+	abortMerge, continueRebase, skipRebase, abortRebase, discard *qtgui.QAction
 	// The Commit menu's.
-	rescan, stageAll, stageSelected, unstageSelected, unstageAll, commit, quickFixAction, uncommit *qt.QAction
+	rescan, stageAll, stageSelected, unstageSelected, unstageAll, commit, quickFixAction, uncommit *qtgui.QAction
 	// The Stash menu's.
-	stashAction, applyStashAction, popStashAction, dropStashAction *qt.QAction
+	stashAction, applyStashAction, popStashAction, dropStashAction *qtgui.QAction
 	// The Remote menu's.
-	pull, push, forcePush, tagAction *qt.QAction
+	pull, push, forcePush, tagAction *qtgui.QAction
 
 	// What the buttons do, where it is not a menu's action. pushButton pushes,
 	// forcing it if Force push is ticked, as the Remote menu's Push, on Ctrl+P,
 	// never does. forceToggle is the toolbar's Push's option to force it, ticked
 	// with the Force push checkbox.
-	pushButton, forceToggle *qt.QAction
+	pushButton, forceToggle *qtgui.QAction
 	// unstaging says that the Stage Changes button beside the message is Unstage
 	// Changes, as it is while everything is staged.
 	unstaging bool
@@ -105,33 +107,34 @@ type Window struct {
 
 // NewWindow makes the window, with its settings kept at the path. Start shows it.
 func NewWindow(path string) *Window {
-	w := &Window{QMainWindow: qt.NewQMainWindow2(), path: path, config: settings.Load(path)}
-	w.confirm = func(title, text string) bool { return askYesNo(w.QWidget, title, text) }
-	w.failed = func(title, text string) { showError(w.QWidget, title, text) }
+	w := &Window{path: path, config: settings.Load(path)}
+	qtwidgets.NewQMainWindowWith(w, nil)
+	w.confirm = func(title, text string) bool { return askYesNo(w, title, text) }
+	w.failed = func(title, text string) { showError(w, title, text) }
 	// The desktop's own look is left alone unless another is chosen.
 	if w.config.Theme != "" {
 		applyTheme(w.config.Theme)
 	}
 	w.icon = newAppIcon()
 	w.SetWindowIcon(w.icon)
-	qt.QGuiApplication_SetWindowIcon(w.icon)
+	qtgui.QGuiApplicationSetWindowIcon(w.icon)
 	w.Resize(w.config.Width, w.config.Height)
 
 	w.changes = newChangesView(w.config)
 	w.history = newHistoryView(w.config)
-	w.views = qt.NewQStackedWidget2()
+	w.views = qtwidgets.NewQStackedWidget(nil)
 	w.views.AddWidget(w.changes.page)
 	w.views.AddWidget(w.history.page)
 	w.bar = newRepoBar()
 	w.bar.setRepositories(w.config.Repositories, "")
 	// The progress bar is under the toolbar, the width of the window.
 	w.progress = newProgress()
-	central := qt.NewQWidget2()
-	layout := qt.NewQVBoxLayout(central)
-	layout.SetContentsMargins(0, 0, 0, 0)
+	central := qtwidgets.NewQWidget(nil)
+	layout := qtwidgets.NewQVBoxLayout(central)
+	layout.SetContentsMargins(qtcore.QMargins{})
 	layout.SetSpacing(0)
-	layout.AddWidget(w.progress.QWidget)
-	layout.AddWidget2(w.views.QWidget, 1)
+	layout.AddWidget(w.progress)
+	layout.AddWidgetFull(w.views, 1, 0)
 	w.SetCentralWidget(central)
 	w.makeStatusBar()
 
@@ -145,12 +148,13 @@ func NewWindow(path string) *Window {
 	w.changes.force.SetChecked(w.config.ForcePush)
 	w.showTitle()
 	w.updateActions()
-
-	w.OnCloseEvent(func(super func(*qt.QCloseEvent), event *qt.QCloseEvent) {
-		w.saveSettings()
-		super(event)
-	})
 	return w
+}
+
+// CloseEvent saves the settings as the window closes.
+func (w *Window) CloseEvent(event *qtgui.QCloseEvent) {
+	w.saveSettings()
+	w.Super().CloseEvent(event)
 }
 
 // Start shows the window with a repository: the one named by the argument if
@@ -207,7 +211,7 @@ func (w *Window) findRepository(find func() (*git.Repo, error), found func(*git.
 	w.beginWork()
 	go func() {
 		r, err := find()
-		mainthread.Start(func() {
+		qute.Post(func() {
 			w.endWork()
 			w.finding--
 			if request == w.opens {
@@ -228,7 +232,7 @@ func (w *Window) Activate(r instance.Request) {
 	if r.Token != "" {
 		os.Setenv("XDG_ACTIVATION_TOKEN", r.Token)
 	}
-	w.SetWindowState(w.WindowState() &^ qt.WindowMinimized)
+	w.SetWindowState(w.WindowState() &^ qtcore.WindowMinimized)
 	w.Show()
 	w.Raise()
 	w.ActivateWindow()
@@ -257,26 +261,26 @@ func (w *Window) Activate(r instance.Request) {
 func (w *Window) makeStatusBar() {
 	bar := w.StatusBar()
 	bar.SetSizeGripEnabled(true)
-	w.where = qt.NewQLabel2()
-	w.where.SetTextFormat(qt.PlainText)
-	w.said = qt.NewQLabel2()
-	w.said.SetTextFormat(qt.PlainText)
+	w.where = qtwidgets.NewQLabel(nil)
+	w.where.SetTextFormat(qtcore.PlainText)
+	w.said = qtwidgets.NewQLabel(nil)
+	w.said.SetTextFormat(qtcore.PlainText)
 	// However long a message is, it does not hold the window open.
-	w.said.SetSizePolicy2(qt.QSizePolicy__Ignored, qt.QSizePolicy__Preferred)
+	setSizePolicy(w.said, qtwidgets.QSizePolicyIgnored, qtwidgets.QSizePolicyPreferred)
 	fade(w.where)
 	fade(w.said)
-	bar.AddWidget(w.where.QWidget)
-	bar.AddWidget2(w.said.QWidget, 1)
+	bar.AddWidget(w.where)
+	bar.AddWidgetFull(w.said, 1)
 }
 
 // statusOpacity is how opaque the status bar's text is.
 const statusOpacity = 0.5
 
 // fade makes a label of the status bar see-through. The label owns the effect.
-func fade(label *qt.QLabel) {
-	effect := qt.NewQGraphicsOpacityEffect()
+func fade(label *qtwidgets.QLabel) {
+	effect := qtwidgets.NewQGraphicsOpacityEffect(nil)
 	effect.SetOpacity(statusOpacity)
-	label.SetGraphicsEffect(effect.QGraphicsEffect)
+	label.SetGraphicsEffect(effect)
 }
 
 // beginWork notes that a piece of work has gone into the background, which the
@@ -305,13 +309,11 @@ func (w *Window) say(message string) {
 // menus' actions, but Push, whose action is that of the button beside the
 // message too, and the dropdowns at the right.
 func (w *Window) makeToolBar() {
-	for a, shape := range map[*qt.QAction]iconShape{
+	for a, shape := range map[*qtgui.QAction]iconShape{
 		w.open: openShape, w.newBranchAction: newBranchShape, w.checkoutAction: checkoutShape, w.finishAction: finishShape,
 		w.rescan: rescanShape, w.pull: pullShape, w.push: pushShape, w.pushButton: pushShape, w.showHistory: historyShape,
 	} {
-		icon := toolIcon(shape)
-		a.SetIcon(icon)
-		icon.Delete()
+		a.SetIcon(toolIcon(shape))
 	}
 	// The buttons are named without the ellipsis of their menu items.
 	w.open.SetIconText("Open")
@@ -320,24 +322,17 @@ func (w *Window) makeToolBar() {
 	w.finishAction.SetIconText("Finish")
 	w.showHistory.SetIconText("History")
 
-	w.toolbar = qt.NewQToolBar4("Buttons", w.QWidget)
+	bar := &toolBar{window: w}
+	qtwidgets.NewQToolBarWithTitleWith(bar, "Buttons", w)
+	w.toolbar = bar.QToolBar
 	w.toolbar.SetMovable(false)
-	// Fusion draws the toolbar, then the dark theme's own lines over it.
-	w.toolbar.OnPaintEvent(func(super func(*qt.QPaintEvent), event *qt.QPaintEvent) {
-		super(event)
-		w.paintDarkToolBar()
-	})
-	w.toolbar.SetToolButtonStyle(qt.ToolButtonTextUnderIcon)
-	size := qt.NewQSize2(toolIconSize, toolIconSize)
-	defer size.Delete()
-	w.toolbar.SetIconSize(size)
+	w.toolbar.SetToolButtonStyle(qtcore.ToolButtonTextUnderIcon)
+	w.toolbar.SetIconSize(qtcore.QSize{Width: toolIconSize, Height: toolIconSize})
 	// The buttons have no tooltips. Qt gives a button its action's name as one
 	// whatever is set, so the toolbar takes the event that would show it.
-	noTips := qt.NewQObject2(w.toolbar.QObject)
-	noTips.OnEventFilter(func(super func(*qt.QObject, *qt.QEvent) bool, watched *qt.QObject, event *qt.QEvent) bool {
-		return event.Type() == qt.QEvent__ToolTip || super(watched, event)
-	})
-	for _, a := range []*qt.QAction{w.open, nil, w.newBranchAction, w.checkoutAction, w.finishAction, nil, w.rescan, nil, w.pull, w.pushButton, nil, w.showHistory} {
+	noTips := &tipFilter{}
+	qtcore.NewQObjectWith(noTips, w.toolbar)
+	for _, a := range []*qtgui.QAction{w.open, nil, w.newBranchAction, w.checkoutAction, w.finishAction, nil, w.rescan, nil, w.pull, w.pushButton, nil, w.showHistory} {
 		if a == nil {
 			w.toolbar.AddSeparator()
 			continue
@@ -350,18 +345,40 @@ func (w *Window) makeToolBar() {
 	// Push is split: its arrow opens a menu with an option to force the push,
 	// ticked with the Force push checkbox. The menu is the button's own, so that
 	// the Remote menu is left as it is.
-	w.forceToggle = qt.NewQAction5("Force push", w.QObject)
+	w.forceToggle = qtgui.NewQActionWithText("Force push", w)
 	w.forceToggle.SetCheckable(true)
 	w.forceToggle.OnToggled(w.changes.force.SetChecked)
-	push := qt.UnsafeNewQToolButton(w.toolbar.WidgetForAction(w.pushButton).UnsafePointer())
-	pushMenu := qt.NewQMenu(push.QWidget)
+	push := qtwidgets.QToolButtonCast(w.toolbar.WidgetForAction(w.pushButton))
+	pushMenu := qtwidgets.NewQMenu(push)
 	pushMenu.AddAction(w.forceToggle)
 	push.SetMenu(pushMenu)
-	push.SetPopupMode(qt.QToolButton__MenuButtonPopup)
+	push.SetPopupMode(qtwidgets.QToolButtonMenuButtonPopup)
 
 	// The dropdowns take up the rest, at the right.
 	w.toolbar.AddWidget(w.bar.widget)
-	w.AddToolBar(qt.TopToolBarArea, w.toolbar)
+	w.AddToolBarArea(qtcore.TopToolBarArea, w.toolbar)
+}
+
+// toolBar is the window's toolbar: Fusion draws it, then the dark theme's own
+// lines over it.
+type toolBar struct {
+	qtwidgets.QToolBarBase
+	window *Window
+}
+
+// PaintEvent draws the toolbar, and the dark theme's lines over it.
+func (b *toolBar) PaintEvent(event *qtgui.QPaintEvent) {
+	b.Super().PaintEvent(event)
+	b.window.paintDarkToolBar()
+}
+
+// tipFilter takes the tooltip events of what it watches, so that no tooltip
+// shows.
+type tipFilter struct{ qtcore.QObjectBase }
+
+// EventFilter takes tooltip events, and lets every other through.
+func (f *tipFilter) EventFilter(watched *qtcore.QObject, event *qtcore.QEvent) bool {
+	return event.Type() == qtcore.QEventToolTip || f.Super().EventFilter(watched, event)
 }
 
 // paintDarkToolBar paints over the light lines Fusion draws along the
@@ -374,16 +391,13 @@ func (w *Window) paintDarkToolBar() {
 	if w.config.Theme != settings.ThemeDark {
 		return
 	}
-	painter := qt.NewQPainter2(w.toolbar.QPaintDevice)
-	defer painter.Delete()
-	window := w.toolbar.Palette().ColorWithCr(qt.QPalette__Window)
+	painter := qtgui.NewQPainterOn(w.toolbar)
+	defer painter.End()
+	window := w.toolbar.Palette().Color(qtgui.QPaletteWindow)
 	width, bottom := w.toolbar.Width(), w.toolbar.Height()-1
-	painter.FillRect5(0, 0, width, 1, window.LighterWithInt(104))
-	painter.FillRect5(0, bottom, width, 1, window)
-	line := qt.NewQColor11(255, 255, 255, toolBarLine)
-	defer line.Delete()
-	painter.FillRect5(0, bottom, width, 1, line)
-	painter.End()
+	painter.FillRect(qtcore.QRect{Width: width, Height: 1}, lighter(window, 104))
+	painter.FillRect(qtcore.QRect{Y: bottom, Width: width, Height: 1}, window)
+	painter.FillRect(qtcore.QRect{Y: bottom, Width: width, Height: 1}, qtgui.RGBAColor(255, 255, 255, toolBarLine))
 }
 
 // toolBarLine is the opacity, out of 255, of the white of the dark theme's
@@ -391,14 +405,12 @@ func (w *Window) paintDarkToolBar() {
 const toolBarLine = 70
 
 // action adds an action of the window to a menu.
-func (w *Window) action(menu *qt.QMenu, text, key string, triggered func()) *qt.QAction {
-	a := qt.NewQAction5(text, w.QObject)
+func (w *Window) action(menu *qtwidgets.QMenu, text, key string, triggered func()) *qtgui.QAction {
+	a := qtgui.NewQActionWithText(text, w)
 	if key != "" {
-		sequence := qt.NewQKeySequence2(key)
-		defer sequence.Delete()
-		a.SetShortcut(sequence)
+		a.SetShortcut(qtgui.NewQKeySequenceWithKey(key))
 	}
-	a.OnTriggered(triggered)
+	a.OnTriggered(func(bool) { triggered() })
 	menu.AddAction(a)
 	return a
 }
@@ -407,13 +419,13 @@ func (w *Window) action(menu *qt.QMenu, text, key string, triggered func()) *qt.
 func (w *Window) makeMenus() {
 	bar := w.MenuBar()
 
-	file := bar.AddMenuWithTitle("&File")
+	file := bar.AddMenuTitle("&File")
 	w.open = w.action(file, "&Open Repository…", "Ctrl+O", w.chooseRepository)
 	w.action(file, "&Settings…", "Ctrl+,", w.showSettings)
 	file.AddSeparator()
 	w.action(file, "&Quit", "Ctrl+Q", func() { w.Close() })
 
-	branch := bar.AddMenuWithTitle("&Branch")
+	branch := bar.AddMenuTitle("&Branch")
 	w.newBranchAction = w.action(branch, "&New Branch…", "Ctrl+N", w.newBranch)
 	w.checkoutAction = w.action(branch, "&Checkout…", "Ctrl+B", w.checkoutBranch)
 	w.finishAction = w.action(branch, "&Finish Branch…", "", w.finishBranch)
@@ -423,11 +435,9 @@ func (w *Window) makeMenus() {
 	branch.AddSeparator()
 	// Show History is the toolbar's History too: it shows the history in place
 	// of the changes while it is ticked.
-	w.showHistory = qt.NewQAction5("Show &History", w.QObject)
+	w.showHistory = qtgui.NewQActionWithText("Show &History", w)
 	w.showHistory.SetCheckable(true)
-	historyKey := qt.NewQKeySequence2("Ctrl+H")
-	defer historyKey.Delete()
-	w.showHistory.SetShortcut(historyKey)
+	w.showHistory.SetShortcut(qtgui.NewQKeySequenceWithKey("Ctrl+H"))
 	w.showHistory.OnToggled(w.setHistoryShown)
 	branch.AddAction(w.showHistory)
 	branch.AddSeparator()
@@ -440,7 +450,7 @@ func (w *Window) makeMenus() {
 	branch.AddSeparator()
 	w.discard = w.action(branch, "Discard &All Changes…", "Ctrl+Shift+D", w.discardChanges)
 
-	commit := bar.AddMenuWithTitle("&Commit")
+	commit := bar.AddMenuTitle("&Commit")
 	w.rescan = w.action(commit, "&Rescan", "F5", w.rescanRepository)
 	commit.AddSeparator()
 	w.stageAll = w.action(commit, "&Stage Changes", "Ctrl+Shift+S", func() { w.stageChanges(w.status.Unstaged) })
@@ -457,20 +467,20 @@ func (w *Window) makeMenus() {
 	commit.AddSeparator()
 	w.quickFixAction = w.action(commit, "&Quick Fix…", "Ctrl+Shift+Q", w.askQuickFix)
 
-	stash := bar.AddMenuWithTitle("&Stash")
+	stash := bar.AddMenuTitle("&Stash")
 	w.stashAction = w.action(stash, "Stash &Changes…", "Ctrl+Shift+Z", w.askStashChanges)
 	w.applyStashAction = w.action(stash, "&Apply Stash…", "", func() { w.askApplyStash(false) })
 	w.popStashAction = w.action(stash, "&Pop Stash…", "", func() { w.askApplyStash(true) })
 	stash.AddSeparator()
 	w.dropStashAction = w.action(stash, "&Drop Stash…", "", w.askDropStash)
 
-	remote := bar.AddMenuWithTitle("&Remote")
+	remote := bar.AddMenuTitle("&Remote")
 	fetch := w.action(remote, "&Fetch", "Ctrl+Shift+F", func() { w.run("Fetch", w.repo.Fetch, nil) })
 	w.pull = w.action(remote, "Pu&ll", "Ctrl+Shift+L", func() { w.run("Pull", w.repo.Pull, nil) })
 	w.repoOnly = append(w.repoOnly, fetch, w.pull)
 	w.push = w.action(remote, "&Push", "Ctrl+P", func() { w.pushBranch(false) })
-	w.pushButton = qt.NewQAction5("Push", w.QObject)
-	w.pushButton.OnTriggered(func() { w.pushBranch(w.changes.force.IsChecked()) })
+	w.pushButton = qtgui.NewQActionWithText("Push", w)
+	w.pushButton.OnTriggered(func(bool) { w.pushBranch(w.changes.force.IsChecked()) })
 	w.forcePush = w.action(remote, "&Force Push…", "Ctrl+Shift+P", func() { w.pushBranch(true) })
 	remote.AddSeparator()
 	w.tagAction = w.action(remote, "&Tag Release…", "Ctrl+T", w.tagRelease)
@@ -482,25 +492,25 @@ func (w *Window) makeMenus() {
 		w.action(remote, "R&emove Remote…", "", w.removeRemote),
 	)
 
-	help := bar.AddMenuWithTitle("&Help")
-	w.action(help, "&About", "Ctrl+I", func() { newAboutDialog(w.QWidget, w.icon).Open() })
+	help := bar.AddMenuTitle("&Help")
+	w.action(help, "&About", "Ctrl+I", func() { newAboutDialog(w, w.icon).Open() })
 }
 
 // connect joins the widgets of the changes to what they do.
 func (w *Window) connect() {
 	v := w.changes
-	v.rescan.OnClicked(w.rescan.Trigger)
+	v.rescan.OnClicked(func(bool) { w.rescan.Trigger() })
 	// Stage Changes stages everything listed, or unstages it all if it is all
 	// staged.
-	v.stage.OnClicked(func() {
+	v.stage.OnClicked(func(bool) {
 		if w.allStaged() {
 			w.unstageAll.Trigger()
 		} else {
 			w.stageAll.Trigger()
 		}
 	})
-	v.commit.OnClicked(w.commit.Trigger)
-	v.push.OnClicked(w.pushButton.Trigger)
+	v.commit.OnClicked(func(bool) { w.commit.Trigger() })
+	v.push.OnClicked(func(bool) { w.pushButton.Trigger() })
 	v.force.OnToggled(func(on bool) {
 		w.forceToggle.SetChecked(on)
 		text := "Push"
@@ -516,12 +526,12 @@ func (w *Window) connect() {
 
 	v.unstaged.OnItemSelectionChanged(func() { w.selectionChanged(v.unstaged, v.staged) })
 	v.staged.OnItemSelectionChanged(func() { w.selectionChanged(v.staged, v.unstaged) })
-	v.unstaged.OnItemDoubleClicked(func(item *qt.QListWidgetItem) {
+	v.unstaged.OnItemDoubleClicked(func(item *qtwidgets.QListWidgetItem) {
 		if row := v.unstaged.Row(item); !w.busy && row < len(w.status.Unstaged) {
 			w.stageChanges(w.status.Unstaged[row : row+1])
 		}
 	})
-	v.staged.OnItemDoubleClicked(func(item *qt.QListWidgetItem) {
+	v.staged.OnItemDoubleClicked(func(item *qtwidgets.QListWidgetItem) {
 		if row := v.staged.Row(item); !w.busy && row < len(w.status.Staged) {
 			w.unstageChanges(w.status.Staged[row : row+1])
 		}
@@ -530,7 +540,7 @@ func (w *Window) connect() {
 
 // selectionChanged shows the diff of what was chosen in a list. Only one list
 // has a selection at a time, so that it is clear which diff is shown.
-func (w *Window) selectionChanged(list, other *qt.QListWidget) {
+func (w *Window) selectionChanged(list, other *qtwidgets.QListWidget) {
 	v := w.changes
 	if v.updating {
 		return
@@ -576,7 +586,7 @@ func (w *Window) updateActions() {
 	w.abortMerge.SetEnabled(idle && w.status.Merging)
 	// A rebase has its own way back, Abort Rebase.
 	w.discard.SetEnabled(idle && !w.status.Rebasing && (w.status.HasChanges() || w.status.Merging))
-	for _, a := range []*qt.QAction{w.continueRebase, w.skipRebase, w.abortRebase} {
+	for _, a := range []*qtgui.QAction{w.continueRebase, w.skipRebase, w.abortRebase} {
 		a.SetEnabled(idle && w.status.Rebasing)
 	}
 	// Stashes, quick fixes, uncommitting, finishing a branch and tagging a
@@ -589,7 +599,7 @@ func (w *Window) updateActions() {
 	w.finishAction.SetEnabled(settled && main != "" && w.status.Branch != "" && w.status.Branch != main)
 	w.tagAction.SetEnabled(settled && w.status.Branch != "")
 	w.stashAction.SetEnabled(settled && w.status.HasChanges())
-	for _, a := range []*qt.QAction{w.applyStashAction, w.popStashAction, w.dropStashAction} {
+	for _, a := range []*qtgui.QAction{w.applyStashAction, w.popStashAction, w.dropStashAction} {
 		a.SetEnabled(settled && w.stashes > 0)
 	}
 
@@ -678,7 +688,7 @@ func (w *Window) chooseRepository() {
 	if root := w.root(); root != "" {
 		start = filepath.Dir(root)
 	}
-	dir := qt.QFileDialog_GetExistingDirectory3(w.QWidget, "Open Repository", start)
+	dir := qtwidgets.QFileDialogGetExistingDirectoryFull(w, "Open Repository", start, qtwidgets.QFileDialogShowDirsOnly)
 	if dir == "" {
 		return
 	}
@@ -759,7 +769,7 @@ func (w *Window) rescanRepository() {
 	go func() {
 		// Everything is read at once.
 		snap := r.Snapshot()
-		mainthread.Start(func() {
+		qute.Post(func() {
 			w.endWork()
 			if request != w.rescans || r != w.repo {
 				return
@@ -863,7 +873,7 @@ func (w *Window) showDiff() {
 // main thread only fills the view, and then shows it in the view under the label
 // with the title, unless latest says by then that it is not the latest asked
 // for. What went wrong is shown in its place.
-func (w *Window) loadDiff(read func() (string, error), latest func() bool, label *qt.QLabel, title string, view *diffView) {
+func (w *Window) loadDiff(read func() (string, error), latest func() bool, label *qtwidgets.QLabel, title string, view *diffView) {
 	w.beginWork()
 	go func() {
 		text, err := read()
@@ -871,7 +881,7 @@ func (w *Window) loadDiff(read func() (string, error), latest func() bool, label
 			text = err.Error()
 		}
 		parsed := diff.Parse(text)
-		mainthread.Start(func() {
+		qute.Post(func() {
 			w.endWork()
 			if !latest() {
 				return
@@ -884,7 +894,7 @@ func (w *Window) loadDiff(read func() (string, error), latest func() bool, label
 
 // showSettings opens the settings dialog, without waiting for it.
 func (w *Window) showSettings() {
-	newSettingsDialog(w.QWidget, w.config, w.applySettings).Open()
+	newSettingsDialog(w, w.config, w.applySettings).Open()
 }
 
 // applySettings puts settings chosen into effect and saves them.
@@ -913,7 +923,7 @@ func (w *Window) applyColours() {
 	w.history.diff.setColours(c.AddedColour, c.RemovedColour, c.HunkColour)
 	changeColours = changeCodes(c.ChangeColours)
 	w.progress.colour = c.ProgressColour
-	for _, view := range []*qt.QAbstractItemView{w.changes.unstaged.QAbstractItemView, w.changes.staged.QAbstractItemView, w.history.files.QAbstractItemView} {
+	for _, view := range []*qtwidgets.QListWidget{w.changes.unstaged, w.changes.staged, w.history.files} {
 		view.Viewport().Update()
 	}
 	w.progress.Update()
@@ -922,7 +932,6 @@ func (w *Window) applyColours() {
 // applyCodeFont gives the diffs and the commit message the font chosen.
 func (w *Window) applyCodeFont() {
 	font := codeFont(w.config.CodeFont, w.config.CodeFontSize)
-	defer font.Delete()
 	w.changes.diff.setCodeFont(font)
 	w.history.diff.setCodeFont(font)
 	w.changes.message.SetFont(font)
@@ -931,8 +940,8 @@ func (w *Window) applyCodeFont() {
 // saveSettings saves the settings with the window and panes as they are now.
 func (w *Window) saveSettings() {
 	geometry := w.NormalGeometry()
-	if geometry.Width() > 0 && geometry.Height() > 0 {
-		w.config.Width, w.config.Height = geometry.Width(), geometry.Height()
+	if geometry.Width > 0 && geometry.Height > 0 {
+		w.config.Width, w.config.Height = geometry.Width, geometry.Height
 	}
 	w.config.Maximized = w.IsMaximized()
 	w.config.ForcePush = w.changes.force.IsChecked()

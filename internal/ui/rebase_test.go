@@ -7,10 +7,12 @@ import (
 	"time"
 	"unicode"
 
-	qt "github.com/mappu/miqt/qt6"
+	"github.com/nomad-software/qute/qtcore"
+	"github.com/nomad-software/qute/qtgui"
 
 	"github.com/nomad-software/delta/internal/git"
 	"github.com/nomad-software/delta/internal/settings"
+	"github.com/nomad-software/qute/qtwidgets"
 )
 
 // commitFiles commits a file of each name, with the name as its message.
@@ -80,7 +82,7 @@ func (d *rebaseDialog) choose(rows ...int) {
 
 // setActionOf chooses the action in the list of the row, as a person does.
 func (d *rebaseDialog) setActionOf(row int, a git.Action) {
-	d.actions[row].Activated(slices.Index(git.Actions, a))
+	d.actions[row].EmitActivated(slices.Index(git.Actions, a))
 }
 
 // planText returns the plan as action and subject, a step at a time.
@@ -187,7 +189,7 @@ func TestRebaseDialogDragAndLists(t *testing.T) {
 	on(func() {
 		d.Resize(800, 600)
 		d.Show()
-		rect := func(row int) *qt.QRect { return d.list.VisualItemRect(d.list.TopLevelItem(row)) }
+		rect := func(row int) qtcore.QRect { return d.list.VisualItemRect(d.list.TopLevelItem(row)) }
 
 		// Into the top half of a row goes before it, the bottom half after.
 		d.choose(3)
@@ -213,7 +215,7 @@ func TestRebaseDialogDragAndLists(t *testing.T) {
 		// A row's list gives only that row the action, whatever is chosen,
 		// and the list follows the commit when it moves.
 		d.choose(0, 1)
-		d.actions[3].Activated(slices.Index(git.Actions, git.Drop))
+		d.actions[3].EmitActivated(slices.Index(git.Actions, git.Drop))
 		if got := planText(d.steps); !slices.Equal(got, []string{"pick c", "pick a", "pick b", "drop d"}) {
 			t.Errorf("after the list %q", got)
 		}
@@ -253,7 +255,7 @@ func TestRewordFromARowsList(t *testing.T) {
 	waitFor(t, "the dialog to be active", func() bool { return d.IsActiveWindow() })
 	on(func() {
 		d.choose(0)
-		d.actions[2].Activated(slices.Index(git.Actions, git.Reword))
+		d.actions[2].EmitActivated(slices.Index(git.Actions, git.Reword))
 		if d.currentRow() != 2 || !slices.Equal(d.selectedRows(), []int{2}) {
 			t.Errorf("current %d, chosen %v", d.currentRow(), d.selectedRows())
 		}
@@ -282,10 +284,10 @@ func TestRewordFromARowsList(t *testing.T) {
 }
 
 // pressKey sends a key, with its text, to a widget, as typing does.
-func pressKey(w *qt.QWidget, key qt.Key, text string) {
-	for _, kind := range []qt.QEvent__Type{qt.QEvent__KeyPress, qt.QEvent__KeyRelease} {
-		event := qt.NewQKeyEvent3(kind, int(key), qt.NoModifier, text)
-		qt.QCoreApplication_SendEvent(w.QObject, event.QEvent)
+func pressKey(w *qtwidgets.QWidget, key qtcore.Key, text string) {
+	for _, kind := range []qtcore.QEventType{qtcore.QEventKeyPress, qtcore.QEventKeyRelease} {
+		event := qtgui.NewQKeyEventFull(kind, int(key), qtcore.NoModifier, text, false, 1)
+		qtcore.QCoreApplicationSendEvent(w, event)
 		event.Delete()
 	}
 }
@@ -293,7 +295,7 @@ func pressKey(w *qt.QWidget, key qt.Key, text string) {
 // typeText types the text into whatever has the focus.
 func typeText(text string) {
 	for _, r := range text {
-		pressKey(qt.QApplication_FocusWidget(), qt.Key(unicode.ToUpper(r)), string(r))
+		pressKey(qtwidgets.QApplicationFocusWidget(), qtcore.Key(unicode.ToUpper(r)), string(r))
 	}
 }
 
@@ -318,9 +320,9 @@ func TestRewordThroughThePopup(t *testing.T) {
 	waitFor(t, "the popup", func() bool { return combo.View().IsVisible() })
 	on(func() {
 		// From Pick, Reword is two down, after Fixup.
-		pressKey(combo.View().QWidget, qt.Key_Down, "")
-		pressKey(combo.View().QWidget, qt.Key_Down, "")
-		pressKey(combo.View().QWidget, qt.Key_Return, "\r")
+		pressKey(combo.View().AsQWidget(), qtcore.Key_Down, "")
+		pressKey(combo.View().AsQWidget(), qtcore.Key_Down, "")
+		pressKey(combo.View().AsQWidget(), qtcore.Key_Return, "\r")
 	})
 	waitFor(t, "the message to have the focus", func() bool {
 		return !combo.View().IsVisible() && d.message.HasFocus()
@@ -386,7 +388,7 @@ func TestOnlyRewordEdits(t *testing.T) {
 // closed at, or else at most of its parent's.
 func TestRebaseDialogSize(t *testing.T) {
 	on(func() {
-		parent := qt.NewQWidget2()
+		parent := qtwidgets.NewQWidget(nil)
 		defer parent.Delete()
 		parent.Resize(1000, 800)
 		config := settings.Defaults()

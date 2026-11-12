@@ -11,26 +11,22 @@ import (
 	"testing"
 	"time"
 
-	qt "github.com/mappu/miqt/qt6"
-	"github.com/mappu/miqt/qt6/mainthread"
+	"github.com/nomad-software/qute/qtcore"
+	"github.com/nomad-software/qute/qutetest"
 
 	"github.com/nomad-software/delta/internal/git"
 	"github.com/nomad-software/delta/internal/settings"
+	"github.com/nomad-software/qute"
+	"github.com/nomad-software/qute/qtgui"
+	"github.com/nomad-software/qute/qtwidgets"
 )
 
 // TestMain runs the tests on a goroutine of their own while Qt's event loop
-// runs on the main thread, as it must.
+// runs on the main thread, as it must, offscreen whatever the environment says,
+// so that no window opens on the desktop. Closing the last window does not quit.
 func TestMain(m *testing.M) {
 	os.Setenv("QT_QPA_PLATFORM", "offscreen")
-	qt.NewQApplication(os.Args[:1])
-	qt.QGuiApplication_SetQuitOnLastWindowClosed(false)
-	code := 0
-	go func() {
-		code = m.Run()
-		mainthread.Start(qt.QCoreApplication_Quit)
-	}()
-	qt.QApplication_Exec()
-	os.Exit(code)
+	qutetest.TestMain(m)
 }
 
 func runGit(t *testing.T, dir string, args ...string) {
@@ -60,9 +56,9 @@ func runGitOut(t *testing.T, dir string, args ...string) string {
 
 // hasButton says whether a push button with the text is in the object, at any
 // depth.
-func hasButton(object *qt.QObject, text string) bool {
+func hasButton(object *qtcore.QObject, text string) bool {
 	for _, child := range object.Children() {
-		if child.Inherits("QPushButton") && qt.UnsafeNewQPushButton(child.UnsafePointer()).Text() == text {
+		if child.Inherits("QPushButton") && qtwidgets.QPushButtonCast(child).Text() == text {
 			return true
 		}
 		if hasButton(child, text) {
@@ -115,7 +111,7 @@ func newTestWindow(t *testing.T, repo string) *testWindow {
 func newTestWindowAt(t *testing.T, repo, path string) *testWindow {
 	t.Helper()
 	tw := &testWindow{path: path, answer: true}
-	mainthread.Wait(func() {
+	qute.PostSync(func() {
 		tw.Window = NewWindow(tw.path)
 		tw.confirm = func(_, text string) bool {
 			tw.asked = append(tw.asked, text)
@@ -129,21 +125,19 @@ func newTestWindowAt(t *testing.T, repo, path string) *testWindow {
 	t.Cleanup(func() {
 		// It is closed but not deleted, as the answer to a command still running
 		// comes back to it, as it can in the program between closing and leaving.
-		mainthread.Wait(func() { tw.Close() })
+		qute.PostSync(func() { tw.Close() })
 	})
 	return tw
 }
 
 // on runs the function on the main thread.
-func on(fn func()) { mainthread.Wait(fn) }
+func on(fn func()) { qute.PostSync(fn) }
 
 // mapPoint returns where the point x, y of the widget is in another, which holds
 // it.
-func mapPoint(widget, in *qt.QWidget, x, y int) (int, int) {
-	point := qt.NewQPoint2(x, y)
-	defer point.Delete()
-	at := widget.MapTo2(in, point)
-	return at.X(), at.Y()
+func mapPoint(widget, in qtwidgets.QWidgetLike, x, y int) (int, int) {
+	at := widget.AsQWidget().MapTo(in, qtcore.QPoint{X: x, Y: y})
+	return at.X, at.Y
 }
 
 // openRepository opens the repository that holds the folder at once, rather
@@ -176,7 +170,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 }
 
 // listTexts returns the texts of a list.
-func listTexts(list *qt.QListWidget) []string {
+func listTexts(list *qtwidgets.QListWidget) []string {
 	var texts []string
 	for i := range list.Count() {
 		texts = append(texts, list.Item(i).Text())
@@ -186,7 +180,7 @@ func listTexts(list *qt.QListWidget) []string {
 
 // listCodes returns the codes of changes the icons of a list's rows stand for,
 // 0 for a blank.
-func listCodes(list *qt.QListWidget) []byte {
+func listCodes(list *qtwidgets.QListWidget) []byte {
 	var codes []byte
 	for i := range list.Count() {
 		key := list.Item(i).Icon().CacheKey()
@@ -225,16 +219,15 @@ func TestLayout(t *testing.T) {
 			}
 			// Its tooltip is never shown: the event asking for it is taken.
 			button := w.toolbar.WidgetForAction(a)
-			at := qt.NewQPoint2(button.Width()/2, button.Height()/2)
-			tip := qt.NewQHelpEvent(qt.QEvent__ToolTip, at, button.MapToGlobalWithQPoint(at))
-			if qt.QCoreApplication_SendEvent(button.QObject, tip.QEvent) && qt.QToolTip_IsVisible() {
+			at := qtcore.QPoint{X: button.Width() / 2, Y: button.Height() / 2}
+			tip := qtgui.NewQHelpEventWithType(qtcore.QEventToolTip, at, button.MapToGlobal(at))
+			if qtcore.QCoreApplicationSendEvent(button, tip) && qtwidgets.QToolTipIsVisible() {
 				t.Errorf("%q shows a tooltip", a.IconText())
 			}
-			if !qt.QCoreApplication_SendEvent(button.QObject, tip.QEvent) {
+			if !qtcore.QCoreApplicationSendEvent(button, tip) {
 				t.Errorf("%q's tooltip event was not taken", a.IconText())
 			}
 			tip.Delete()
-			at.Delete()
 			if a.Icon().IsNull() {
 				t.Errorf("%q has no icon", a.IconText())
 			}
@@ -242,23 +235,23 @@ func TestLayout(t *testing.T) {
 		if want := []string{"Open", "|", "New Branch", "Checkout", "Finish", "|", "Rescan", "|", "Pull", "Push", "|", "History"}; !slices.Equal(buttons, want) {
 			t.Errorf("buttons %q", buttons)
 		}
-		if size := w.toolbar.IconSize(); size.Width() != 32 || size.Height() != 32 || w.toolbar.ToolButtonStyle() != qt.ToolButtonTextUnderIcon || w.toolbar.IsMovable() {
-			t.Errorf("toolbar of %dx%d, style %v", size.Width(), size.Height(), w.toolbar.ToolButtonStyle())
+		if size := w.toolbar.IconSize(); size.Width != 32 || size.Height != 32 || w.toolbar.ToolButtonStyle() != qtcore.ToolButtonTextUnderIcon || w.toolbar.IsMovable() {
+			t.Errorf("toolbar of %dx%d, style %v", size.Width, size.Height, w.toolbar.ToolButtonStyle())
 		}
 		// Push's arrow opens a menu to force the push, and only Push has one.
 		for _, a := range w.toolbar.Actions() {
 			if a.IsSeparator() || !w.toolbar.WidgetForAction(a).Inherits("QToolButton") {
 				continue
 			}
-			button := qt.UnsafeNewQToolButton(w.toolbar.WidgetForAction(a).UnsafePointer())
+			button := qtwidgets.QToolButtonCast(w.toolbar.WidgetForAction(a))
 			menu := button.Menu()
-			if a.UnsafePointer() != w.pushButton.UnsafePointer() {
+			if a.Ptr() != w.pushButton.Ptr() {
 				if menu != nil {
 					t.Errorf("%q has a menu", a.IconText())
 				}
 				continue
 			}
-			if button.PopupMode() != qt.QToolButton__MenuButtonPopup || menu == nil || len(menu.Actions()) != 1 || menu.Actions()[0].UnsafePointer() != w.forceToggle.UnsafePointer() {
+			if button.PopupMode() != qtwidgets.QToolButtonMenuButtonPopup || menu == nil || len(menu.Actions()) != 1 || menu.Actions()[0].Ptr() != w.forceToggle.Ptr() {
 				t.Errorf("Push's mode is %v, menu %v", button.PopupMode(), menu)
 			}
 		}
@@ -273,17 +266,17 @@ func TestLayout(t *testing.T) {
 			t.Errorf("menus %v", menus)
 		}
 		// Staging is on S, as unstaging is on U.
-		for a, want := range map[*qt.QAction]string{w.stageAll: "Ctrl+Shift+S", w.stageSelected: "Ctrl+S", w.unstageSelected: "Ctrl+U", w.unstageAll: "Ctrl+Shift+U"} {
+		for a, want := range map[*qtgui.QAction]string{w.stageAll: "Ctrl+Shift+S", w.stageSelected: "Ctrl+S", w.unstageSelected: "Ctrl+U", w.unstageAll: "Ctrl+Shift+U"} {
 			if got := a.Shortcut().ToString(); got != want {
 				t.Errorf("%q is on %q, not %q", a.Text(), got, want)
 			}
 		}
 		// Pushing is in the Remote menu, not the Commit menu.
-		for a, want := range map[*qt.QAction][]string{w.push: {"Remote"}, w.forcePush: {"Remote"}} {
+		for a, want := range map[*qtgui.QAction][]string{w.push: {"Remote"}, w.forcePush: {"Remote"}} {
 			var in []string
 			for _, o := range a.AssociatedObjects() {
 				if o.Inherits("QMenu") {
-					in = append(in, strings.ReplaceAll(qt.UnsafeNewQMenu(o.UnsafePointer()).Title(), "&", ""))
+					in = append(in, strings.ReplaceAll(qtwidgets.QMenuCast(o).Title(), "&", ""))
 				}
 			}
 			if !slices.Equal(in, want) {
@@ -291,14 +284,14 @@ func TestLayout(t *testing.T) {
 			}
 		}
 		for _, b := range []struct {
-			button *qt.QPushButton
+			button *qtwidgets.QPushButton
 			text   string
 		}{{w.changes.rescan, "Rescan"}, {w.changes.stage, "Stage Changes"}, {w.changes.commit, "Commit"}, {w.changes.push, "Push"}} {
 			if b.button.Text() != b.text {
 				t.Errorf("button %q", b.button.Text())
 			}
 		}
-		if w.changes.lists.Widget(0).IsAncestorOf(w.changes.staged.QWidget) || !w.changes.lists.Widget(0).IsAncestorOf(w.changes.unstaged.QWidget) {
+		if w.changes.lists.Widget(0).IsAncestorOf(w.changes.staged.AsQWidget()) || !w.changes.lists.Widget(0).IsAncestorOf(w.changes.unstaged.AsQWidget()) {
 			t.Error("the unstaged list is not above the staged one")
 		}
 	})
@@ -307,7 +300,7 @@ func TestLayout(t *testing.T) {
 func TestPanesLook(t *testing.T) {
 	w := newTestWindow(t, newRepo(t))
 	on(func() {
-		for _, label := range []*qt.QLabel{w.changes.unstagedLabel, w.changes.stagedLabel, w.changes.diffLabel} {
+		for _, label := range []*qtwidgets.QLabel{w.changes.unstagedLabel, w.changes.stagedLabel, w.changes.diffLabel} {
 			if !label.Font().Bold() {
 				t.Errorf("%q is not bold", label.Text())
 			}
@@ -318,12 +311,12 @@ func TestPanesLook(t *testing.T) {
 			t.Errorf("handle is %d wide", handle.Width())
 		}
 		image := handle.Grab().ToImage()
-		window := w.Palette().ColorWithCr(qt.QPalette__Window).Rgb()
+		window := w.Palette().Color(qtgui.QPaletteWindow)
 		cx, cy := image.Width()/2, image.Height()/2
-		if image.Pixel(0, cy) != window {
+		if image.PixelColor(0, cy) != window {
 			t.Error("the edge of the handle is painted")
 		}
-		if image.Pixel(cx, cy) == window {
+		if image.PixelColor(cx, cy) == window {
 			t.Error("no dot at the centre of the handle")
 		}
 	})
@@ -343,7 +336,7 @@ func TestToolBarLines(t *testing.T) {
 			w.config.Theme = theme
 			applyTheme(theme)
 			// The palette reaches the toolbar through posted events.
-			qt.QCoreApplication_ProcessEvents()
+			qtcore.QCoreApplicationProcessEvents()
 			image := w.toolbar.Grab().ToImage()
 			x, last := image.Width()-1, image.Height()-1
 			lined := image.Pixel(x, 0) != image.Pixel(x, 1)
@@ -358,13 +351,13 @@ func TestToolBarLines(t *testing.T) {
 		// be dark.
 		lineAt := func() int {
 			image := w.toolbar.Grab().ToImage()
-			return image.PixelColor(image.Width()-1, image.Height()-1).Red()
+			return int(image.PixelColor(image.Width()-1, image.Height()-1).R)
 		}
 		w.config.Theme = ""
 		fusion := lineAt()
 		w.config.Theme = settings.ThemeDark
 		ours := lineAt()
-		window := w.toolbar.Palette().ColorWithCr(qt.QPalette__Window).Red()
+		window := int(w.toolbar.Palette().Color(qtgui.QPaletteWindow).R)
 		if ours >= fusion || ours <= window {
 			t.Errorf("the bottom line is %d, not between the window's %d and Fusion's %d", ours, window, fusion)
 		}
@@ -381,8 +374,8 @@ func TestStatusBar(t *testing.T) {
 		}
 		w.say("A message")
 		bar.Layout().Activate()
-		for _, label := range []*qt.QLabel{w.where, w.said} {
-			effect := qt.UnsafeNewQGraphicsOpacityEffect(label.GraphicsEffect().UnsafePointer())
+		for _, label := range []*qtwidgets.QLabel{w.where, w.said} {
+			effect := qtwidgets.QGraphicsOpacityEffectCast(label.GraphicsEffect())
 			if effect.Opacity() != statusOpacity {
 				t.Errorf("%q has opacity %v", label.Text(), effect.Opacity())
 			}
@@ -393,7 +386,7 @@ func TestStatusBar(t *testing.T) {
 		if w.where.X() > bar.Width()/4 || w.said.X() < w.where.X()+w.where.Width() {
 			t.Errorf("branch at %d, message at %d of %d", w.where.X(), w.said.X(), bar.Width())
 		}
-		if w.said.Alignment()&qt.AlignRight != 0 {
+		if w.said.Alignment()&qtcore.AlignRight != 0 {
 			t.Error("the message is aligned right")
 		}
 	})
@@ -756,7 +749,7 @@ func TestBranchOperations(t *testing.T) {
 // one branch has it in the list, which was empty when the current branch was
 // left out.
 func TestCheckoutDialog(t *testing.T) {
-	texts := func(c *qt.QComboBox) []string {
+	texts := func(c *qtwidgets.QComboBox) []string {
 		var all []string
 		for i := range c.Count() {
 			all = append(all, c.ItemText(i))
@@ -769,8 +762,8 @@ func TestCheckoutDialog(t *testing.T) {
 		return []string{"origin/topic", "origin/Beta", "origin/main"}, nil
 	}
 	var d *formDialog
-	var branch *qt.QComboBox
-	var withRemote *qt.QCheckBox
+	var branch *qtwidgets.QComboBox
+	var withRemote *qtwidgets.QCheckBox
 	on(func() {
 		d, branch, withRemote = newCheckoutDialog(nil, "main", []string{"topic", "main", "Zed", "apple"}, []string{"origin/old"}, fetch)
 		if withRemote.Text() != "Include remote branches" || withRemote.IsChecked() {
@@ -814,8 +807,8 @@ func TestCheckoutDialog(t *testing.T) {
 	})
 
 	// A failed fetch says so, and lists the remote branches already known.
-	var failing *qt.QComboBox
-	var failingBox *qt.QCheckBox
+	var failing *qtwidgets.QComboBox
+	var failingBox *qtwidgets.QCheckBox
 	on(func() {
 		var fd *formDialog
 		fd, failing, failingBox = newCheckoutDialog(nil, "main", []string{"main"}, []string{"origin/old"}, func() ([]string, error) {
@@ -871,7 +864,7 @@ func TestCheckoutFetch(t *testing.T) {
 // went to as it is made first, nor on a list before it, as in Rename Branch.
 func TestFirstTextFieldHasTheFocus(t *testing.T) {
 	var d *formDialog
-	var name *qt.QLineEdit
+	var name *qtwidgets.QLineEdit
 	on(func() {
 		d = newFormDialog(nil, "Rename Branch")
 		d.addChoice("Branch", []string{"main", "topic"})
@@ -889,7 +882,7 @@ func TestFirstTextFieldHasTheFocus(t *testing.T) {
 // list of branches focused, to choose one by keyboard straight away.
 func TestCheckoutFocusesTheBranches(t *testing.T) {
 	var d *formDialog
-	var branch *qt.QComboBox
+	var branch *qtwidgets.QComboBox
 	on(func() {
 		d, branch, _ = newCheckoutDialog(nil, "main", []string{"main", "topic"}, nil, nil)
 		d.Show()
@@ -907,7 +900,7 @@ func TestFormFieldsFillTheDialog(t *testing.T) {
 		d, branch, _ := newCheckoutDialog(nil, "main", []string{"main"}, nil, nil)
 		defer d.DeleteLater()
 		d.Show()
-		if policy := d.form.FieldGrowthPolicy(); policy != qt.QFormLayout__AllNonFixedFieldsGrow {
+		if policy := d.form.FieldGrowthPolicy(); policy != qtwidgets.QFormLayoutAllNonFixedFieldsGrow {
 			t.Errorf("fields grow by %v", policy)
 		}
 		if branch.Width() < d.Width()/2 {
@@ -1008,11 +1001,10 @@ func TestMergePrefillsMessage(t *testing.T) {
 // colourOnLine returns the colour of the text of a line of the diff, at the
 // offset, as a colour name, or "" for none of its own.
 func colourOnLine(v *diffView, line, offset int) string {
-	cursor := qt.NewQTextCursor2(v.Document())
-	defer cursor.Delete()
+	cursor := qtgui.NewQTextCursorWithTextDocument(v.Document())
 	cursor.SetPosition(v.Document().FindBlockByNumber(line).Position() + offset)
 	format := cursor.CharFormat()
-	if format.Foreground().Style() == qt.NoBrush {
+	if format.Foreground().Style() == qtcore.NoBrush {
 		return ""
 	}
 	return format.Foreground().Color().Name()
@@ -1047,7 +1039,7 @@ func TestDiffColours(t *testing.T) {
 		}
 		// No line has a background.
 		for line := range v.Document().BlockCount() {
-			if style := v.Document().FindBlockByNumber(line).BlockFormat().Background().Style(); style != qt.NoBrush {
+			if style := v.Document().FindBlockByNumber(line).BlockFormat().Background().Style(); style != qtcore.NoBrush {
 				t.Errorf("line %d has a background of style %v", line, style)
 			}
 		}
@@ -1087,19 +1079,19 @@ func TestLargeDiffDrawsQuickly(t *testing.T) {
 
 func TestThemes(t *testing.T) {
 	on(func() {
-		desktop := qt.QApplication_Style().Name()
-		base := func() string { return qt.QGuiApplication_Palette().ColorWithCr(qt.QPalette__Base).Name() }
+		desktop := qtwidgets.QApplicationStyle().Name()
+		base := func() string { return qtgui.QGuiApplicationPalette().Color(qtgui.QPaletteBase).Name() }
 		applyTheme(settings.ThemeDark)
-		if base() != "#1f1f1f" || !strings.EqualFold(qt.QApplication_Style().Name(), "Fusion") {
-			t.Errorf("dark: %s, %s", base(), qt.QApplication_Style().Name())
+		if base() != "#1f1f1f" || !strings.EqualFold(qtwidgets.QApplicationStyle().Name(), "Fusion") {
+			t.Errorf("dark: %s, %s", base(), qtwidgets.QApplicationStyle().Name())
 		}
 		applyTheme(settings.ThemeLight)
 		if base() != "#ffffff" {
 			t.Errorf("light: %s", base())
 		}
 		applyTheme("")
-		if qt.QApplication_Style().Name() != desktop {
-			t.Errorf("style %s after following the system, not %s", qt.QApplication_Style().Name(), desktop)
+		if qtwidgets.QApplicationStyle().Name() != desktop {
+			t.Errorf("style %s after following the system, not %s", qtwidgets.QApplicationStyle().Name(), desktop)
 		}
 	})
 }
@@ -1110,7 +1102,7 @@ func TestCodeFontIsApplied(t *testing.T) {
 		s := w.config
 		s.CodeFont, s.CodeFontSize = "Some Font", 21
 		w.applySettings(s)
-		for _, widget := range []*qt.QWidget{w.changes.diff.QWidget, w.history.diff.QWidget, w.changes.message.QWidget} {
+		for _, widget := range []*qtwidgets.QWidget{w.changes.diff.AsQWidget(), w.history.diff.AsQWidget(), w.changes.message.AsQWidget()} {
 			font := widget.Font()
 			if font.Family() != "Some Font" || font.PointSize() != 21 {
 				t.Errorf("font %q, %d", font.Family(), font.PointSize())
@@ -1143,7 +1135,7 @@ func testHistoryMenu(t *testing.T) {
 		var in []string
 		for _, o := range w.showHistory.AssociatedObjects() {
 			if o.Inherits("QMenu") {
-				in = append(in, strings.ReplaceAll(qt.UnsafeNewQMenu(o.UnsafePointer()).Title(), "&", ""))
+				in = append(in, strings.ReplaceAll(qtwidgets.QMenuCast(o).Title(), "&", ""))
 			}
 		}
 		if !slices.Contains(in, "Branch") || w.showHistory.Text() != "Show &History" || w.showHistory.Shortcut().ToString() != "Ctrl+H" {
@@ -1302,8 +1294,8 @@ func TestScreenshot(t *testing.T) {
 	waitFor(t, "the diff", func() bool { return strings.Contains(w.changes.diff.parsed.Text, "+TWO") })
 	time.Sleep(200 * time.Millisecond)
 	on(func() {
-		if !w.Grab().Save(path) {
-			t.Error("not saved")
+		if err := w.Grab().Save(path); err != nil {
+			t.Error(err)
 		}
 		applyTheme("")
 	})
@@ -1405,7 +1397,7 @@ func TestHistoryShowsCommits(t *testing.T) {
 	h := w.history
 	waitFor(t, "the status", func() bool { return w.status.Branch == "main" })
 	on(func() {
-		if !h.page.IsAncestorOf(h.commits.QWidget) || !h.split.IsAncestorOf(h.files.QWidget) || !h.detail.IsAncestorOf(h.diff.QWidget) {
+		if !h.page.IsAncestorOf(h.commits.AsQWidget()) || !h.split.IsAncestorOf(h.files.AsQWidget()) || !h.detail.IsAncestorOf(h.diff.AsQWidget()) {
 			t.Error("the panes are not in place")
 		}
 		w.showHistory.SetChecked(true)
@@ -1616,11 +1608,11 @@ func TestGraphIsDrawn(t *testing.T) {
 		h.commits.ClearSelection()
 		item := h.commits.TopLevelItem(0)
 		rect := h.commits.VisualItemRect(item)
-		if rect.Height() < graphRow {
-			t.Errorf("row is %d high", rect.Height())
+		if rect.Height < graphRow {
+			t.Errorf("row is %d high", rect.Height)
 		}
 		image := h.commits.Viewport().Grab().ToImage()
-		got := image.PixelColor(graphMargin, rect.Top()+rect.Height()/2).Name()
+		got := image.PixelColor(graphMargin, rect.Top()+rect.Height/2).Name()
 		if got != graphColours[0] {
 			t.Errorf("node is %s, not %s", got, graphColours[0])
 		}
@@ -1715,13 +1707,12 @@ func TestFormDialogValidates(t *testing.T) {
 }
 
 // sendMouse sends a mouse event to the middle of a row of a list.
-func sendMouse(list *qt.QListWidget, kind qt.QEvent__Type, row int, button, buttons qt.MouseButton, modifiers qt.KeyboardModifier) {
+func sendMouse(list *qtwidgets.QListWidget, kind qtcore.QEventType, row int, button, buttons qtcore.MouseButton, modifiers qtcore.KeyboardModifier) {
 	rect := list.VisualItemRect(list.Item(row))
-	position := qt.NewQPointF3(float64(rect.Left()+rect.Width()/2), float64(rect.Top()+rect.Height()/2))
-	defer position.Delete()
-	event := qt.NewQMouseEvent(kind, position, button, buttons, modifiers)
+	position := qtcore.QPointF{X: float64(rect.Left() + rect.Width/2), Y: float64(rect.Top() + rect.Height/2)}
+	event := qtgui.NewQMouseEvent(kind, position, list.Viewport().MapToGlobalF(position), button, buttons, modifiers)
 	defer event.Delete()
-	qt.QCoreApplication_SendEvent(list.Viewport().QObject, event.QEvent)
+	qtcore.QCoreApplicationSendEvent(list.Viewport(), event)
 }
 
 func TestDraggingShowsEachFile(t *testing.T) {
@@ -1732,11 +1723,11 @@ func TestDraggingShowsEachFile(t *testing.T) {
 	w := newTestWindow(t, dir)
 	waitFor(t, "the files", func() bool { return w.idleWith(3, 0) })
 	list := w.changes.unstaged
-	press := func(row int, modifiers qt.KeyboardModifier) {
-		sendMouse(list, qt.QEvent__MouseButtonPress, row, qt.LeftButton, qt.LeftButton, modifiers)
+	press := func(row int, modifiers qtcore.KeyboardModifier) {
+		sendMouse(list, qtcore.QEventMouseButtonPress, row, qtcore.LeftButton, qtcore.LeftButton, modifiers)
 	}
-	release := func(row int, modifiers qt.KeyboardModifier) {
-		sendMouse(list, qt.QEvent__MouseButtonRelease, row, qt.LeftButton, qt.NoButton, modifiers)
+	release := func(row int, modifiers qtcore.KeyboardModifier) {
+		sendMouse(list, qtcore.QEventMouseButtonRelease, row, qtcore.LeftButton, qtcore.NoButton, modifiers)
 	}
 	selected := func() []int {
 		var rows []int
@@ -1746,10 +1737,12 @@ func TestDraggingShowsEachFile(t *testing.T) {
 		slices.Sort(rows)
 		return rows
 	}
-	on(func() { press(0, qt.NoModifier) })
+	on(func() { press(0, qtcore.NoModifier) })
 	waitFor(t, "the first file", func() bool { return strings.Contains(w.changes.diff.parsed.Text, "text of a") })
 	for row, name := range []string{"a", "b", "c"} {
-		on(func() { sendMouse(list, qt.QEvent__MouseMove, row, qt.NoButton, qt.LeftButton, qt.NoModifier) })
+		on(func() {
+			sendMouse(list, qtcore.QEventMouseMove, row, qtcore.NoButton, qtcore.LeftButton, qtcore.NoModifier)
+		})
 		waitFor(t, "the file dragged over", func() bool { return strings.Contains(w.changes.diff.parsed.Text, "text of "+name) })
 		on(func() {
 			if got := selected(); !slices.Equal(got, []int{row}) {
@@ -1762,26 +1755,26 @@ func TestDraggingShowsEachFile(t *testing.T) {
 	}
 	// And back again, and it stays one file on letting go.
 	on(func() {
-		sendMouse(list, qt.QEvent__MouseMove, 1, qt.NoButton, qt.LeftButton, qt.NoModifier)
-		release(1, qt.NoModifier)
+		sendMouse(list, qtcore.QEventMouseMove, 1, qtcore.NoButton, qtcore.LeftButton, qtcore.NoModifier)
+		release(1, qtcore.NoModifier)
 		if got := selected(); !slices.Equal(got, []int{1}) {
 			t.Errorf("after the drag, selected %v", got)
 		}
 
 		// Ctrl and shift choose several, by clicks.
-		press(0, qt.ControlModifier)
-		release(0, qt.ControlModifier)
+		press(0, qtcore.ControlModifier)
+		release(0, qtcore.ControlModifier)
 		if got := selected(); !slices.Equal(got, []int{0, 1}) {
 			t.Errorf("after ctrl+click, selected %v", got)
 		}
-		press(2, qt.ShiftModifier)
-		release(2, qt.ShiftModifier)
+		press(2, qtcore.ShiftModifier)
+		release(2, qtcore.ShiftModifier)
 		if got := selected(); len(got) < 2 || !slices.Contains(got, 2) {
 			t.Errorf("after shift+click, selected %v", got)
 		}
 		// A drag with ctrl held doesn't lose them.
 		before := selected()
-		sendMouse(list, qt.QEvent__MouseMove, 0, qt.NoButton, qt.LeftButton, qt.ControlModifier)
+		sendMouse(list, qtcore.QEventMouseMove, 0, qtcore.NoButton, qtcore.LeftButton, qtcore.ControlModifier)
 		if got := selected(); !slices.Equal(got, before) {
 			t.Errorf("after ctrl+drag, selected %v, not %v", got, before)
 		}
@@ -1827,7 +1820,7 @@ func TestChangeListsHaveNoTooltips(t *testing.T) {
 	w := newTestWindow(t, dir)
 	waitFor(t, "the status", func() bool { return w.idleWith(1, 1) })
 	on(func() {
-		for _, list := range []*qt.QListWidget{w.changes.unstaged, w.changes.staged} {
+		for _, list := range []*qtwidgets.QListWidget{w.changes.unstaged, w.changes.staged} {
 			if tip := list.Item(0).ToolTip(); tip != "" {
 				t.Errorf("%q has the tooltip %q", list.Item(0).Text(), tip)
 			}
@@ -1853,7 +1846,7 @@ func TestShortcuts(t *testing.T) {
 			if !child.Inherits("QAction") {
 				continue
 			}
-			a := qt.UnsafeNewQAction(child.UnsafePointer())
+			a := qtgui.QActionCast(child)
 			key := a.Shortcut().ToString()
 			if key == "" {
 				continue

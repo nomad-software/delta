@@ -4,9 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	qt "github.com/mappu/miqt/qt6"
-
 	"github.com/nomad-software/delta/internal/git"
+	"github.com/nomad-software/qute/qtwidgets"
 )
 
 // Uncommit, in the Commit menu after Commit on Ctrl+Shift+Return, then a
@@ -25,7 +24,7 @@ func TestUncommit(t *testing.T) {
 		var items []string
 		for _, a := range w.commit.AssociatedObjects() {
 			if a.Inherits("QMenu") {
-				for _, item := range qt.UnsafeNewQMenu(a.UnsafePointer()).Actions() {
+				for _, item := range qtwidgets.QMenuCast(a).Actions() {
 					items = append(items, item.Text())
 				}
 			}

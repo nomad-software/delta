@@ -1,7 +1,8 @@
 package ui
 
 import (
-	qt "github.com/mappu/miqt/qt6"
+	"github.com/nomad-software/qute/qtcore"
+	"github.com/nomad-software/qute/qtgui"
 
 	"github.com/nomad-software/delta/internal/git"
 	"github.com/nomad-software/delta/internal/settings"
@@ -44,16 +45,16 @@ func changeCodes(c settings.ChangeColours) map[byte]string {
 // changeIcons are the icons made so far, one for each code, as a list can have
 // thousands of rows but only a few codes. Each is drawn in the palette as it is
 // when it is shown, so that it is greyed where it is disabled.
-var changeIcons = map[byte]*qt.QIcon{}
+var changeIcons = map[byte]*qtgui.QIcon{}
 
 // changeIcon returns the circle of what happened to a file, by its code, or a
 // blank of the same size for a code with no colour, so that a row without one
 // lines up with those with one.
-func changeIcon(code byte) *qt.QIcon {
+func changeIcon(code byte) *qtgui.QIcon {
 	if icon := changeIcons[code]; icon != nil {
 		return icon
 	}
-	icon := paintedIcon(func(p *qt.QPainter, x, y, side float64, mode qt.QIcon__Mode) {
+	icon := paintedIcon(func(p *qtgui.QPainter, x, y, side float64, mode qtgui.QIconMode) {
 		paintDot(p, x, y, side, code, mode)
 	})
 	changeIcons[code] = icon
@@ -63,39 +64,29 @@ func changeIcon(code byte) *qt.QIcon {
 // paintDot draws the circle of the code in a square of the side at x, y: an
 // outline in its colour, changeOutline wide at the size it is made for, and inside
 // it a pale wash of the colour.
-func paintDot(p *qt.QPainter, x, y, side float64, code byte, mode qt.QIcon__Mode) {
+func paintDot(p *qtgui.QPainter, x, y, side float64, code byte, mode qtgui.QIconMode) {
 	name, ok := changeColours[code]
 	if !ok {
 		return
 	}
 	p.Save()
 	defer p.Restore()
-	p.SetRenderHint(qt.QPainter__Antialiasing)
+	p.SetRenderHint(qtgui.QPainterAntialiasing)
 	colour := dotColour(name, mode)
-	defer colour.Delete()
 	stroke := side * changeOutline / changeDotSize
-	outline := qt.NewQBrush3(colour)
-	defer outline.Delete()
-	pen := qt.NewQPen4(outline, stroke)
-	defer pen.Delete()
-	wash := qt.NewQColor10(colour)
-	defer wash.Delete()
-	wash.SetAlphaF(changeFill)
-	fill := qt.NewQBrush3(wash)
-	defer fill.Delete()
-	p.SetPenWithPen(pen)
-	p.SetBrush(fill)
-	bounds := qt.NewQRectF4(x+stroke/2, y+stroke/2, side-stroke, side-stroke)
-	defer bounds.Delete()
-	p.DrawEllipse(bounds)
+	p.SetPen(qtgui.NewQPenWithBrush(qtgui.NewQBrushWithColor(colour), stroke))
+	wash := colour
+	wash.A = alpha(changeFill)
+	p.SetBrushColor(wash)
+	p.DrawEllipseF(qtcore.QRectF{X: x + stroke/2, Y: y + stroke/2, Width: side - stroke, Height: side - stroke})
 }
 
-// dotColour returns a new colour a circle is drawn in, in the mode: its own, on
+// dotColour returns the colour a circle is drawn in, in the mode: its own, on
 // a selected row too, so that what happened to a file shows wherever it is, or
 // that of disabled text where it is disabled, as the toolbar's icons are.
-func dotColour(name string, mode qt.QIcon__Mode) *qt.QColor {
-	if mode == qt.QIcon__Disabled {
+func dotColour(name string, mode qtgui.QIconMode) qtgui.QColor {
+	if mode == qtgui.QIconDisabled {
 		return iconColour(mode)
 	}
-	return qt.NewQColor6(name)
+	return colour(name)
 }

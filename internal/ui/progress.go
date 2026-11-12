@@ -1,7 +1,9 @@
 package ui
 
 import (
-	qt "github.com/mappu/miqt/qt6"
+	"github.com/nomad-software/qute/qtcore"
+	"github.com/nomad-software/qute/qtgui"
+	"github.com/nomad-software/qute/qtwidgets"
 
 	"github.com/nomad-software/delta/internal/settings"
 )
@@ -26,9 +28,9 @@ const (
 // of colour. It keeps its room while hidden, so that the panes under it don't
 // move as it shows and goes.
 type progress struct {
-	*qt.QProgressBar
+	qtwidgets.QProgressBarBase
 	// delay waits for progressDelay before showing it, and frames moves it.
-	delay, frames *qt.QTimer
+	delay, frames *qtcore.QTimer
 	// phase is how far through a sweep the segment is, from 0 to 1.
 	phase float64
 	// colour is the segment's, as #rrggbb.
@@ -38,24 +40,24 @@ type progress struct {
 // newProgress returns the bar, its segment in the default colour until another
 // is given.
 func newProgress() *progress {
-	p := &progress{QProgressBar: qt.NewQProgressBar2(), colour: settings.DefaultProgressColour}
+	p := &progress{colour: settings.DefaultProgressColour}
+	qtwidgets.NewQProgressBarWith(p, nil)
 	p.SetRange(0, 0)
 	p.SetTextVisible(false)
 	p.SetFixedHeight(progressHeight)
 	policy := p.SizePolicy()
 	policy.SetRetainSizeWhenHidden(true)
-	p.SetSizePolicy(*policy)
+	p.SetSizePolicy(policy)
 	p.SetVisible(false)
-	p.OnPaintEvent(func(func(*qt.QPaintEvent), *qt.QPaintEvent) { p.paint() })
 
-	p.delay = qt.NewQTimer2(p.QObject)
+	p.delay = qtcore.NewQTimer(p)
 	p.delay.SetSingleShot(true)
 	p.delay.OnTimeout(func() {
 		p.phase = 0
-		p.frames.Start(progressFrame)
+		p.frames.StartWithInterval(progressFrame)
 		p.SetVisible(true)
 	})
-	p.frames = qt.NewQTimer2(p.QObject)
+	p.frames = qtcore.NewQTimer(p)
 	p.frames.OnTimeout(func() {
 		p.phase += float64(progressFrame) / progressSweep
 		if p.phase >= 1 {
@@ -68,7 +70,7 @@ func newProgress() *progress {
 
 // start shows the bar once progressDelay has passed, unless stop comes first.
 func (p *progress) start() {
-	p.delay.Start(progressDelay)
+	p.delay.StartWithInterval(progressDelay)
 }
 
 // stop hides the bar, or keeps it from showing.
@@ -87,19 +89,15 @@ func (p *progress) chunk() (left, right int) {
 	return left, max(left, right)
 }
 
-// paint draws the track, in a colour a little way from the window's towards its
+// PaintEvent draws the track, in a colour a little way from the window's towards its
 // text, so that it follows the theme, and the segment on it in its colour, by
 // default Solarized's blue.
-func (p *progress) paint() {
+func (p *progress) PaintEvent(*qtgui.QPaintEvent) {
 	palette := p.Palette()
-	track := mix(palette.ColorWithCr(qt.QPalette__WindowText), palette.ColorWithCr(qt.QPalette__Window), 15)
-	defer track.Delete()
-	painter := qt.NewQPainter2(p.QPaintDevice)
-	defer painter.Delete()
-	painter.FillRect5(0, 0, p.Width(), p.Height(), track)
+	track := mix(palette.Color(qtgui.QPaletteWindowText), palette.Color(qtgui.QPaletteWindow), 15)
+	painter := qtgui.NewQPainterOn(p)
+	defer painter.End()
+	painter.FillRect(qtcore.QRect{Width: p.Width(), Height: p.Height()}, track)
 	left, right := p.chunk()
-	segment := qt.NewQColor6(p.colour)
-	defer segment.Delete()
-	painter.FillRect5(left, 0, right-left, p.Height(), segment)
-	painter.End()
+	painter.FillRect(qtcore.QRect{X: left, Width: right - left, Height: p.Height()}, colour(p.colour))
 }

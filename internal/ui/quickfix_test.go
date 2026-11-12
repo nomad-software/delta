@@ -19,7 +19,7 @@ func TestQuickFix(t *testing.T) {
 		if key := w.quickFixAction.Shortcut().ToString(); key != "Ctrl+Shift+Q" {
 			t.Errorf("Quick Fix is on %q", key)
 		}
-		if !hasButton(w.changes.page.QObject, "Commit") || hasButton(w.changes.page.QObject, "Quick Fix") {
+		if !hasButton(w.changes.page.AsQObject(), "Commit") || hasButton(w.changes.page.AsQObject(), "Quick Fix") {
 			t.Error("there is a Quick Fix button beside the message")
 		}
 		if !w.quickFixAction.IsEnabled() {

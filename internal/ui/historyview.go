@@ -5,8 +5,9 @@ import (
 	"slices"
 	"time"
 
-	qt "github.com/mappu/miqt/qt6"
-	"github.com/mappu/miqt/qt6/mainthread"
+	"github.com/nomad-software/qute"
+	"github.com/nomad-software/qute/qtcore"
+	"github.com/nomad-software/qute/qtwidgets"
 
 	"github.com/nomad-software/delta/internal/git"
 	"github.com/nomad-software/delta/internal/graph"
@@ -32,19 +33,19 @@ const (
 // on: the commits above, and below them the files of the commit
 // chosen beside its diff.
 type historyView struct {
-	page *qt.QWidget
+	page *qtwidgets.QWidget
 	// split divides the commits from what is below them, and detail the files
 	// from the diff.
-	split, detail *qt.QSplitter
+	split, detail *qtwidgets.QSplitter
 
-	commits *qt.QTreeWidget
+	commits *qtwidgets.QTreeWidget
 	// graph draws the tree of commits, and layout works out where.
 	graph     *graphColumn
 	layout    *graph.Layout
-	files     *qt.QListWidget
+	files     *qtwidgets.QListWidget
 	diff      *diffView
-	diffLabel *qt.QLabel
-	fileLabel *qt.QLabel
+	diffLabel *qtwidgets.QLabel
+	fileLabel *qtwidgets.QLabel
 
 	// list is what the commits show, which starts with the uncommitted changes
 	// if there are any.
@@ -73,50 +74,50 @@ type historyView struct {
 }
 
 func newHistoryView(config settings.Settings) *historyView {
-	h := &historyView{page: qt.NewQWidget2(), pageSize: config.HistoryPageSize, stale: true}
+	h := &historyView{page: qtwidgets.NewQWidget(nil), pageSize: config.HistoryPageSize, stale: true}
 
-	h.commits = qt.NewQTreeWidget2()
+	h.commits = qtwidgets.NewQTreeWidget(nil)
 	h.commits.SetHeaderLabels([]string{"Graph", "Subject", "Author", "Date", "Commit"})
 	h.commits.SetRootIsDecorated(false)
 	h.commits.SetUniformRowHeights(true)
 	h.commits.SetAllColumnsShowFocus(true)
-	h.commits.SetSelectionMode(qt.QAbstractItemView__SingleSelection)
+	h.commits.SetSelectionMode(qtwidgets.QAbstractItemViewSingleSelection)
 	header := h.commits.Header()
 	header.SetStretchLastSection(false)
-	h.graph = newGraphColumn(h.commits.QObject)
-	h.commits.SetItemDelegateForColumn(colGraph, h.graph.QAbstractItemDelegate)
-	header.SetSectionResizeMode2(colGraph, qt.QHeaderView__Fixed)
+	h.graph = newGraphColumn(h.commits)
+	h.commits.SetItemDelegateForColumn(colGraph, h.graph)
+	header.SetSectionResizeMode(colGraph, qtwidgets.QHeaderViewFixed)
 	h.resetGraph()
-	header.SetSectionResizeMode2(colSubject, qt.QHeaderView__Stretch)
+	header.SetSectionResizeMode(colSubject, qtwidgets.QHeaderViewStretch)
 	header.ResizeSection(colAuthor, 170)
 	header.ResizeSection(colDate, 140)
 	header.ResizeSection(colCommit, 90)
 
 	h.fileLabel = heading("Files")
-	h.files = qt.NewQListWidget2()
+	h.files = qtwidgets.NewQListWidget(nil)
 	h.files.SetUniformItemSizes(true)
 	setChangeIconSize(h.files)
 
 	h.diffLabel = heading("Diff")
-	h.diffLabel.SetTextFormat(qt.PlainText)
+	h.diffLabel.SetTextFormat(qtcore.PlainText)
 	h.diff = newDiffView(config.AddedColour, config.RemovedColour, config.HunkColour)
 
-	h.detail = newPaneSplitter(qt.Horizontal)
-	h.detail.AddWidget(labelled(h.fileLabel, h.files.QWidget))
-	h.detail.AddWidget(labelled(h.diffLabel, h.diff.QWidget))
+	h.detail = newPaneSplitter(qtcore.Horizontal)
+	h.detail.AddWidget(labelled(h.fileLabel, h.files))
+	h.detail.AddWidget(labelled(h.diffLabel, h.diff))
 	h.detail.SetStretchFactor(1, 1)
 
-	h.split = newPaneSplitter(qt.Vertical)
-	h.split.AddWidget(labelled(heading("Commits"), h.commits.QWidget))
-	h.split.AddWidget(h.detail.QWidget)
+	h.split = newPaneSplitter(qtcore.Vertical)
+	h.split.AddWidget(labelled(heading("Commits"), h.commits))
+	h.split.AddWidget(h.detail)
 	h.split.SetStretchFactor(1, 1)
-	for _, s := range []*qt.QSplitter{h.split, h.detail} {
+	for _, s := range []*qtwidgets.QSplitter{h.split, h.detail} {
 		s.SetChildrenCollapsible(false)
 	}
 
-	layout := qt.NewQVBoxLayout(h.page)
-	layout.SetContentsMargins(pageMargin, pageMargin, pageMargin, pageMargin)
-	layout.AddWidget(h.split.QWidget)
+	layout := qtwidgets.NewQVBoxLayout(h.page)
+	layout.SetContentsMargins(margins(pageMargin))
+	layout.AddWidget(h.split)
 	return h
 }
 
@@ -128,15 +129,15 @@ func (w *Window) connectHistory() {
 			w.showCommit()
 		}
 	})
-	h.commits.SetContextMenuPolicy(qt.CustomContextMenu)
-	h.commits.OnCustomContextMenuRequested(func(pos *qt.QPoint) {
+	h.commits.SetContextMenuPolicy(qtcore.CustomContextMenu)
+	h.commits.OnCustomContextMenuRequested(func(pos qtcore.QPoint) {
 		row := h.commits.IndexOfTopLevelItem(h.commits.ItemAt(pos))
 		if row < 0 || row >= len(h.list) {
 			return
 		}
 		menu := w.commitMenu(h.list[row])
 		defer menu.DeleteLater()
-		menu.ExecWithPos(h.commits.Viewport().MapToGlobalWithQPoint(pos))
+		menu.ExecAt(h.commits.Viewport().MapToGlobal(pos))
 	})
 	// More are read on reaching the end of those read.
 	bar := h.commits.VerticalScrollBar()
@@ -180,11 +181,11 @@ func (w *Window) historyShown() bool {
 
 // commitMenu returns the menu of a commit in the history, which rebases from it.
 // The uncommitted changes are not a commit to rebase from.
-func (w *Window) commitMenu(c git.Commit) *qt.QMenu {
-	menu := qt.NewQMenu(w.QWidget)
-	rebase := menu.AddActionWithText("&Rebase from here…")
+func (w *Window) commitMenu(c git.Commit) *qtwidgets.QMenu {
+	menu := qtwidgets.NewQMenu(w)
+	rebase := menu.AddActionText("&Rebase from here…")
 	rebase.SetEnabled(w.repo != nil && !w.busy && c.Hash != git.Uncommitted)
-	rebase.OnTriggered(func() { w.rebaseFrom(c) })
+	rebase.OnTriggered(func(bool) { w.rebaseFrom(c) })
 	return menu
 }
 
@@ -230,7 +231,7 @@ func (w *Window) loadHistory() {
 	w.beginWork()
 	go func() {
 		page, more, err := readHistory(r, limit)
-		mainthread.Start(func() {
+		qute.Post(func() {
 			w.endWork()
 			if !w.historyRead(request, r, err) {
 				return
@@ -262,7 +263,7 @@ func (w *Window) loadMoreHistory() {
 		if err == nil {
 			page = layOutPage(layout, commits)
 		}
-		mainthread.Start(func() {
+		qute.Post(func() {
 			w.endWork()
 			if !w.historyRead(request, r, err) {
 				return
@@ -395,10 +396,10 @@ func (w *Window) showCommits(page historyPage) {
 
 // commitItems returns the rows of the commits of the page, from the texts
 // worked out for them.
-func commitItems(page historyPage) []*qt.QTreeWidgetItem {
-	items := make([]*qt.QTreeWidgetItem, len(page.commits))
+func commitItems(page historyPage) []*qtwidgets.QTreeWidgetItem {
+	items := make([]*qtwidgets.QTreeWidgetItem, len(page.commits))
 	for i, c := range page.commits {
-		items[i] = qt.NewQTreeWidgetItem2(page.texts[i])
+		items[i] = qtwidgets.NewQTreeWidgetItemWithStrings(page.texts[i])
 		if c.Hash == git.Uncommitted {
 			italic(items[i])
 		}
@@ -408,9 +409,8 @@ func commitItems(page historyPage) []*qt.QTreeWidgetItem {
 
 // italic puts the row of the uncommitted changes in italics, as they are not a
 // commit.
-func italic(item *qt.QTreeWidgetItem) {
-	font := qt.NewQFont5(item.Font(colSubject))
-	defer font.Delete()
+func italic(item *qtwidgets.QTreeWidgetItem) {
+	font := item.Font(colSubject)
 	font.SetItalic(true)
 	item.SetFont(colSubject, font)
 }
@@ -457,7 +457,7 @@ func (w *Window) showCommit() {
 	w.beginWork()
 	go func() {
 		changes, err := r.CommitFiles(commit)
-		mainthread.Start(func() {
+		qute.Post(func() {
 			w.endWork()
 			if request != h.details || r != w.repo {
 				return
@@ -539,6 +539,6 @@ func (h *historyView) setFiles(changes []git.Change) {
 	for _, c := range changes {
 		item := newChangeItem(c)
 		item.SetToolTip(explain(c))
-		h.files.AddItemWithItem(item)
+		h.files.AddItem(item)
 	}
 }

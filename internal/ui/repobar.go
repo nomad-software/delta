@@ -6,7 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	qt "github.com/mappu/miqt/qt6"
+	"github.com/nomad-software/qute/qtcore"
+	"github.com/nomad-software/qute/qtwidgets"
 )
 
 // The bar's dropdowns are as wide as their longest names, but no narrower than
@@ -25,30 +26,30 @@ const (
 // is pushed to the right by a stretch of its own, so that it can be narrowed
 // rather than put in the toolbar's menu.
 type repoBar struct {
-	widget                    *qt.QWidget
-	repos, branches           *qt.QComboBox
-	reposLabel, branchesLabel *qt.QLabel
+	widget                    *qtwidgets.QWidget
+	repos, branches           *qtwidgets.QComboBox
+	reposLabel, branchesLabel *qtwidgets.QLabel
 	// paths are the folders of the repositories, in the order listed.
 	paths []string
 }
 
 func newRepoBar() *repoBar {
-	b := &repoBar{widget: qt.NewQWidget2()}
-	b.widget.SetSizePolicy2(qt.QSizePolicy__Expanding, qt.QSizePolicy__Preferred)
+	b := &repoBar{widget: qtwidgets.NewQWidget(nil)}
+	setSizePolicy(b.widget, qtwidgets.QSizePolicyExpanding, qtwidgets.QSizePolicyPreferred)
 	b.repos = newBarCombo("No repository")
 	b.branches = newBarCombo("No branch")
-	b.reposLabel = qt.NewQLabel3("Repository")
-	b.reposLabel.SetBuddy(b.repos.QWidget)
-	b.branchesLabel = qt.NewQLabel3("Branch")
-	b.branchesLabel.SetBuddy(b.branches.QWidget)
-	layout := qt.NewQHBoxLayout(b.widget)
-	layout.SetContentsMargins(0, 0, 0, 0)
+	b.reposLabel = qtwidgets.NewQLabelWithText("Repository", nil)
+	b.reposLabel.SetBuddy(b.repos)
+	b.branchesLabel = qtwidgets.NewQLabelWithText("Branch", nil)
+	b.branchesLabel.SetBuddy(b.branches)
+	layout := qtwidgets.NewQHBoxLayout(b.widget)
+	layout.SetContentsMargins(qtcore.QMargins{})
 	layout.AddStretch()
-	layout.AddWidget3(b.reposLabel.QWidget, 0, qt.AlignVCenter)
-	layout.AddWidget3(b.repos.QWidget, 0, qt.AlignVCenter)
+	layout.AddWidgetFull(b.reposLabel, 0, qtcore.AlignVCenter)
+	layout.AddWidgetFull(b.repos, 0, qtcore.AlignVCenter)
 	layout.AddSpacing(repoBarGap)
-	layout.AddWidget3(b.branchesLabel.QWidget, 0, qt.AlignVCenter)
-	layout.AddWidget3(b.branches.QWidget, 0, qt.AlignVCenter)
+	layout.AddWidgetFull(b.branchesLabel, 0, qtcore.AlignVCenter)
+	layout.AddWidgetFull(b.branches, 0, qtcore.AlignVCenter)
 	layout.AddSpacing(repoBarEnd)
 	return b
 }
@@ -62,9 +63,9 @@ const (
 
 // newBarCombo returns a dropdown of the bar, saying the placeholder while
 // nothing is chosen.
-func newBarCombo(placeholder string) *qt.QComboBox {
-	c := qt.NewQComboBox2()
-	c.SetSizeAdjustPolicy(qt.QComboBox__AdjustToContents)
+func newBarCombo(placeholder string) *qtwidgets.QComboBox {
+	c := qtwidgets.NewQComboBox(nil)
+	c.SetSizeAdjustPolicy(qtwidgets.QComboBoxAdjustToContents)
 	c.SetMinimumWidth(repoComboLeast)
 	c.SetMaximumWidth(repoComboMost)
 	c.SetPlaceholderText(placeholder)
@@ -91,9 +92,7 @@ func (b *repoBar) setRepositories(paths []string, current string) {
 	b.repos.Clear()
 	for i, path := range b.paths {
 		b.repos.AddItem(filepath.Base(path))
-		tip := qt.NewQVariant11(path)
-		b.repos.SetItemData2(i, tip, int(qt.ToolTipRole))
-		tip.Delete()
+		b.repos.SetItemDataFull(i, qtcore.NewQVariantOf(path), int(qtcore.ToolTipRole))
 	}
 	b.repos.SetCurrentIndex(slices.Index(b.paths, current))
 }

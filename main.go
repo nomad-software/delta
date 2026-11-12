@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 
-	qt "github.com/mappu/miqt/qt6"
-	"github.com/mappu/miqt/qt6/mainthread"
+	"github.com/nomad-software/qute"
+	"github.com/nomad-software/qute/qtcore"
+	"github.com/nomad-software/qute/qtgui"
+	"github.com/nomad-software/qute/qtwidgets"
 
 	"github.com/nomad-software/delta/internal/appicon"
 	"github.com/nomad-software/delta/internal/desktop"
@@ -29,14 +30,14 @@ func main() {
 		path = "settings.json"
 	}
 
-	qt.NewQApplication(os.Args)
-	qt.QCoreApplication_SetApplicationName(desktop.Name)
-	qt.QGuiApplication_SetApplicationDisplayName("Delta")
-	qt.QGuiApplication_SetDesktopFileName(desktop.Name)
+	qtwidgets.NewQApplication(os.Args)
+	qtcore.QCoreApplicationSetApplicationName(desktop.Name)
+	qtgui.QGuiApplicationSetApplicationDisplayName("Delta")
+	qtgui.QGuiApplicationSetDesktopFileName(desktop.Name)
 
 	// What Qt has not used of the arguments can name a repository.
 	var repository string
-	if args := qt.QCoreApplication_Arguments(); len(args) > 1 {
+	if args := qtcore.QCoreApplicationArguments(); len(args) > 1 {
 		repository = args[1]
 	}
 
@@ -53,25 +54,26 @@ func main() {
 	case err != nil:
 		// The program runs, as it would without the check.
 		fmt.Fprintln(os.Stderr, "delta: another copy could be started beside this one:", err)
-	default:
-		defer claim.Close()
 	}
 
-	if runtime.GOOS == "linux" {
-		if err := desktop.Install(appicon.PNG); err != nil {
-			fmt.Fprintln(os.Stderr, "delta: the desktop entry could not be written:", err)
+	if err := desktop.Install(appicon.PNG); err != nil {
+		fmt.Fprintln(os.Stderr, "delta: the desktop entry could not be written:", err)
+	}
+
+	// The application made above is the one qute runs.
+	code := qute.Main(func() {
+		window := ui.NewWindow(path)
+		window.Start(repository)
+		if claim != nil {
+			claim.Serve(func(r instance.Request) {
+				qute.Post(func() { window.Activate(r) })
+			})
 		}
-	}
-
-	window := ui.NewWindow(path)
-	window.Start(repository)
+	})
 	if claim != nil {
-		claim.Serve(func(r instance.Request) {
-			mainthread.Start(func() { window.Activate(r) })
-		})
+		claim.Close()
 	}
-
-	qt.QApplication_Exec()
+	os.Exit(code)
 }
 
 // claimInstance makes this the copy that runs, or else hands the one that runs

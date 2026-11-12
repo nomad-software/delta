@@ -5,9 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	qt "github.com/mappu/miqt/qt6"
-
 	"github.com/nomad-software/delta/internal/instance"
+	"github.com/nomad-software/qute/qtcore"
 )
 
 // The window is brought back when the program is started again, from being
@@ -18,7 +17,7 @@ func TestActivate(t *testing.T) {
 	w := newTestWindow(t, newRepo(t))
 	waitFor(t, "the status", func() bool { return w.idleWith(0, 0) })
 	on(func() {
-		w.SetWindowState(qt.WindowMaximized | qt.WindowMinimized)
+		w.SetWindowState(qtcore.WindowMaximized | qtcore.WindowMinimized)
 		w.Activate(instance.Request{Token: "token-1"})
 		if w.IsMinimized() || !w.IsMaximized() || !w.IsVisible() {
 			t.Errorf("minimised: state %v, visible %v", w.WindowState(), w.IsVisible())

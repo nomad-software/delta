@@ -27,15 +27,15 @@ func TestProgress(t *testing.T) {
 		if w.progressShown() {
 			t.Error("shown to start with")
 		}
-		bar := w.progress.QWidget
-		x, y := mapPoint(bar, w.QWidget, 0, 0)
+		bar := w.progress.AsQWidget()
+		x, y := mapPoint(bar, w.AsQWidget(), 0, 0)
 		if x != 0 || bar.Width() != w.Width() || w.progress.Minimum() != 0 || w.progress.Maximum() != 0 || w.progress.IsTextVisible() {
 			t.Errorf("at %d, %d wide in %d, range %d to %d", x, bar.Width(), w.Width(), w.progress.Minimum(), w.progress.Maximum())
 		}
-		if _, below := mapPoint(w.toolbar.QWidget, w.QWidget, 0, w.toolbar.Height()); y != below {
+		if _, below := mapPoint(w.toolbar.AsQWidget(), w.AsQWidget(), 0, w.toolbar.Height()); y != below {
 			t.Errorf("at %d, under a toolbar ending at %d", y, below)
 		}
-		_, top = mapPoint(w.views.QWidget, w.QWidget, 0, 0)
+		_, top = mapPoint(w.views.AsQWidget(), w.AsQWidget(), 0, 0)
 		// Work done in a moment never shows it.
 		w.beginWork()
 		w.endWork()
@@ -62,7 +62,7 @@ func TestProgress(t *testing.T) {
 			t.Error("the progress bar is not moving")
 		}
 		was, _ = w.progress.chunk()
-		if _, moved := mapPoint(w.views.QWidget, w.QWidget, 0, 0); moved != top {
+		if _, moved := mapPoint(w.views.AsQWidget(), w.AsQWidget(), 0, 0); moved != top {
 			t.Errorf("the panes moved from %d to %d", top, moved)
 		}
 		// Two at once: it stays until both are done.

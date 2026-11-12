@@ -1,6 +1,6 @@
 BINARY := delta
 
-.PHONY: build run install test race vet screenshots icons appimage macos clean
+.PHONY: build run install test race vet bench screenshots appimage clean
 
 build:
 	go build -ldflags "-s -w" -o $(BINARY) .
@@ -25,25 +25,22 @@ race:
 vet:
 	go vet ./...
 
+# Measures what the program asks of Qt most. Compare two runs with benchstat
+# (golang.org/x/perf/cmd/benchstat).
+bench:
+	go test -run '^$$' -bench . -benchmem -count 6 -timeout 30m ./internal/ui/
+
 # Draws the window into docs/.
 screenshots:
 	DELTA_THEME=light DELTA_VIEW=changes DELTA_SCREENSHOT=$(CURDIR)/docs/changes.png go test -count=1 -run '^TestScreenshot$$' ./internal/ui/
 	DELTA_THEME=light DELTA_VIEW=history DELTA_SCREENSHOT=$(CURDIR)/docs/history.png go test -count=1 -run '^TestScreenshot$$' ./internal/ui/
 
-# Draws the macOS app's icon, packaging/macos/delta.png, from the program's own,
-# within Apple's margin. A test says when the icon has changed since it was run.
-icons:
-	DELTA_ICONS=$(CURDIR)/packaging go test -count=1 -run '^TestWriteIcons$$' ./internal/ui/
-
-# Packs the program and the Qt it uses into one file. Releases are made by the
-# GitHub workflow, on an old distribution so that they run on more systems.
+# Packs the program and the Qt it uses into one file, made in /tmp/delta-build
+# and left in the project's folder. Releases are made by the GitHub workflow,
+# on an old distribution so that they run on more systems.
 appimage:
 	packaging/appimage.sh
 
-# Builds the macOS app in a disk image, on a Mac with Homebrew's Qt.
-macos:
-	packaging/macos.sh
-
 clean:
-	rm -f $(BINARY)
-	rm -rf build
+	rm -f $(BINARY) Delta-*.AppImage
+	rm -rf /tmp/delta-build

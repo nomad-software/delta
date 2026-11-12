@@ -7,9 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	qt "github.com/mappu/miqt/qt6"
-
 	"github.com/nomad-software/delta/internal/settings"
+	"github.com/nomad-software/qute/qtwidgets"
 )
 
 // namedRepo is newRepo in a folder of the name.
@@ -20,7 +19,7 @@ func namedRepo(t *testing.T, name string) string {
 		t.Fatal(err)
 	}
 	// git names it by its real path, as where temporary folders are may be a
-	// link, as on macOS.
+	// link.
 	resolved, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +95,7 @@ func TestChooseRepository(t *testing.T) {
 	waitFor(t, "the status", func() bool { return w.idleWith(0, 0) })
 	// Each is looked for in the background.
 	looked := func() bool { return w.finding == 0 }
-	on(func() { w.bar.repos.Activated(slices.Index(w.repoNames(), "one")) })
+	on(func() { w.bar.repos.EmitActivated(slices.Index(w.repoNames(), "one")) })
 	waitFor(t, "the repository to be looked for", looked)
 	on(func() {
 		if w.repo.Root != one {
@@ -106,7 +105,7 @@ func TestChooseRepository(t *testing.T) {
 	if err := os.RemoveAll(two); err != nil {
 		t.Fatal(err)
 	}
-	on(func() { w.bar.repos.Activated(slices.Index(w.repoNames(), "two")) })
+	on(func() { w.bar.repos.EmitActivated(slices.Index(w.repoNames(), "two")) })
 	waitFor(t, "the repository to be looked for", looked)
 	on(func() {
 		if w.repo.Root != one || w.bar.repos.CurrentText() != "one" || len(w.failures) != 1 {
@@ -138,8 +137,8 @@ func TestLatestRepositoryOpens(t *testing.T) {
 		return roots
 	}
 	on(func() {
-		w.bar.repos.Activated(slices.Index(w.repoNames(), "two"))
-		w.bar.repos.Activated(slices.Index(w.repoNames(), "three"))
+		w.bar.repos.EmitActivated(slices.Index(w.repoNames(), "two"))
+		w.bar.repos.EmitActivated(slices.Index(w.repoNames(), "three"))
 	})
 	waitFor(t, "the repositories to be looked for", func() bool { return w.finding == 0 })
 	if got := opened(); got[0] != three {
@@ -147,7 +146,7 @@ func TestLatestRepositoryOpens(t *testing.T) {
 	}
 	// One looked for is dropped once another is opened at once.
 	on(func() {
-		w.bar.repos.Activated(slices.Index(w.repoNames(), "two"))
+		w.bar.repos.EmitActivated(slices.Index(w.repoNames(), "two"))
 		if err := w.openRepository(one); err != nil {
 			t.Fatal(err)
 		}
@@ -174,7 +173,7 @@ func TestChooseBranch(t *testing.T) {
 		if !slices.Equal(names, []string{"Apple", "main", "zebra"}) || w.bar.branches.CurrentText() != "main" || !w.bar.branches.IsEnabled() {
 			t.Errorf("listed %q, chosen %q", names, w.bar.branches.CurrentText())
 		}
-		w.bar.branches.Activated(2)
+		w.bar.branches.EmitActivated(2)
 	})
 	waitFor(t, "the checkout", func() bool {
 		return w.idleWith(0, 0) && w.status.Branch == "zebra" && w.bar.branches.CurrentText() == "zebra"
@@ -203,16 +202,16 @@ func TestRepoBarInToolbar(t *testing.T) {
 	waitFor(t, "the status", func() bool { return w.idleWith(0, 0) })
 	on(func() {
 		actions := w.toolbar.Actions()
-		if w.toolbar.WidgetForAction(actions[len(actions)-1]).UnsafePointer() != w.bar.widget.UnsafePointer() {
+		if w.toolbar.WidgetForAction(actions[len(actions)-1]).Ptr() != w.bar.widget.Ptr() {
 			t.Fatal("the dropdowns are not last")
 		}
 		history := w.toolbar.WidgetForAction(w.showHistory)
-		for _, c := range []*qt.QComboBox{w.bar.repos, w.bar.branches} {
+		for _, c := range []*qtwidgets.QComboBox{w.bar.repos, w.bar.branches} {
 			if !c.IsVisible() {
 				t.Errorf("%q is not on show", c.CurrentText())
 				continue
 			}
-			x, y := mapPoint(c.QWidget, w.toolbar.QWidget, 0, c.Height()/2)
+			x, y := mapPoint(c.AsQWidget(), w.toolbar.AsQWidget(), 0, c.Height()/2)
 			if middle := w.toolbar.Height() / 2; y < middle-2 || y > middle+2 {
 				t.Errorf("%q is centred at %d of %d", c.CurrentText(), y, w.toolbar.Height())
 			}
@@ -223,7 +222,7 @@ func TestRepoBarInToolbar(t *testing.T) {
 				t.Errorf("%q is %d wide", c.CurrentText(), c.Width())
 			}
 		}
-		if right, _ := mapPoint(w.bar.widget, w.toolbar.QWidget, w.bar.widget.Width(), 0); w.toolbar.Width()-right > 16 {
+		if right, _ := mapPoint(w.bar.widget, w.toolbar.AsQWidget(), w.bar.widget.Width(), 0); w.toolbar.Width()-right > 16 {
 			t.Errorf("the dropdowns end %d short of the right", w.toolbar.Width()-right)
 		}
 		if gap := w.bar.widget.Width() - (w.bar.branches.X() + w.bar.branches.Width()); gap != repoBarEnd {
@@ -272,7 +271,7 @@ func TestRepoComboWidth(t *testing.T) {
 	on(func() {
 		history := w.toolbar.WidgetForAction(w.showHistory)
 		buttons = history.X() + history.Width()
-		least = w.bar.widget.MinimumSizeHint().Width()
+		least = w.bar.widget.MinimumSizeHint().Width
 	})
 	if got := width(buttons + least + 80); got <= repoComboLeast || got >= repoComboMost {
 		t.Errorf("a long name %d wide in a narrower window", got)
@@ -383,7 +382,7 @@ func TestRepositoryLimitSetting(t *testing.T) {
 			t.Errorf("shows %d", d.repositoryLimit.Value())
 		}
 		d.repositoryLimit.SetValue(2)
-		d.box.Button(qt.QDialogButtonBox__Ok).Click()
+		d.box.Button(qtwidgets.QDialogButtonBoxOk).Click()
 		if got.RepositoryLimit != 2 {
 			t.Fatalf("chose %d", got.RepositoryLimit)
 		}

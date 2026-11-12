@@ -35,7 +35,7 @@ func TestFinishBranch(t *testing.T) {
 	on(func() {
 		actions := w.toolbar.Actions()
 		for i, a := range actions {
-			if a.UnsafePointer() == w.checkoutAction.UnsafePointer() && (i+1 == len(actions) || actions[i+1].UnsafePointer() != w.finishAction.UnsafePointer()) {
+			if a.Ptr() == w.checkoutAction.Ptr() && (i+1 == len(actions) || actions[i+1].Ptr() != w.finishAction.Ptr()) {
 				t.Error("Finish is not after Checkout in the toolbar")
 			}
 		}

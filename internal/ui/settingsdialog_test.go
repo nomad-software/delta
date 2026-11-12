@@ -4,9 +4,8 @@ import (
 	"slices"
 	"testing"
 
-	qt "github.com/mappu/miqt/qt6"
-
 	"github.com/nomad-software/delta/internal/settings"
+	"github.com/nomad-software/qute/qtwidgets"
 )
 
 func TestSettingsDialog(t *testing.T) {
@@ -23,8 +22,8 @@ func TestSettingsDialog(t *testing.T) {
 		if d.tabs.Count() != 2 || d.tabs.TabText(0) != "General" || d.tabs.TabText(1) != "User interface" {
 			t.Fatalf("tabs: %d, %q, %q", d.tabs.Count(), d.tabs.TabText(0), d.tabs.TabText(1))
 		}
-		if !general.IsAncestorOf(d.sections["History"].QWidget) || !general.IsAncestorOf(d.sections["Repositories"].QWidget) ||
-			!look.IsAncestorOf(d.sections["Appearance"].QWidget) || !look.IsAncestorOf(d.sections["Colours"].QWidget) {
+		if !general.IsAncestorOf(d.sections["History"].AsQWidget()) || !general.IsAncestorOf(d.sections["Repositories"].AsQWidget()) ||
+			!look.IsAncestorOf(d.sections["Appearance"].AsQWidget()) || !look.IsAncestorOf(d.sections["Colours"].AsQWidget()) {
 			t.Error("a section is in the wrong tab")
 		}
 		if d.theme.CurrentText() != "Dark" || d.theme.Count() != 3 || d.added.colour != "#123456" {
@@ -36,11 +35,11 @@ func TestSettingsDialog(t *testing.T) {
 		d.theme.SetCurrentIndex(1)
 		d.removed.set("#abcdef")
 		d.historyPage.SetValue(1200)
-		d.box.Button(qt.QDialogButtonBox__Ok).Click()
+		d.box.Button(qtwidgets.QDialogButtonBoxOk).Click()
 		if got.Theme != settings.ThemeLight || got.RemovedColour != "#abcdef" || got.HistoryPageSize != 1200 {
 			t.Errorf("chosen %+v", got)
 		}
-		d.box.Button(qt.QDialogButtonBox__RestoreDefaults).Click()
+		d.box.Button(qtwidgets.QDialogButtonBoxRestoreDefaults).Click()
 		if d.theme.CurrentIndex() != 0 || d.added.colour != settings.DefaultAdded {
 			t.Errorf("defaults %q %s", d.theme.CurrentText(), d.added.colour)
 		}
@@ -64,7 +63,7 @@ func TestCodeFontSetting(t *testing.T) {
 		}
 
 		// Any font can be chosen, not only those of a fixed width.
-		if d.codeFamily.FontFilters() != qt.QFontComboBox__AllFonts {
+		if d.codeFamily.FontFilters() != qtwidgets.QFontComboBoxAllFonts {
 			t.Errorf("fonts are limited by %v", d.codeFamily.FontFilters())
 		}
 
@@ -82,7 +81,7 @@ func TestCodeFontSetting(t *testing.T) {
 			d.codeFamily.SetCurrentIndex(other)
 			family = d.codeFamily.CurrentText()
 		}
-		d.box.Button(qt.QDialogButtonBox__Ok).Click()
+		d.box.Button(qtwidgets.QDialogButtonBoxOk).Click()
 		if got.CodeFontSize != system.PointSize()+3 || got.CodeFont != family {
 			t.Errorf("chose %q, %d", got.CodeFont, got.CodeFontSize)
 		}
@@ -95,7 +94,7 @@ func TestCodeFontSetting(t *testing.T) {
 
 		// Restoring the defaults shows the system's again.
 		d.codeSize.SetValue(system.PointSize() + 1)
-		d.box.Button(qt.QDialogButtonBox__RestoreDefaults).Click()
+		d.box.Button(qtwidgets.QDialogButtonBoxRestoreDefaults).Click()
 		if s := d.chosen(settings.Defaults()); s.CodeFont != "" || s.CodeFontSize != 0 {
 			t.Errorf("defaults gave %q, %d", s.CodeFont, s.CodeFontSize)
 		}
@@ -111,7 +110,7 @@ func TestSettingsSections(t *testing.T) {
 		d := newSettingsDialog(nil, settings.Defaults(), func(s settings.Settings) { got = s })
 		defer d.Delete()
 		// note is the section's note, or empty if it has none.
-		in := func(title, note string, widgets ...*qt.QWidget) {
+		in := func(title, note string, widgets ...*qtwidgets.QWidget) {
 			t.Helper()
 			box := d.sections[title]
 			if box == nil || box.Title() != title {
@@ -126,7 +125,7 @@ func TestSettingsSections(t *testing.T) {
 			got := ""
 			for _, child := range box.Children() {
 				if child.Inherits("QLabel") {
-					if label := qt.UnsafeNewQLabel(child.UnsafePointer()); label.WordWrap() {
+					if label := qtwidgets.QLabelCast(child); label.WordWrap() {
 						got = label.Text()
 					}
 				}
@@ -135,18 +134,18 @@ func TestSettingsSections(t *testing.T) {
 				t.Errorf("%q's note is %q", title, got)
 			}
 		}
-		in("Appearance", "", d.theme.QWidget, d.codeFamily.QWidget)
-		in("History", "The history is read this many commits at a time.", d.historyPage.QWidget)
-		in("Repositories", "The repositories opened are remembered, up to this many.", d.repositoryLimit.QWidget)
-		if page := d.tabs.Widget(0).Layout(); page.IndexOf(d.sections["Repositories"].QWidget) >= page.IndexOf(d.sections["History"].QWidget) {
+		in("Appearance", "", d.theme.AsQWidget(), d.codeFamily.AsQWidget())
+		in("History", "The history is read this many commits at a time.", d.historyPage.AsQWidget())
+		in("Repositories", "The repositories opened are remembered, up to this many.", d.repositoryLimit.AsQWidget())
+		if page := d.tabs.Widget(0).Layout(); page.IndexOf(d.sections["Repositories"].AsQWidget()) >= page.IndexOf(d.sections["History"].AsQWidget()) {
 			t.Error("Repositories is not above History")
 		}
-		in("Colours", "", d.colours.QWidget)
+		in("Colours", "", d.colours.AsQWidget())
 		if len(d.sections) != 4 {
 			t.Errorf("%d frames", len(d.sections))
 		}
-		form := qt.UnsafeNewQFormLayout(d.sections["History"].Layout().UnsafePointer())
-		if label := qt.UnsafeNewQLabel(form.LabelForField(d.historyPage.QWidget).UnsafePointer()); label.Text() != "Commits:" {
+		form := qtwidgets.QFormLayoutCast(d.sections["History"].Layout())
+		if label := qtwidgets.QLabelCast(form.LabelForField(d.historyPage.AsQWidget())); label.Text() != "Commits:" {
 			t.Errorf("labelled %q", label.Text())
 		}
 
@@ -168,14 +167,14 @@ func TestSettingsSections(t *testing.T) {
 		if !slices.Equal(names, want) {
 			t.Errorf("rows %q", names)
 		}
-		if !d.colours.CellWidget(3, colColourSwatch).IsAncestorOf(d.hunk.QWidget) {
+		if !d.colours.CellWidget(3, colColourSwatch).IsAncestorOf(d.hunk.AsQWidget()) {
 			t.Error("the button is not in the table")
 		}
 
 		// Each is chosen, and the defaults put back.
 		d.changes[2].set("#000003")
 		d.progress.set("#000009")
-		d.box.Button(qt.QDialogButtonBox__Ok).Click()
+		d.box.Button(qtwidgets.QDialogButtonBoxOk).Click()
 		if got.ChangeColours.Deleted != "#000003" || got.ProgressColour != "#000009" {
 			t.Errorf("chose %+v, %s", got.ChangeColours, got.ProgressColour)
 		}
@@ -214,18 +213,18 @@ func TestSettingsDialogFits(t *testing.T) {
 		// The colours are on the second tab.
 		d.tabs.SetCurrentIndex(1)
 		d.Show()
-		var button *qt.QPushButton
+		var button *qtwidgets.QPushButton
 		for _, b := range d.sections["Colours"].Children() {
-			if b.Inherits("QPushButton") && qt.UnsafeNewQPushButton(b.UnsafePointer()).Text() == "Use Default Colours" {
-				button = qt.UnsafeNewQPushButton(b.UnsafePointer())
+			if b.Inherits("QPushButton") && qtwidgets.QPushButtonCast(b).Text() == "Use Default Colours" {
+				button = qtwidgets.QPushButtonCast(b)
 			}
 		}
 		if button == nil {
 			t.Fatal("no Use Default Colours")
 		}
 		frame := d.sections["Colours"]
-		_, top := mapPoint(button.QWidget, frame.QWidget, 0, 0)
-		_, bottom := mapPoint(d.colours.QWidget, frame.QWidget, 0, d.colours.Height())
+		_, top := mapPoint(button.AsQWidget(), frame.AsQWidget(), 0, 0)
+		_, bottom := mapPoint(d.colours.AsQWidget(), frame.AsQWidget(), 0, d.colours.Height())
 		if top < bottom || top+button.Height() > frame.Height() {
 			t.Errorf("the button is at %d to %d, the table ends at %d, the frame at %d", top, top+button.Height(), bottom, frame.Height())
 		}

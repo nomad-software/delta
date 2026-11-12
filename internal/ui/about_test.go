@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	qt "github.com/mappu/miqt/qt6"
+	"github.com/nomad-software/qute/qtwidgets"
 )
 
 func TestRelease(t *testing.T) {
@@ -28,25 +28,25 @@ func TestRelease(t *testing.T) {
 func TestAboutTitle(t *testing.T) {
 	on(func() {
 		title, label := newAboutTitle()
-		holder := qt.NewQWidget2()
+		holder := qtwidgets.NewQWidget(nil)
 		defer holder.Delete()
-		holder.SetLayout(title.QLayout)
+		holder.SetLayout(title)
 		if title.Count() != 3 {
 			t.Fatalf("%d items in the title", title.Count())
 		}
-		name := qt.UnsafeNewQLabel(title.ItemAt(0).Widget().UnsafePointer())
-		normal := qt.QApplication_Font()
+		name := qtwidgets.QLabelCast(title.ItemAt(0).Widget())
+		normal := qtwidgets.QApplicationFont()
 		if !name.Font().Bold() || math.Abs(name.Font().PointSizeF()-normal.PointSizeF()*titleScale) > 0.01 {
 			t.Errorf("name %q at %v points, bold %v", name.Text(), name.Font().PointSizeF(), name.Font().Bold())
 		}
-		if title.ItemAt(1).Widget().UnsafePointer() != label.UnsafePointer() || label.Text() != version() {
+		if title.ItemAt(1).Widget().Ptr() != label.Ptr() || label.Text() != version() {
 			t.Errorf("version %q is not beside the name", label.Text())
 		}
 		if math.Abs(label.Font().PointSizeF()-normal.PointSizeF()*versionScale) > 0.01 || label.Font().Bold() {
 			t.Errorf("version at %v points", label.Font().PointSizeF())
 		}
 		effect := label.GraphicsEffect()
-		if effect == nil || qt.UnsafeNewQGraphicsOpacityEffect(effect.UnsafePointer()).Opacity() != versionOpacity {
+		if effect == nil || qtwidgets.QGraphicsOpacityEffectCast(effect).Opacity() != versionOpacity {
 			t.Error("the version is not half transparent")
 		}
 	})
@@ -62,7 +62,7 @@ func TestAboutHasNoGap(t *testing.T) {
 		d := newAboutDialog(nil, icon)
 		defer d.Delete()
 		d.Show()
-		if want := d.Layout().HeightForWidth(d.Width()); d.Height() != want {
+		if want := d.Layout().AsQLayoutItem().HeightForWidth(d.Width()); d.Height() != want {
 			t.Errorf("%d high, where its contents need %d", d.Height(), want)
 		}
 		d.Hide()

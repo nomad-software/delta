@@ -1,9 +1,9 @@
 # <img src="internal/appicon/appicon.png" alt="" width="40" height="40"> Delta
 
-**A fast, friendly git GUI for Linux and macOS.** Stage and commit your changes,
+**A fast, friendly git GUI for Linux.** Stage and commit your changes,
 then press `Ctrl+H` to browse the history as a graph in the same window, and
 press it again to go back. It is a native
-Qt 6 app written in Go, through the [miqt](https://github.com/mappu/miqt)
+Qt 6 app written in Go, through the [qute](https://github.com/nomad-software/qute)
 bindings.
 
 ![The changes in Delta](docs/changes.png)
@@ -49,8 +49,7 @@ bindings.
   Solarized's and can be changed.
 * **It never hangs.** Git and ssh never wait on a hidden password prompt: Delta
   uses your credential helper or ssh agent, or shows git's error.
-* **Easy to install.** One program, released as an AppImage for Linux and an
-  app for Apple Silicon Macs.
+* **Easy to install.** One program, released as an AppImage.
 
 ## Running
 
@@ -301,7 +300,8 @@ Running it needs `git` 2.31 or later. Building it from source also needs:
 - Go 1.27.3 or later
 - A C++ compiler (GCC or Clang)
 - `pkg-config`
-- The Qt 6 development files of Qt Widgets
+- The Qt 6 development files of Qt Widgets, version 6.12 or later, which the
+  bindings are made from
 
 These commands install them:
 
@@ -317,21 +317,21 @@ sudo dnf install git golang gcc-c++ pkgconf-pkg-config qt6-qtbase-devel
 
 # openSUSE
 sudo zypper install git go gcc-c++ pkgconf-pkg-config qt6-base-devel
-
-# macOS, with Homebrew and the Xcode Command Line Tools
-brew install go pkgconf qtbase
 ```
+
+Where the distribution's Qt is older than 6.12, install Qt's own build with
+[aqtinstall](https://github.com/miurahr/aqtinstall), as the AppImage workflow
+does, and point `PKG_CONFIG_PATH` at its `lib/pkgconfig`.
 
 If your distribution's Go is too old, get a newer one from
 [go.dev/dl](https://go.dev/dl/). To check that Qt can be found, run
-`pkg-config --modversion Qt6Widgets`, which should print a version starting
-with 6.
+`pkg-config --modversion Qt6Widgets`, which should print 6.12 or later.
 
 ## Building
 
-The first build compiles all of the Qt bindings, which takes several minutes and
-prints compiler warnings from the Qt headers that can be ignored. Later builds
-take a few seconds.
+The first build compiles the C++ of the Qt bindings, which takes a few minutes.
+Later builds take a few seconds. Nothing is built in the project's folder but
+the program itself, `./delta`, and the AppImage, both ignored by git.
 
 ```sh
 make build        # builds ./delta
@@ -340,27 +340,26 @@ make install      # installs it in $GOBIN or $(go env GOPATH)/bin, to run from a
 make test         # runs the tests, which need git and draw offscreen
 make race         # runs the tests with the race detector
 make vet          # runs go vet
+make bench        # measures what Delta asks of Qt most; compare runs with benchstat
 make screenshots  # redraws the pictures in docs/
-make icons        # redraws the macOS icon in packaging/, after the icon changes
-make appimage     # builds the AppImage
-make macos        # builds the macOS app, on a Mac
-make clean        # removes ./delta and build/
+make appimage     # builds the AppImage in /tmp/delta-build, leaving it here
+make clean        # removes ./delta, the AppImage and /tmp/delta-build
 ```
 
 To change the icon, replace `internal/appicon/appicon.png` with another 256×256
-PNG and run `make icons`.
+PNG.
 
 ## Releases
 
-Pushing a tag starting with `v` runs the GitHub workflows, which build both
-packages and attach them to a release of that name:
+Pushing a tag starting with `v` runs the GitHub workflow, which builds the
+AppImage and attaches it to a release of that name:
 
 ```sh
 git tag v1.0.0 && git push origin v1.0.0
 ```
 
-They can also be run by hand from the repository's Actions tab, which leaves the
-package as an artifact of the run to download.
+It can also be run by hand from the repository's Actions tab, which leaves the
+AppImage as an artifact of the run to download.
 
 ### AppImage for Linux
 
@@ -371,21 +370,6 @@ or later, such as Ubuntu 22.04 and Debian 12. `git` is not included.
 `make appimage` runs the same script locally, but the result only runs on systems
 at least as new as the one that built it. The releases are built on Ubuntu 22.04
 for that reason.
-
-### macOS app
-
-`Delta-*-arm64.dmg` is for Macs with Apple Silicon. Open it and drag Delta
-into Applications.
-
-The app is not signed with an Apple Developer ID or notarised, so macOS won't
-open it the first time. Do one of these once:
-
-- Choose Open Anyway under System Settings > Privacy & Security.
-- Run this in Terminal:
-
-  ```sh
-  xattr -dr com.apple.quarantine "/Applications/Delta.app"
-  ```
 
 ## Licence
 

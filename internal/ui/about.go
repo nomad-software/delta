@@ -5,7 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	qt "github.com/mappu/miqt/qt6"
+	"github.com/nomad-software/qute/qtcore"
+	"github.com/nomad-software/qute/qtgui"
+	"github.com/nomad-software/qute/qtwidgets"
 )
 
 // The about box's title is the name at titleScale of the normal size, with the
@@ -44,44 +46,42 @@ func release(version string) string {
 
 // newAboutTitle returns the name of the program with its version to the right
 // of it, smaller and half transparent, on one baseline, and the version's label.
-func newAboutTitle() (*qt.QHBoxLayout, *qt.QLabel) {
-	name := qt.NewQLabel3("Delta")
-	font := qt.NewQFont5(name.Font())
-	defer font.Delete()
+func newAboutTitle() (*qtwidgets.QHBoxLayout, *qtwidgets.QLabel) {
+	name := qtwidgets.NewQLabelWithText("Delta", nil)
+	font := name.Font()
 	font.SetBold(true)
 	font.SetPointSizeF(font.PointSizeF() * titleScale)
 	name.SetFont(font)
 
-	label := qt.NewQLabel3(version())
-	label.SetTextFormat(qt.PlainText)
-	small := qt.NewQFont5(label.Font())
-	defer small.Delete()
+	label := qtwidgets.NewQLabelWithText(version(), nil)
+	label.SetTextFormat(qtcore.PlainText)
+	small := label.Font()
 	small.SetPointSizeF(small.PointSizeF() * versionScale)
 	label.SetFont(small)
 	// Both sit on the bottom, so the smaller is raised by what its letters
 	// hang below the line less than the name's do.
-	label.SetContentsMargins(0, 0, 0, name.FontMetrics().Descent()-label.FontMetrics().Descent())
-	faded := qt.NewQGraphicsOpacityEffect()
+	label.SetContentsMargins(qtcore.QMargins{Bottom: name.FontMetrics().Descent() - label.FontMetrics().Descent()})
+	faded := qtwidgets.NewQGraphicsOpacityEffect(nil)
 	faded.SetOpacity(versionOpacity)
-	label.SetGraphicsEffect(faded.QGraphicsEffect)
+	label.SetGraphicsEffect(faded)
 
-	title := qt.NewQHBoxLayout2()
-	title.AddWidget3(name.QWidget, 0, qt.AlignBottom)
-	title.AddWidget3(label.QWidget, 0, qt.AlignBottom)
+	title := qtwidgets.NewQHBoxLayout(nil)
+	title.AddWidgetFull(name, 0, qtcore.AlignBottom)
+	title.AddWidgetFull(label, 0, qtcore.AlignBottom)
 	title.AddStretch()
 	return title, label
 }
 
 // newAboutDialog returns the about box: the icon, what the program is, and the
 // licences of what it is built with.
-func newAboutDialog(parent *qt.QWidget, icon *qt.QIcon) *qt.QDialog {
-	d := qt.NewQDialog(parent)
+func newAboutDialog(parent qtwidgets.QWidgetLike, icon *qtgui.QIcon) *qtwidgets.QDialog {
+	d := qtwidgets.NewQDialog(parent)
 	d.SetWindowTitle("About Delta")
 	d.SetMinimumWidth(aboutWidth)
 
-	picture := qt.NewQLabel2()
-	picture.SetPixmap(icon.PixmapWithExtent(96))
-	picture.SetAlignment(qt.AlignTop)
+	picture := qtwidgets.NewQLabel(nil)
+	picture.SetPixmap(icon.PixmapExtent(96))
+	picture.SetAlignment(qtcore.AlignTop)
 
 	title, _ := newAboutTitle()
 
@@ -89,40 +89,41 @@ func newAboutDialog(parent *qt.QWidget, icon *qt.QIcon) *qt.QDialog {
 		"<p>Copyright © 2026 Gary Willoughby. Released under the " +
 		`<a href="https://www.gnu.org/licenses/gpl-3.0.html">GNU General Public License version 3</a>.</p>`)
 
-	text := qt.NewQVBoxLayout2()
+	text := qtwidgets.NewQVBoxLayout(nil)
 	text.SetSpacing(12)
-	text.AddLayout(title.QLayout)
-	text.AddWidget(summary.QWidget)
+	text.AddLayout(title)
+	text.AddWidget(summary)
 	text.AddStretch()
 
-	top := qt.NewQHBoxLayout2()
+	top := qtwidgets.NewQHBoxLayout(nil)
 	top.SetSpacing(20)
-	top.AddWidget(picture.QWidget)
-	top.AddLayout2(text.QLayout, 1)
+	top.AddWidget(picture)
+	top.AddLayoutFull(text, 1)
 
-	qtVersion := qt.QLibraryInfo_Version()
+	qtVersion := qtcore.QLibraryInfoVersion()
 	notices := linkLabel("<p><b>Third party licences</b></p>" +
 		"<p>This program uses Qt " + qtVersion.ToString() + ", under the terms of the " +
 		`<a href="https://www.gnu.org/licenses/lgpl-3.0.html">GNU Lesser General Public License version 3</a>. ` +
 		"Qt is linked dynamically, so it can be replaced with another build of the library. " +
 		`Qt and its source code are available from <a href="https://www.qt.io">www.qt.io</a>. ` +
 		"Copyright © The Qt Company Ltd. and other contributors.</p>" +
-		`<p>The Go bindings for Qt are <a href="https://github.com/mappu/miqt">miqt</a>, under the MIT licence.</p>`)
-	frame := qt.NewQFrame2()
-	frame.SetFrameShape(qt.QFrame__StyledPanel)
-	frame.SetFrameShadow(qt.QFrame__Sunken)
-	frameLayout := qt.NewQVBoxLayout(frame.QWidget)
-	frameLayout.AddWidget(notices.QWidget)
+		`<p>The Go bindings for Qt are <a href="https://github.com/nomad-software/qute">qute</a>, under the ` +
+		`<a href="https://www.gnu.org/licenses/gpl-3.0.html">GNU General Public License version 3</a>.</p>`)
+	frame := qtwidgets.NewQFrame(nil)
+	frame.SetFrameShape(qtwidgets.QFrameStyledPanel)
+	frame.SetFrameShadow(qtwidgets.QFrameSunken)
+	frameLayout := qtwidgets.NewQVBoxLayout(frame)
+	frameLayout.AddWidget(notices)
 
-	buttons := qt.NewQDialogButtonBox4(qt.QDialogButtonBox__Ok)
+	buttons := qtwidgets.NewQDialogButtonBoxWithStandardButton(qtwidgets.QDialogButtonBoxOk, nil)
 	buttons.OnAccepted(d.Accept)
 
-	layout := qt.NewQVBoxLayout(d.QWidget)
-	layout.SetContentsMargins(20, 20, 20, 16)
+	layout := qtwidgets.NewQVBoxLayout(d)
+	layout.SetContentsMargins(qtcore.QMargins{Left: 20, Top: 20, Right: 20, Bottom: 16})
 	layout.SetSpacing(16)
-	layout.AddLayout(top.QLayout)
-	layout.AddWidget(frame.QWidget)
-	layout.AddWidget(buttons.QWidget)
+	layout.AddLayout(top)
+	layout.AddWidget(frame)
+	layout.AddWidget(buttons)
 
 	fitHeight(d, aboutWidth)
 	d.OnFinished(func(int) { d.DeleteLater() })
@@ -133,11 +134,11 @@ func newAboutDialog(parent *qt.QWidget, icon *qt.QIcon) *qt.QDialog {
 const aboutWidth = 560
 
 // linkLabel returns a label of wrapped rich text whose links open in a browser.
-func linkLabel(text string) *qt.QLabel {
-	label := qt.NewQLabel3(text)
-	label.SetTextFormat(qt.RichText)
+func linkLabel(text string) *qtwidgets.QLabel {
+	label := qtwidgets.NewQLabelWithText(text, nil)
+	label.SetTextFormat(qtcore.RichText)
 	label.SetWordWrap(true)
 	label.SetOpenExternalLinks(true)
-	label.SetTextInteractionFlags(qt.TextBrowserInteraction)
+	label.SetTextInteractionFlags(qtcore.TextBrowserInteraction)
 	return label
 }

@@ -6,7 +6,9 @@ import (
 	"strings"
 	"time"
 
-	qt "github.com/mappu/miqt/qt6"
+	"github.com/nomad-software/qute/qtcore"
+	"github.com/nomad-software/qute/qtgui"
+	"github.com/nomad-software/qute/qtwidgets"
 
 	"github.com/nomad-software/delta/internal/git"
 	"github.com/nomad-software/delta/internal/settings"
@@ -37,17 +39,17 @@ const (
 // would delete the list of a row it moved: what moves is the commits shown on
 // them.
 type rebaseDialog struct {
-	*qt.QDialog
+	*qtwidgets.QDialog
 	// original is the plan as it starts, everything picked in order, and steps
 	// the plan as it is now.
 	original, steps []git.Step
 
-	list *qt.QTreeWidget
+	list *qtwidgets.QTreeWidget
 	// actions are the lists of actions, a row's own.
-	actions []*qt.QComboBox
-	message *qt.QPlainTextEdit
-	note    *qt.QLabel
-	start   *qt.QPushButton
+	actions []*qtwidgets.QComboBox
+	message *qtwidgets.QPlainTextEdit
+	note    *qtwidgets.QLabel
+	start   *qtwidgets.QPushButton
 
 	// updating says that the program is changing a widget, so that its
 	// signals mean nothing.
@@ -65,78 +67,79 @@ type rebaseDialog struct {
 
 // newRebaseDialog returns the dialog of the commits, at the size it was last,
 // or else most of the size of its parent.
-func newRebaseDialog(parent *qt.QWidget, config settings.Settings, commits []git.Commit) *rebaseDialog {
-	d := &rebaseDialog{QDialog: qt.NewQDialog(parent)}
+func newRebaseDialog(parent qtwidgets.QWidgetLike, config settings.Settings, commits []git.Commit) *rebaseDialog {
+	d := &rebaseDialog{QDialog: qtwidgets.NewQDialog(parent)}
 	d.SetWindowTitle(rebaseTitle)
 	switch {
 	case config.RebaseWidth > 0:
 		d.Resize(config.RebaseWidth, config.RebaseHeight)
 	case parent != nil:
-		d.Resize(parent.Width()*4/5, parent.Height()*4/5)
+		size := parent.AsQWidget().Size()
+		d.Resize(size.Width*4/5, size.Height*4/5)
 	}
 	for _, c := range commits {
 		d.original = append(d.original, git.Step{Commit: c, Action: git.Pick})
 	}
 	d.steps = slices.Clone(d.original)
 
-	d.list = qt.NewQTreeWidget2()
+	list := &rebaseList{dialog: d}
+	qtwidgets.NewQTreeWidgetWith(list, nil)
+	d.list = list.QTreeWidget
 	d.list.SetHeaderLabels([]string{"Action", "Subject", "Commit"})
 	d.list.SetRootIsDecorated(false)
 	d.list.SetUniformRowHeights(true)
 	d.list.SetAllColumnsShowFocus(true)
-	d.list.SetSelectionMode(qt.QAbstractItemView__ExtendedSelection)
-	d.list.SetTextElideMode(qt.ElideRight)
+	d.list.SetSelectionMode(qtwidgets.QAbstractItemViewExtendedSelection)
+	d.list.SetTextElideMode(qtcore.ElideRight)
 	// Qt draws where a drag would drop, between rows only, as no row takes a
 	// drop onto itself, and the drop itself is handled here (dropAt).
 	d.list.SetDragEnabled(true)
-	d.list.SetDragDropMode(qt.QAbstractItemView__InternalMove)
-	d.list.SetDefaultDropAction(qt.MoveAction)
+	d.list.SetDragDropMode(qtwidgets.QAbstractItemViewInternalMove)
+	d.list.SetDefaultDropAction(qtcore.MoveAction)
 	d.list.SetDropIndicatorShown(true)
 	header := d.list.Header()
 	header.SetStretchLastSection(false)
-	header.SetSectionResizeMode2(colStepSubject, qt.QHeaderView__Stretch)
+	header.SetSectionResizeMode(colStepSubject, qtwidgets.QHeaderViewStretch)
 	header.ResizeSection(colStepCommit, 90)
 	for row := range d.steps {
-		item := qt.NewQTreeWidgetItem()
-		item.SetFlags(qt.ItemIsSelectable | qt.ItemIsEnabled | qt.ItemIsDragEnabled)
+		item := qtwidgets.NewQTreeWidgetItem()
+		item.SetFlags(qtcore.ItemIsSelectable | qtcore.ItemIsEnabled | qtcore.ItemIsDragEnabled)
 		d.list.AddTopLevelItem(item)
 		combo := d.newActionList(row)
 		item.SetSizeHint(colAction, combo.SizeHint())
-		d.list.SetItemWidget(item, colAction, combo.QWidget)
+		d.list.SetItemWidget(item, colAction, combo)
 		d.actions = append(d.actions, combo)
 		d.showStep(row)
 	}
 	if len(d.actions) > 0 {
-		header.ResizeSection(colAction, d.actions[0].SizeHint().Width())
+		header.ResizeSection(colAction, d.actions[0].SizeHint().Width)
 	}
-	top := labelled(heading("Commits, oldest first"), d.list.QWidget)
+	top := labelled(heading("Commits, oldest first"), d.list)
 
-	font := codeFont(config.CodeFont, config.CodeFontSize)
-	defer font.Delete()
-	d.message = qt.NewQPlainTextEdit2()
-	d.message.SetFont(font)
+	d.message = qtwidgets.NewQPlainTextEdit(nil)
+	d.message.SetFont(codeFont(config.CodeFont, config.CodeFontSize))
 
-	split := newPaneSplitter(qt.Vertical)
+	split := newPaneSplitter(qtcore.Vertical)
 	split.AddWidget(top)
-	split.AddWidget(labelled(heading("Message"), d.message.QWidget))
+	split.AddWidget(labelled(heading("Message"), d.message))
 	split.SetStretchFactor(1, 1)
 	split.SetChildrenCollapsible(false)
 
-	d.note = qt.NewQLabel2()
-	d.note.SetTextFormat(qt.PlainText)
+	d.note = qtwidgets.NewQLabel(nil)
+	d.note.SetTextFormat(qtcore.PlainText)
 	d.note.SetWordWrap(true)
-	box := qt.NewQDialogButtonBox2()
-	d.start = box.AddButton2("Start Rebase", qt.QDialogButtonBox__AcceptRole)
-	box.AddButtonWithButton(qt.QDialogButtonBox__Cancel)
+	box := qtwidgets.NewQDialogButtonBox(nil)
+	d.start = box.AddButtonText("Start Rebase", qtwidgets.QDialogButtonBoxAcceptRole)
+	box.SetStandardButtons(qtwidgets.QDialogButtonBoxCancel)
 	box.OnAccepted(d.Accept)
 	box.OnRejected(d.Reject)
-	bottom := qt.NewQHBoxLayout2()
-	bottom.AddWidget2(d.note.QWidget, 1)
-	bottom.AddWidget(box.QWidget)
+	bottom := qtwidgets.NewQHBoxLayout(nil)
+	bottom.AddWidgetFull(d.note, 1, 0)
+	bottom.AddWidget(box)
 
-	layout := qt.NewQVBoxLayout(d.QWidget)
-	layout.AddWidget2(split.QWidget, 1)
-	layout.AddLayout(bottom.QLayout)
+	layout := qtwidgets.NewQVBoxLayout(d)
+	layout.AddWidgetFull(split, 1, 0)
+	layout.AddLayout(bottom)
 
 	d.connect()
 	if len(d.steps) > 0 {
@@ -148,21 +151,10 @@ func newRebaseDialog(parent *qt.QWidget, config settings.Settings, commits []git
 
 // connect joins the widgets to what they do.
 func (d *rebaseDialog) connect() {
-	d.list.OnCurrentItemChanged(func(*qt.QTreeWidgetItem, *qt.QTreeWidgetItem) {
+	d.list.OnCurrentItemChanged(func(*qtwidgets.QTreeWidgetItem, *qtwidgets.QTreeWidgetItem) {
 		if !d.updating {
 			d.showCurrent()
 		}
-	})
-	d.list.OnFocusInEvent(func(super func(*qt.QFocusEvent), event *qt.QFocusEvent) {
-		super(event)
-		d.reclaimFocus()
-	})
-	d.list.OnDropEvent(func(_ func(*qt.QDropEvent), event *qt.QDropEvent) {
-		d.dropAt(int(event.Position().Y()))
-		// Ignored, the drag is not taken as a move, after which Qt would
-		// remove the rows dragged.
-		event.Ignore()
-		d.list.Viewport().Update()
 	})
 	d.message.OnTextChanged(func() {
 		row := d.currentRow()
@@ -174,32 +166,66 @@ func (d *rebaseDialog) connect() {
 	})
 }
 
+// rebaseList is the list of the commits of the plan.
+type rebaseList struct {
+	qtwidgets.QTreeWidgetBase
+	dialog *rebaseDialog
+}
+
+// FocusInEvent sends the focus back to the message if Reword was chosen a
+// moment ago.
+func (l *rebaseList) FocusInEvent(event *qtgui.QFocusEvent) {
+	l.Super().FocusInEvent(event)
+	l.dialog.reclaimFocus()
+}
+
+// DropEvent moves the commits dragged to where they are dropped.
+func (l *rebaseList) DropEvent(event *qtgui.QDropEvent) {
+	l.dialog.dropAt(int(event.Position().Y))
+	// Ignored, the drag is not taken as a move, after which Qt would remove
+	// the rows dragged.
+	event.Ignore()
+	l.Viewport().Update()
+}
+
+// actionCombo is the list of actions of a row of the plan.
+type actionCombo struct {
+	qtwidgets.QComboBoxBase
+	dialog *rebaseDialog
+	row    int
+}
+
+// WheelEvent changes the action only once the list has been clicked, so that
+// scrolling over the rows scrolls them.
+func (c *actionCombo) WheelEvent(event *qtgui.QWheelEvent) {
+	if c.HasFocus() {
+		c.Super().WheelEvent(event)
+	} else {
+		event.Ignore()
+	}
+}
+
+// FocusInEvent chooses the row of the list used, so that what is below is that
+// commit's: a commit reworded has its new message written there, which would
+// otherwise be another commit's, and read only.
+func (c *actionCombo) FocusInEvent(event *qtgui.QFocusEvent) {
+	c.Super().FocusInEvent(event)
+	if c.dialog.reclaimFocus() {
+		return
+	}
+	c.dialog.chooseOnly(c.row)
+}
+
 // newActionList returns the list of actions of a row. Only choosing in it
-// applies an action, not the program showing the row's. The wheel changes it
-// only once it has been clicked, so that scrolling over the rows scrolls them.
-func (d *rebaseDialog) newActionList(row int) *qt.QComboBox {
-	combo := qt.NewQComboBox2()
+// applies an action, not the program showing the row's.
+func (d *rebaseDialog) newActionList(row int) *qtwidgets.QComboBox {
+	c := &actionCombo{dialog: d, row: row}
+	qtwidgets.NewQComboBoxWith(c, nil)
+	combo := c.QComboBox
 	for _, a := range git.Actions {
 		combo.AddItem(actionName(a))
 	}
-	combo.SetFocusPolicy(qt.StrongFocus)
-	combo.OnWheelEvent(func(super func(*qt.QWheelEvent), event *qt.QWheelEvent) {
-		if combo.HasFocus() {
-			super(event)
-		} else {
-			event.Ignore()
-		}
-	})
-	// Using a row's list chooses its row, so that what is below is that
-	// commit's: a commit reworded has its new message written there, which
-	// would otherwise be another commit's, and read only.
-	combo.OnFocusInEvent(func(super func(*qt.QFocusEvent), event *qt.QFocusEvent) {
-		super(event)
-		if d.reclaimFocus() {
-			return
-		}
-		d.chooseOnly(row)
-	})
+	combo.SetFocusPolicy(qtcore.StrongFocus)
 	combo.OnActivated(func(index int) {
 		d.chooseOnly(row)
 		d.setRowAction(row, git.Actions[index])
@@ -214,7 +240,7 @@ func (d *rebaseDialog) newActionList(row int) *qt.QComboBox {
 
 // run waits for an answer, and says whether it was to start the rebase.
 func (d *rebaseDialog) run() bool {
-	accepted := d.Exec() == int(qt.QDialog__Accepted)
+	accepted := d.Exec() == int(qtwidgets.QDialogAccepted)
 	d.width, d.height = d.Width(), d.Height()
 	d.finished = true
 	d.DeleteLater()
@@ -236,10 +262,9 @@ func (d *rebaseDialog) showStep(row int) {
 	tip := excerpt(s.Commit.Message, tipLines, tipWidth)
 	for column := range stepColumns {
 		item.SetToolTip(column, tip)
-		font := qt.NewQFont5(item.Font(column))
+		font := item.Font(column)
 		font.SetStrikeOut(s.Action == git.Drop)
 		item.SetFont(column, font)
-		font.Delete()
 	}
 }
 
@@ -300,7 +325,7 @@ const messageGrace = time.Second
 // has finished, and again whenever the focus goes to the list soon after.
 func (d *rebaseDialog) editMessage() {
 	d.messageUntil = time.Now().Add(messageGrace)
-	timer := qt.NewQTimer2(d.QObject)
+	timer := qtcore.NewQTimer(d)
 	timer.SetSingleShot(true)
 	timer.OnTimeout(func() {
 		timer.DeleteLater()
@@ -308,7 +333,7 @@ func (d *rebaseDialog) editMessage() {
 			d.focusMessage()
 		}
 	})
-	timer.Start(0)
+	timer.StartWithInterval(0)
 }
 
 // reclaimFocus sends the focus back to the message, and says so, if Reword was
@@ -325,7 +350,7 @@ func (d *rebaseDialog) reclaimFocus() bool {
 // focusMessage puts the focus in the message, with the cursor at its end.
 func (d *rebaseDialog) focusMessage() {
 	d.message.SetFocus()
-	d.message.MoveCursor(qt.QTextCursor__End)
+	d.message.MoveCursor(qtgui.QTextCursorEnd)
 }
 
 // setRowAction gives the commit on a row the action. A commit reworded starts
@@ -344,9 +369,9 @@ func (d *rebaseDialog) setRowAction(row int, a git.Action) {
 // as Qt draws where it would go, and at the end if below every row.
 func (d *rebaseDialog) dropAt(y int) {
 	to := len(d.steps)
-	if item := d.list.ItemAt2(1, y); item != nil {
+	if item := d.list.ItemAt(qtcore.QPoint{X: 1, Y: y}); item != nil {
 		to = d.list.IndexOfTopLevelItem(item)
-		if y >= d.list.VisualItemRect(item).Center().Y() {
+		if y >= d.list.VisualItemRect(item).Center().Y {
 			to++
 		}
 	}
@@ -372,7 +397,7 @@ func (d *rebaseDialog) moveRows(rows []int, to int) {
 	if i := slices.Index(rows, current); i >= 0 {
 		current = now[i]
 	}
-	d.list.SetCurrentItem3(d.list.TopLevelItem(current), 0, qt.QItemSelectionModel__NoUpdate)
+	d.list.SetCurrentItemWith(d.list.TopLevelItem(current), 0, qtcore.QItemSelectionModelNoUpdate)
 	for _, row := range now {
 		d.list.TopLevelItem(row).SetSelected(true)
 	}

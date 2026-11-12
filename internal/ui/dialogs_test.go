@@ -7,35 +7,35 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"unsafe"
 
-	qt "github.com/mappu/miqt/qt6"
-	"github.com/mappu/miqt/qt6/mainthread"
+	"github.com/nomad-software/qute/qtcore"
 
 	"github.com/nomad-software/delta/internal/git"
 	"github.com/nomad-software/delta/internal/settings"
+	"github.com/nomad-software/qute"
+	"github.com/nomad-software/qute/qtwidgets"
 )
 
 // answer starts the action on the main thread without waiting for it, as it
 // waits on a dialog, and answers that dialog with reply once it is open.
-func answer(t *testing.T, action func(), reply func(d *qt.QDialog)) {
+func answer(t *testing.T, action func(), reply func(d *qtwidgets.QDialog)) {
 	t.Helper()
-	mainthread.Start(action)
+	qute.Post(action)
 	answerNext(t, reply)
 }
 
 // answerNext waits for a dialog to be open and waiting for an answer, as one
 // opened from what another answered is, and answers it with reply, on the main
 // thread.
-func answerNext(t *testing.T, reply func(d *qt.QDialog)) {
+func answerNext(t *testing.T, reply func(d *qtwidgets.QDialog)) {
 	t.Helper()
-	var d *qt.QDialog
+	var d *qtwidgets.QDialog
 	waitFor(t, "a dialog", func() bool {
-		modal := qt.QApplication_ActiveModalWidget()
+		modal := qtwidgets.QApplicationActiveModalWidget()
 		if modal == nil || !modal.IsVisible() || !modal.Inherits("QDialog") {
 			return false
 		}
-		d = qt.UnsafeNewQDialog(modal.UnsafePointer())
+		d = qtwidgets.QDialogCast(modal)
 		return true
 	})
 	on(func() { reply(d) })
@@ -43,11 +43,11 @@ func answerNext(t *testing.T, reply func(d *qt.QDialog)) {
 
 // children returns what the object holds of the class, at any depth, in the
 // order they were made.
-func children[T any](object *qt.QObject, class string, wrap func(unsafe.Pointer) T) []T {
+func children[T any](object *qtcore.QObject, class string, wrap func(qtcore.QObjectLike) T) []T {
 	var found []T
 	for _, child := range object.Children() {
 		if child.Inherits(class) {
-			found = append(found, wrap(child.UnsafePointer()))
+			found = append(found, wrap(child))
 		}
 		found = append(found, children(child, class, wrap)...)
 	}
@@ -55,16 +55,16 @@ func children[T any](object *qt.QObject, class string, wrap func(unsafe.Pointer)
 }
 
 // texts returns the dialog's fields of text, and combos its lists to choose from.
-func texts(d *qt.QDialog) []*qt.QLineEdit {
-	return children(d.QObject, "QLineEdit", qt.UnsafeNewQLineEdit)
+func texts(d *qtwidgets.QDialog) []*qtwidgets.QLineEdit {
+	return children(d.AsQObject(), "QLineEdit", qtwidgets.QLineEditCast)
 }
 
-func combos(d *qt.QDialog) []*qt.QComboBox {
-	return children(d.QObject, "QComboBox", qt.UnsafeNewQComboBox)
+func combos(d *qtwidgets.QDialog) []*qtwidgets.QComboBox {
+	return children(d.AsQObject(), "QComboBox", qtwidgets.QComboBoxCast)
 }
 
 // choose chooses the item with the text in the combo, failing if there is none.
-func choose(t *testing.T, combo *qt.QComboBox, text string) {
+func choose(t *testing.T, combo *qtwidgets.QComboBox, text string) {
 	t.Helper()
 	at := combo.FindText(text)
 	if at < 0 {
@@ -75,7 +75,7 @@ func choose(t *testing.T, combo *qt.QComboBox, text string) {
 }
 
 // items returns the texts of the combo's items.
-func items(combo *qt.QComboBox) []string {
+func items(combo *qtwidgets.QComboBox) []string {
 	var all []string
 	for i := range combo.Count() {
 		all = append(all, combo.ItemText(i))
@@ -108,7 +108,7 @@ func TestBranchDialogs(t *testing.T) {
 	waitFor(t, "the status", func() bool { return w.idleWith(0, 0) })
 
 	// The name is made fit for a branch, and the branch checked out.
-	answer(t, w.newBranch, func(d *qt.QDialog) {
+	answer(t, w.newBranch, func(d *qtwidgets.QDialog) {
 		texts(d)[0].SetText("my feature")
 		d.Accept()
 	})
@@ -118,7 +118,7 @@ func TestBranchDialogs(t *testing.T) {
 	}
 
 	// The current branch is offered first, and chosen.
-	answer(t, w.renameBranch, func(d *qt.QDialog) {
+	answer(t, w.renameBranch, func(d *qtwidgets.QDialog) {
 		if got := items(combos(d)[0]); !slices.Equal(got, []string{"my-feature", "main"}) {
 			t.Errorf("offered %v", got)
 		}
@@ -130,14 +130,14 @@ func TestBranchDialogs(t *testing.T) {
 		t.Error("the old name is still there")
 	}
 
-	answer(t, w.checkoutBranch, func(d *qt.QDialog) {
+	answer(t, w.checkoutBranch, func(d *qtwidgets.QDialog) {
 		choose(t, combos(d)[0], "main")
 		d.Accept()
 	})
 	waitFor(t, "the checkout", func() bool { return w.idle() && w.status.Branch == "main" })
 
 	// Cancelled, nothing is renamed.
-	answer(t, w.renameBranch, func(d *qt.QDialog) {
+	answer(t, w.renameBranch, func(d *qtwidgets.QDialog) {
 		texts(d)[0].SetText("unwanted")
 		d.Reject()
 	})
@@ -154,7 +154,7 @@ func TestBranchDialogs(t *testing.T) {
 	runGit(t, dir, "switch", "-q", "main")
 	on(w.rescanRepository)
 	waitFor(t, "the rescan", func() bool { return w.idle() && w.status.Branch == "main" })
-	answer(t, w.mergeBranch, func(d *qt.QDialog) {
+	answer(t, w.mergeBranch, func(d *qtwidgets.QDialog) {
 		// The current branch is not offered.
 		if got := items(combos(d)[0]); slices.Contains(got, "main") {
 			t.Errorf("offered %v", got)
@@ -168,7 +168,7 @@ func TestBranchDialogs(t *testing.T) {
 	}
 
 	// A merged branch is deleted once asked.
-	answer(t, w.deleteBranch, func(d *qt.QDialog) {
+	answer(t, w.deleteBranch, func(d *qtwidgets.QDialog) {
 		choose(t, combos(d)[0], "renamed")
 		d.Accept()
 	})
@@ -183,7 +183,7 @@ func TestBranchDialogs(t *testing.T) {
 	on(w.rescanRepository)
 	waitFor(t, "the rescan", func() bool { return w.idle() && slices.Contains(w.localBranches, "side") })
 	on(func() { w.asked = nil })
-	answer(t, w.deleteBranch, func(d *qt.QDialog) {
+	answer(t, w.deleteBranch, func(d *qtwidgets.QDialog) {
 		choose(t, combos(d)[0], "side")
 		d.Accept()
 	})
@@ -229,7 +229,7 @@ func TestRemoteDialogs(t *testing.T) {
 	})
 
 	// The name starts as origin.
-	answer(t, w.addRemote, func(d *qt.QDialog) {
+	answer(t, w.addRemote, func(d *qtwidgets.QDialog) {
 		fields := texts(d)
 		if fields[0].Text() != "origin" {
 			t.Errorf("name %q", fields[0].Text())
@@ -242,8 +242,8 @@ func TestRemoteDialogs(t *testing.T) {
 		t.Fatalf("remotes %q", got)
 	}
 
-	answer(t, w.renameRemote, func(d *qt.QDialog) { d.Accept() })
-	answerNext(t, func(d *qt.QDialog) {
+	answer(t, w.renameRemote, func(d *qtwidgets.QDialog) { d.Accept() })
+	answerNext(t, func(d *qtwidgets.QDialog) {
 		texts(d)[0].SetText("upstream")
 		d.Accept()
 	})
@@ -253,8 +253,8 @@ func TestRemoteDialogs(t *testing.T) {
 	}
 
 	// The URL starts as it is.
-	answer(t, w.changeRemoteURL, func(d *qt.QDialog) { d.Accept() })
-	answerNext(t, func(d *qt.QDialog) {
+	answer(t, w.changeRemoteURL, func(d *qtwidgets.QDialog) { d.Accept() })
+	answerNext(t, func(d *qtwidgets.QDialog) {
 		if got := texts(d)[0].Text(); got != first {
 			t.Errorf("URL %q", got)
 		}
@@ -268,7 +268,7 @@ func TestRemoteDialogs(t *testing.T) {
 
 	// With two remotes, a push asks which, and that becomes the upstream.
 	runGit(t, dir, "remote", "add", "other", first)
-	answer(t, w.push.Trigger, func(d *qt.QDialog) {
+	answer(t, w.push.Trigger, func(d *qtwidgets.QDialog) {
 		if got := items(combos(d)[0]); !slices.Equal(got, []string{"other", "upstream"}) {
 			t.Errorf("offered %v", got)
 		}
@@ -282,7 +282,7 @@ func TestRemoteDialogs(t *testing.T) {
 		}
 	})
 
-	answer(t, w.removeRemote, func(d *qt.QDialog) {
+	answer(t, w.removeRemote, func(d *qtwidgets.QDialog) {
 		choose(t, combos(d)[0], "upstream")
 		d.Accept()
 	})
@@ -326,7 +326,7 @@ func TestStashDialogs(t *testing.T) {
 	writeFile(t, dir, "file", "changed\n")
 	on(w.rescanRepository)
 	waitFor(t, "the change", func() bool { return w.idleWith(1, 0) })
-	answer(t, w.askStashChanges, func(d *qt.QDialog) {
+	answer(t, w.askStashChanges, func(d *qtwidgets.QDialog) {
 		texts(d)[0].SetText("  saved  ")
 		d.Accept()
 	})
@@ -336,7 +336,7 @@ func TestStashDialogs(t *testing.T) {
 	}
 
 	// Applied, the stash is kept; the list says what each is.
-	answer(t, func() { w.askApplyStash(false) }, func(d *qt.QDialog) {
+	answer(t, func() { w.askApplyStash(false) }, func(d *qtwidgets.QDialog) {
 		if d.WindowTitle() != "Apply Stash" {
 			t.Errorf("titled %q", d.WindowTitle())
 		}
@@ -352,7 +352,7 @@ func TestStashDialogs(t *testing.T) {
 
 	// Popped, it goes.
 	runGit(t, dir, "checkout", "--", "file")
-	answer(t, func() { w.askApplyStash(true) }, func(d *qt.QDialog) {
+	answer(t, func() { w.askApplyStash(true) }, func(d *qtwidgets.QDialog) {
 		if d.WindowTitle() != "Pop Stash" {
 			t.Errorf("titled %q", d.WindowTitle())
 		}
@@ -364,7 +364,7 @@ func TestStashDialogs(t *testing.T) {
 	runGit(t, dir, "stash", "-q")
 	on(w.rescanRepository)
 	waitFor(t, "the stash", func() bool { return w.idleWith(0, 0) && w.stashes == 1 })
-	answer(t, w.askDropStash, func(d *qt.QDialog) { d.Accept() })
+	answer(t, w.askDropStash, func(d *qtwidgets.QDialog) { d.Accept() })
 	waitFor(t, "the drop", func() bool { return w.idleWith(0, 0) && w.stashes == 0 })
 	on(func() {
 		if len(w.asked) == 0 || !strings.HasPrefix(w.asked[len(w.asked)-1], "Drop stash@{0}?") {
@@ -393,7 +393,7 @@ func TestRebaseDialogSizeSaved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	answer(t, func() { w.rebaseFrom(commits[0]) }, func(d *qt.QDialog) {
+	answer(t, func() { w.rebaseFrom(commits[0]) }, func(d *qtwidgets.QDialog) {
 		d.Resize(700, 500)
 		d.Reject()
 	})
@@ -410,18 +410,18 @@ func TestRebaseDialogSizeSaved(t *testing.T) {
 func TestAskYesNo(t *testing.T) {
 	for _, yes := range []bool{false, true} {
 		var got bool
-		answer(t, func() { got = askYesNo(nil, "Title", "Really?") }, func(d *qt.QDialog) {
-			box := qt.UnsafeNewQMessageBox(d.UnsafePointer())
-			if box.StandardButton(box.DefaultButton().QAbstractButton) != qt.QMessageBox__No {
+		answer(t, func() { got = askYesNo(nil, "Title", "Really?") }, func(d *qtwidgets.QDialog) {
+			box := qtwidgets.QMessageBoxCast(d)
+			if box.StandardButton(box.DefaultButton().AsQAbstractButton()) != qtwidgets.QMessageBoxNo {
 				t.Error("No is not the default")
 			}
-			button := qt.QMessageBox__No
+			button := qtwidgets.QMessageBoxNo
 			if yes {
-				button = qt.QMessageBox__Yes
+				button = qtwidgets.QMessageBoxYes
 			}
 			box.Button(button).Click()
 		})
-		waitFor(t, "the answer", func() bool { return qt.QApplication_ActiveModalWidget() == nil })
+		waitFor(t, "the answer", func() bool { return qtwidgets.QApplicationActiveModalWidget() == nil })
 		on(func() {
 			if got != yes {
 				t.Errorf("answered %v, got %v", yes, got)
@@ -433,14 +433,14 @@ func TestAskYesNo(t *testing.T) {
 // An error shows only the last lines of a long one, and goes once dismissed.
 func TestShowErrorKeepsTheLastLines(t *testing.T) {
 	on(func() {
-		parent := qt.NewQWidget2()
+		parent := qtwidgets.NewQWidget(nil)
 		defer parent.Delete()
 		var lines []string
 		for i := range maxErrorLines + 10 {
 			lines = append(lines, fmt.Sprintf("line %d", i))
 		}
 		showError(parent, "Failed", strings.Join(lines, "\n"))
-		boxes := children(parent.QObject, "QMessageBox", qt.UnsafeNewQMessageBox)
+		boxes := children(parent.AsQObject(), "QMessageBox", qtwidgets.QMessageBoxCast)
 		if len(boxes) != 1 {
 			t.Fatalf("%d boxes", len(boxes))
 		}
@@ -488,8 +488,8 @@ func TestOpenFromTheFileMenu(t *testing.T) {
 	first, second := newRepo(t), newRepo(t)
 	w := newTestWindow(t, first)
 	waitFor(t, "the status", func() bool { return w.idleWith(0, 0) })
-	answer(t, w.chooseRepository, func(d *qt.QDialog) {
-		files := qt.UnsafeNewQFileDialog(d.UnsafePointer())
+	answer(t, w.chooseRepository, func(d *qtwidgets.QDialog) {
+		files := qtwidgets.QFileDialogCast(d)
 		if got := files.Directory().AbsolutePath(); got != filepath.Dir(first) {
 			t.Errorf("starts in %q", got)
 		}
@@ -500,7 +500,7 @@ func TestOpenFromTheFileMenu(t *testing.T) {
 	waitFor(t, "the repository", func() bool { return w.idle() && w.root() == second })
 
 	// Cancelled, the repository open stays.
-	answer(t, w.chooseRepository, func(d *qt.QDialog) { d.Reject() })
+	answer(t, w.chooseRepository, func(d *qtwidgets.QDialog) { d.Reject() })
 	waitFor(t, "the dialog to go", func() bool { return w.idle() })
 	on(func() {
 		if w.root() != second {
@@ -514,15 +514,15 @@ func TestOpenFromTheFileMenu(t *testing.T) {
 func TestShowSettings(t *testing.T) {
 	w := newTestWindow(t, newRepo(t))
 	waitFor(t, "the status", func() bool { return w.idleWith(0, 0) })
-	answer(t, w.showSettings, func(d *qt.QDialog) {
-		spins := children(d.QObject, "QSpinBox", qt.UnsafeNewQSpinBox)
+	answer(t, w.showSettings, func(d *qtwidgets.QDialog) {
+		spins := children(d.AsQObject(), "QSpinBox", qtwidgets.QSpinBoxCast)
 		for _, spin := range spins {
 			if spin.Suffix() == " commits" {
 				spin.SetValue(1234)
 			}
 		}
-		boxes := children(d.QObject, "QDialogButtonBox", qt.UnsafeNewQDialogButtonBox)
-		boxes[0].Button(qt.QDialogButtonBox__Ok).Click()
+		boxes := children(d.AsQObject(), "QDialogButtonBox", qtwidgets.QDialogButtonBoxCast)
+		boxes[0].Button(qtwidgets.QDialogButtonBoxOk).Click()
 	})
 	on(func() {
 		if w.history.pageSize != 1234 {

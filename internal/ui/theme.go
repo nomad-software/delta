@@ -1,7 +1,8 @@
 package ui
 
 import (
-	qt "github.com/mappu/miqt/qt6"
+	"github.com/nomad-software/qute/qtgui"
+	"github.com/nomad-software/qute/qtwidgets"
 
 	"github.com/nomad-software/delta/internal/settings"
 )
@@ -23,107 +24,102 @@ var desktopStyle string
 // fills in and keeps up to date as the desktop's theme changes.
 func applyTheme(theme string) {
 	if desktopStyle == "" {
-		desktopStyle = qt.QApplication_Style().Name()
+		desktopStyle = qtwidgets.QApplicationStyle().Name()
 	}
-	var palette *qt.QPalette
+	var palette *qtgui.QPalette
 	switch theme {
 	case settings.ThemeLight:
-		qt.QApplication_SetStyleWithStyle("Fusion")
+		qtwidgets.QApplicationSetStyleName("Fusion")
 		palette = newPalette(lightPalette)
 	case settings.ThemeDark:
-		qt.QApplication_SetStyleWithStyle("Fusion")
+		qtwidgets.QApplicationSetStyleName("Fusion")
 		palette = newPalette(darkPalette)
 	default:
-		qt.QApplication_SetStyleWithStyle(desktopStyle)
-		palette = qt.NewQPalette()
+		qtwidgets.QApplicationSetStyleName(desktopStyle)
+		palette = qtgui.NewQPalette()
 	}
-	defer palette.Delete()
-	qt.QApplication_SetPalette(palette)
+	qtwidgets.QApplicationSetPalette(palette)
 }
 
 // paletteColours are the colours of a palette, in general and when disabled.
 // Each sets every role Fusion draws with, as what is left out would come from
 // the desktop's theme.
 type paletteColours struct {
-	normal, disabled map[qt.QPalette__ColorRole]string
+	normal, disabled map[qtgui.QPaletteColorRole]string
 }
 
 var lightPalette = paletteColours{
-	normal: map[qt.QPalette__ColorRole]string{
-		qt.QPalette__Window:          "#f0f0f0",
-		qt.QPalette__WindowText:      "#202020",
-		qt.QPalette__Base:            "#ffffff",
-		qt.QPalette__AlternateBase:   "#f6f6f6",
-		qt.QPalette__Text:            "#202020",
-		qt.QPalette__PlaceholderText: "#7f7f7f",
-		qt.QPalette__Button:          "#ececec",
-		qt.QPalette__ButtonText:      "#202020",
-		qt.QPalette__BrightText:      "#ffffff",
-		qt.QPalette__ToolTipBase:     "#fffbe0",
-		qt.QPalette__ToolTipText:     "#202020",
-		qt.QPalette__Highlight:       "#2f7fc1",
-		qt.QPalette__HighlightedText: "#ffffff",
-		qt.QPalette__Link:            "#0a5cc2",
-		qt.QPalette__LinkVisited:     "#6b2fa0",
-		qt.QPalette__Light:           "#ffffff",
-		qt.QPalette__Midlight:        "#e2e2e2",
-		qt.QPalette__Mid:             "#b5b5b5",
-		qt.QPalette__Dark:            "#9c9c9c",
-		qt.QPalette__Shadow:          "#707070",
+	normal: map[qtgui.QPaletteColorRole]string{
+		qtgui.QPaletteWindow:          "#f0f0f0",
+		qtgui.QPaletteWindowText:      "#202020",
+		qtgui.QPaletteBase:            "#ffffff",
+		qtgui.QPaletteAlternateBase:   "#f6f6f6",
+		qtgui.QPaletteText:            "#202020",
+		qtgui.QPalettePlaceholderText: "#7f7f7f",
+		qtgui.QPaletteButton:          "#ececec",
+		qtgui.QPaletteButtonText:      "#202020",
+		qtgui.QPaletteBrightText:      "#ffffff",
+		qtgui.QPaletteToolTipBase:     "#fffbe0",
+		qtgui.QPaletteToolTipText:     "#202020",
+		qtgui.QPaletteHighlight:       "#2f7fc1",
+		qtgui.QPaletteHighlightedText: "#ffffff",
+		qtgui.QPaletteLink:            "#0a5cc2",
+		qtgui.QPaletteLinkVisited:     "#6b2fa0",
+		qtgui.QPaletteLight:           "#ffffff",
+		qtgui.QPaletteMidlight:        "#e2e2e2",
+		qtgui.QPaletteMid:             "#b5b5b5",
+		qtgui.QPaletteDark:            "#9c9c9c",
+		qtgui.QPaletteShadow:          "#707070",
 	},
-	disabled: map[qt.QPalette__ColorRole]string{
-		qt.QPalette__WindowText:      "#a2a2a2",
-		qt.QPalette__Text:            "#a2a2a2",
-		qt.QPalette__ButtonText:      "#a2a2a2",
-		qt.QPalette__Highlight:       "#959595",
-		qt.QPalette__HighlightedText: "#ffffff",
+	disabled: map[qtgui.QPaletteColorRole]string{
+		qtgui.QPaletteWindowText:      "#a2a2a2",
+		qtgui.QPaletteText:            "#a2a2a2",
+		qtgui.QPaletteButtonText:      "#a2a2a2",
+		qtgui.QPaletteHighlight:       "#959595",
+		qtgui.QPaletteHighlightedText: "#ffffff",
 	},
 }
 
 var darkPalette = paletteColours{
-	normal: map[qt.QPalette__ColorRole]string{
-		qt.QPalette__Window:          "#2b2b2b",
-		qt.QPalette__WindowText:      "#e4e4e4",
-		qt.QPalette__Base:            "#1f1f1f",
-		qt.QPalette__AlternateBase:   "#272727",
-		qt.QPalette__Text:            "#e4e4e4",
-		qt.QPalette__PlaceholderText: "#8a8a8a",
-		qt.QPalette__Button:          "#363636",
-		qt.QPalette__ButtonText:      "#e4e4e4",
-		qt.QPalette__BrightText:      "#ff6a6a",
-		qt.QPalette__ToolTipBase:     "#363636",
-		qt.QPalette__ToolTipText:     "#e4e4e4",
-		qt.QPalette__Highlight:       "#2d6cb0",
-		qt.QPalette__HighlightedText: "#ffffff",
-		qt.QPalette__Link:            "#70acff",
-		qt.QPalette__LinkVisited:     "#b591ff",
-		qt.QPalette__Light:           "#4b4b4b",
-		qt.QPalette__Midlight:        "#3f3f3f",
-		qt.QPalette__Mid:             "#272727",
-		qt.QPalette__Dark:            "#1b1b1b",
-		qt.QPalette__Shadow:          "#111111",
+	normal: map[qtgui.QPaletteColorRole]string{
+		qtgui.QPaletteWindow:          "#2b2b2b",
+		qtgui.QPaletteWindowText:      "#e4e4e4",
+		qtgui.QPaletteBase:            "#1f1f1f",
+		qtgui.QPaletteAlternateBase:   "#272727",
+		qtgui.QPaletteText:            "#e4e4e4",
+		qtgui.QPalettePlaceholderText: "#8a8a8a",
+		qtgui.QPaletteButton:          "#363636",
+		qtgui.QPaletteButtonText:      "#e4e4e4",
+		qtgui.QPaletteBrightText:      "#ff6a6a",
+		qtgui.QPaletteToolTipBase:     "#363636",
+		qtgui.QPaletteToolTipText:     "#e4e4e4",
+		qtgui.QPaletteHighlight:       "#2d6cb0",
+		qtgui.QPaletteHighlightedText: "#ffffff",
+		qtgui.QPaletteLink:            "#70acff",
+		qtgui.QPaletteLinkVisited:     "#b591ff",
+		qtgui.QPaletteLight:           "#4b4b4b",
+		qtgui.QPaletteMidlight:        "#3f3f3f",
+		qtgui.QPaletteMid:             "#272727",
+		qtgui.QPaletteDark:            "#1b1b1b",
+		qtgui.QPaletteShadow:          "#111111",
 	},
-	disabled: map[qt.QPalette__ColorRole]string{
-		qt.QPalette__WindowText:      "#7c7c7c",
-		qt.QPalette__Text:            "#7c7c7c",
-		qt.QPalette__ButtonText:      "#7c7c7c",
-		qt.QPalette__Highlight:       "#4c4c4c",
-		qt.QPalette__HighlightedText: "#b2b2b2",
+	disabled: map[qtgui.QPaletteColorRole]string{
+		qtgui.QPaletteWindowText:      "#7c7c7c",
+		qtgui.QPaletteText:            "#7c7c7c",
+		qtgui.QPaletteButtonText:      "#7c7c7c",
+		qtgui.QPaletteHighlight:       "#4c4c4c",
+		qtgui.QPaletteHighlightedText: "#b2b2b2",
 	},
 }
 
 // newPalette returns a palette of the colours.
-func newPalette(colours paletteColours) *qt.QPalette {
-	palette := qt.NewQPalette()
+func newPalette(colours paletteColours) *qtgui.QPalette {
+	palette := qtgui.NewQPalette()
 	for role, name := range colours.normal {
-		colour := qt.NewQColor6(name)
-		palette.SetColor2(role, colour)
-		colour.Delete()
+		palette.SetColor(role, colour(name))
 	}
 	for role, name := range colours.disabled {
-		colour := qt.NewQColor6(name)
-		palette.SetColor(qt.QPalette__Disabled, role, colour)
-		colour.Delete()
+		palette.SetGroupColor(qtgui.QPaletteDisabled, role, colour(name))
 	}
 	return palette
 }

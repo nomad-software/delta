@@ -1,7 +1,8 @@
 package ui
 
 import (
-	qt "github.com/mappu/miqt/qt6"
+	"github.com/nomad-software/qute/qtgui"
+	"github.com/nomad-software/qute/qtwidgets"
 
 	"github.com/nomad-software/delta/internal/diff"
 )
@@ -11,7 +12,7 @@ const tabWidth = 4
 
 // diffView shows a diff read-only, with its text coloured by what each line is.
 type diffView struct {
-	*qt.QPlainTextEdit
+	*qtwidgets.QPlainTextEdit
 	added, removed, hunk string
 	// raw is the diff given, and parsed what is shown of it.
 	raw    string
@@ -19,10 +20,10 @@ type diffView struct {
 }
 
 func newDiffView(added, removed, hunk string) *diffView {
-	v := &diffView{QPlainTextEdit: qt.NewQPlainTextEdit2(), added: added, removed: removed, hunk: hunk}
+	v := &diffView{QPlainTextEdit: qtwidgets.NewQPlainTextEdit(nil), added: added, removed: removed, hunk: hunk}
 	v.SetReadOnly(true)
 	v.SetUndoRedoEnabled(false)
-	v.SetLineWrapMode(qt.QPlainTextEdit__NoWrap)
+	v.SetLineWrapMode(qtwidgets.QPlainTextEditNoWrap)
 	return v
 }
 
@@ -46,7 +47,7 @@ func (v *diffView) showParsed(text string, parsed diff.Parsed) {
 }
 
 // setCodeFont changes the font, and with it how wide a tab is.
-func (v *diffView) setCodeFont(font *qt.QFont) {
+func (v *diffView) setCodeFont(font *qtgui.QFont) {
 	v.SetFont(font)
 	v.SetTabStopDistance(float64(tabWidth * v.FontMetrics().HorizontalAdvance(" ")))
 }
@@ -71,19 +72,15 @@ func (v *diffView) setColours(added, removed, hunk string) {
 // follows the palette.
 func (v *diffView) paint() {
 	added, removed, hunk := colourFormat(v.added), colourFormat(v.removed), colourFormat(v.hunk)
-	defer added.Delete()
-	defer removed.Delete()
-	defer hunk.Delete()
 
 	doc := v.Document()
-	cursor := qt.NewQTextCursor2(doc)
-	defer cursor.Delete()
+	cursor := qtgui.NewQTextCursorWithTextDocument(doc)
 	cursor.BeginEditBlock()
 	defer cursor.EndEditBlock()
 	// format applies to the part of the block up to its length.
-	format := func(block *qt.QTextBlock, length int, f *qt.QTextCharFormat) {
+	format := func(block *qtgui.QTextBlock, length int, f *qtgui.QTextCharFormat) {
 		cursor.SetPosition(block.Position())
-		cursor.SetPosition2(block.Position()+length, qt.QTextCursor__KeepAnchor)
+		cursor.SetPositionFull(block.Position()+length, qtgui.QTextCursorKeepAnchor)
 		cursor.MergeCharFormat(f)
 	}
 	block := doc.Begin()
@@ -105,12 +102,8 @@ func (v *diffView) paint() {
 }
 
 // colourFormat returns a format of text in the colour.
-func colourFormat(name string) *qt.QTextCharFormat {
-	colour := qt.NewQColor6(name)
-	defer colour.Delete()
-	brush := qt.NewQBrush3(colour)
-	defer brush.Delete()
-	format := qt.NewQTextCharFormat()
-	format.SetForeground(brush)
+func colourFormat(name string) *qtgui.QTextCharFormat {
+	format := qtgui.NewQTextCharFormat()
+	format.SetForeground(qtgui.NewQBrushWithColor(colour(name)))
 	return format
 }

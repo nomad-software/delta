@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	qt "github.com/mappu/miqt/qt6"
-	"github.com/mappu/miqt/qt6/mainthread"
+	"github.com/nomad-software/qute"
+	"github.com/nomad-software/qute/qtwidgets"
 
 	"github.com/nomad-software/delta/internal/git"
 )
@@ -24,7 +24,7 @@ func (w *Window) background(name string, op func() (string, error), done func(st
 	w.beginWork()
 	go func() {
 		out, err := op()
-		mainthread.Start(func() {
+		qute.Post(func() {
 			w.endWork()
 			w.busy = false
 			done(out, err)
@@ -76,7 +76,7 @@ func readFirst[T any](w *Window, title string, read func(*git.Repo) (T, error), 
 	w.beginWork()
 	go func() {
 		got, err := read(r)
-		mainthread.Start(func() {
+		qute.Post(func() {
 			w.endWork()
 			w.reading = false
 			if r != w.repo || w.busy {
@@ -200,7 +200,7 @@ func (w *Window) pushRemote(remotes []string) (string, bool) {
 	if len(remotes) == 1 {
 		return remotes[0], true
 	}
-	return askChoice(w.QWidget, "Push", "Push to", remotes)
+	return askChoice(w, "Push", "Push to", remotes)
 }
 
 // without returns the items other than the one named.
@@ -226,17 +226,17 @@ func (w *Window) newBranch() {
 // newBranchDialog returns the dialog asking for a new branch, with its fields:
 // the name, where it starts, and whether to check it out. OK is enabled while
 // the name, made fit for a branch as it will be on OK, can be one.
-func (w *Window) newBranchDialog(local, remote []string) (d *formDialog, name *qt.QLineEdit, start *qt.QComboBox, checkout *qt.QCheckBox) {
+func (w *Window) newBranchDialog(local, remote []string) (d *formDialog, name *qtwidgets.QLineEdit, start *qtwidgets.QComboBox, checkout *qtwidgets.QCheckBox) {
 	r := w.repo
-	d = newFormDialog(w.QWidget, "New Branch")
+	d = newFormDialog(w, "New Branch")
 	name = d.addText("Name", "", func(text string) bool {
 		sanitised := git.SanitiseBranchName(text)
 		return sanitised != "" && r.ValidBranchName(sanitised)
 	})
 	start = d.addChoice("Start at", append(append([]string{"HEAD"}, local...), remote...))
-	checkout = qt.NewQCheckBox3("Check out the new branch")
+	checkout = qtwidgets.NewQCheckBoxWithText("Check out the new branch", nil)
 	checkout.SetChecked(true)
-	d.form.AddRowWithWidget(checkout.QWidget)
+	d.form.AddRowWidget(checkout)
 	return d, name, start, checkout
 }
 
@@ -255,7 +255,7 @@ func (w *Window) checkoutBranch() {
 			return
 		}
 		fetched := false
-		d, branch, _ := newCheckoutDialog(w.QWidget, w.status.Branch, local, remote, w.checkoutFetch(&fetched))
+		d, branch, _ := newCheckoutDialog(w, w.status.Branch, local, remote, w.checkoutFetch(&fetched))
 		if d.run() {
 			name := branch.CurrentText()
 			w.checkout(name, !slices.Contains(local, name))
@@ -273,11 +273,11 @@ func (w *Window) checkoutBranch() {
 func (w *Window) checkoutFetch(fetched *bool) func() ([]string, error) {
 	r := w.repo
 	return func() ([]string, error) {
-		mainthread.Wait(func() {
+		qute.PostSync(func() {
 			*fetched = true
 			w.beginWork()
 		})
-		defer mainthread.Start(w.endWork)
+		defer qute.Post(w.endWork)
 		if _, err := r.Fetch(); err != nil {
 			return nil, err
 		}
@@ -312,7 +312,7 @@ func (w *Window) askRenameBranch(local []string) {
 	if slices.Contains(local, w.status.Branch) {
 		local = append([]string{w.status.Branch}, without(local, w.status.Branch)...)
 	}
-	d := newFormDialog(w.QWidget, "Rename Branch")
+	d := newFormDialog(w, "Rename Branch")
 	from := d.addChoice("Branch", local)
 	to := d.addText("New name", "", r.ValidBranchName)
 	if !d.run() {
@@ -331,7 +331,7 @@ func (w *Window) deleteBranch() {
 			w.failed("Delete Branch", "There are no other branches.")
 			return
 		}
-		if name, ok := askChoice(w.QWidget, "Delete Branch", "Branch", items); ok {
+		if name, ok := askChoice(w, "Delete Branch", "Branch", items); ok {
 			w.removeBranch(name)
 		}
 	})
@@ -372,7 +372,7 @@ func (w *Window) mergeBranch() {
 			w.failed("Merge", "There are no other branches.")
 			return
 		}
-		if name, ok := askChoice(w.QWidget, "Merge", "Merge into the current branch", items); ok {
+		if name, ok := askChoice(w, "Merge", "Merge into the current branch", items); ok {
 			r := w.repo
 			w.run("Merge", func() (string, error) { return r.Merge(name) }, nil)
 		}
@@ -398,7 +398,7 @@ func notEmpty(text string) bool { return text != "" }
 // addRemote asks for a remote and adds it.
 func (w *Window) addRemote() {
 	r := w.repo
-	d := newFormDialog(w.QWidget, "Add Remote")
+	d := newFormDialog(w, "Add Remote")
 	name := d.addText("Name", "origin", notEmpty)
 	url := d.addText("URL", "", notEmpty)
 	if !d.run() {
@@ -416,7 +416,7 @@ func (w *Window) chooseRemote(title string, then func(name string)) {
 			w.failed(title, "This repository has no remotes.")
 			return
 		}
-		if name, ok := askChoice(w.QWidget, title, "Remote", remotes); ok {
+		if name, ok := askChoice(w, title, "Remote", remotes); ok {
 			then(name)
 		}
 	})
@@ -425,7 +425,7 @@ func (w *Window) chooseRemote(title string, then func(name string)) {
 // renameRemote asks for a remote and its new name.
 func (w *Window) renameRemote() {
 	w.chooseRemote("Rename Remote", func(from string) {
-		to, ok := askText(w.QWidget, "Rename Remote", "New name", from, notEmpty)
+		to, ok := askText(w, "Rename Remote", "New name", from, notEmpty)
 		if !ok || to == from {
 			return
 		}
@@ -443,7 +443,7 @@ func (w *Window) changeRemoteURL() {
 			current, _ := r.RemoteURL(name)
 			return current, nil
 		}, func(current string) {
-			url, ok := askText(w.QWidget, "Change URL", "URL", current, notEmpty)
+			url, ok := askText(w, "Change URL", "URL", current, notEmpty)
 			if !ok || url == current {
 				return
 			}
@@ -509,7 +509,7 @@ func (w *Window) rebaseFrom(c git.Commit) {
 // askRebase asks how to rewrite the commits, on top of the base, and rewrites
 // them.
 func (w *Window) askRebase(commits []git.Commit, base string) {
-	d := newRebaseDialog(w.QWidget, w.config, commits)
+	d := newRebaseDialog(w, w.config, commits)
 	accepted := d.run()
 	w.config.RebaseWidth, w.config.RebaseHeight = d.width, d.height
 	w.saveSettings()
@@ -636,12 +636,12 @@ func (w *Window) askStashChanges() {
 // newStashDialog returns the dialog asking for a stash's message, which may be
 // left empty for git's own, and whether to include untracked files, unticked to
 // start with.
-func (w *Window) newStashDialog() (d *formDialog, message *qt.QLineEdit, untracked *qt.QCheckBox) {
-	d = newFormDialog(w.QWidget, "Stash Changes")
+func (w *Window) newStashDialog() (d *formDialog, message *qtwidgets.QLineEdit, untracked *qtwidgets.QCheckBox) {
+	d = newFormDialog(w, "Stash Changes")
 	message = d.addText("Message", "", anyText)
 	message.SetPlaceholderText("Optional")
-	untracked = qt.NewQCheckBox3("Include untracked files")
-	d.form.AddRowWithWidget(untracked.QWidget)
+	untracked = qtwidgets.NewQCheckBoxWithText("Include untracked files", nil)
+	d.form.AddRowWidget(untracked)
 	return d, message, untracked
 }
 
@@ -663,7 +663,7 @@ func (w *Window) askStash(title string, then func(ref string)) {
 		for _, s := range stashes {
 			items = append(items, s.Ref+": "+s.Subject)
 		}
-		if chosen, ok := askChoice(w.QWidget, title, "Stash", items); ok {
+		if chosen, ok := askChoice(w, title, "Stash", items); ok {
 			ref, _, _ := strings.Cut(chosen, ": ")
 			then(ref)
 		}
@@ -818,7 +818,7 @@ func (w *Window) tagRelease() {
 		return
 	}
 	readFirst(w, "Tag Release", func(r *git.Repo) (git.Release, error) { return r.ReadRelease(branch) }, func(rel git.Release) {
-		d, version, message := newTagDialog(w.QWidget, rel, w.status.HasChanges())
+		d, version, message := newTagDialog(w, rel, w.status.HasChanges())
 		if !d.run() {
 			return
 		}
