@@ -60,10 +60,11 @@ func (v *diffView) setColours(added, removed, hunk string) {
 	v.added, v.removed, v.hunk = added, removed, hunk
 	// Formats are only ever added to, so old ones are cleared by starting again,
 	// which would lose the scroll position.
-	scroll := v.VerticalScrollBar().Value()
+	scroll, across := v.VerticalScrollBar().Value(), v.HorizontalScrollBar().Value()
 	v.SetPlainText(v.parsed.Text)
 	v.paint()
 	v.VerticalScrollBar().SetValue(scroll)
+	v.HorizontalScrollBar().SetValue(across)
 }
 
 // paint colours the text of each line by what it is: the whole of an added or

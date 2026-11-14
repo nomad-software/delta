@@ -162,8 +162,9 @@ func showError(parent qtwidgets.QWidgetLike, title, text string) {
 // OK is enabled only while a branch other than the current one is chosen, as
 // there is nothing to do otherwise. Ticking it the first time fetches, in the
 // background, and lists the remote branches that gives, or, if it fails, says
-// why and lists those already known.
-func newCheckoutDialog(parent qtwidgets.QWidgetLike, current string, local, remote []string, fetch func() ([]string, error)) (*formDialog, *qtwidgets.QComboBox, *qtwidgets.QCheckBox) {
+// why and lists those already known. fetch is called on the main thread as the
+// fetch starts, and gives what fetches, in the background.
+func newCheckoutDialog(parent qtwidgets.QWidgetLike, current string, local, remote []string, fetch func() func() ([]string, error)) (*formDialog, *qtwidgets.QComboBox, *qtwidgets.QCheckBox) {
 	local, remote = byName(local), byName(remote)
 	d := newFormDialog(parent, "Checkout")
 	branch := d.addChoice("Branch", local)
@@ -208,8 +209,9 @@ func newCheckoutDialog(parent qtwidgets.QWidgetLike, current string, local, remo
 		note.SetText("Fetching…")
 		note.Show()
 		d.check()
+		work := fetch()
 		go func() {
-			got, err := fetch()
+			got, err := work()
 			qute.Post(func() {
 				if d.finished {
 					return

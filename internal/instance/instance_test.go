@@ -171,6 +171,22 @@ func TestNoAnswer(t *testing.T) {
 	}
 }
 
+// A copy started while the one that runs is quitting, its socket gone but its
+// lock still held, runs once the lock is let go of, rather than giving up.
+func TestClaimAfterQuitting(t *testing.T) {
+	dir := shortDir(t)
+	lock := holdLock(t, dir)
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		lock.Close()
+	}()
+	i, err := Claim(dir, Request{})
+	if err != nil {
+		t.Fatalf("claim = %v", err)
+	}
+	i.Close()
+}
+
 // A connection that sends nothing, or something that is no request, holds up
 // neither the copies started after it nor Close, and passes nothing on.
 func TestIdleAndBadConnections(t *testing.T) {

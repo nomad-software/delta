@@ -67,3 +67,23 @@ func TestFinishBranch(t *testing.T) {
 		t.Errorf("with no upstream gave %v, with %q", err, local)
 	}
 }
+
+// Deleting a branch not merged is refused as such; one refused for another
+// reason, as checked out in another work tree, is not, as forcing would not help.
+func TestDeleteBranchRefusals(t *testing.T) {
+	r := newRepo(t)
+	git(t, r.Root, "branch", "unmerged")
+	git(t, r.Root, "switch", "-q", "unmerged")
+	git(t, r.Root, "commit", "-q", "--allow-empty", "-m", "mine")
+	git(t, r.Root, "switch", "-q", "main")
+	if _, err := r.DeleteBranch("unmerged", false); !errors.Is(err, ErrNotMerged) {
+		t.Errorf("unmerged gave %v", err)
+	}
+	git(t, r.Root, "worktree", "add", "-q", "-b", "elsewhere", t.TempDir())
+	if _, err := r.DeleteBranch("elsewhere", false); err == nil || errors.Is(err, ErrNotMerged) {
+		t.Errorf("checked out elsewhere gave %v", err)
+	}
+	if _, err := r.DeleteBranch("missing", false); err == nil || errors.Is(err, ErrNotMerged) {
+		t.Errorf("a missing branch gave %v", err)
+	}
+}

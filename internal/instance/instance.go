@@ -106,18 +106,34 @@ func Claim(dir string, request Request) (*Instance, error) {
 	if err != nil {
 		return nil, err
 	}
-	held, err := tryLock(lock)
+	path := filepath.Join(dir, socketName)
+	data, err := json.Marshal(request)
 	if err != nil {
 		lock.Close()
 		return nil, err
 	}
-	path := filepath.Join(dir, socketName)
-	if !held {
-		lock.Close()
-		if err := handOver(path, request); err != nil {
+	// Until the copy that runs answers, the lock is tried again, as it may be
+	// quitting, its socket gone but its lock not yet let go of.
+	deadline := time.Now().Add(answerWait)
+	for {
+		held, err := tryLock(lock)
+		if err != nil {
+			lock.Close()
 			return nil, err
 		}
-		return nil, ErrRunning
+		if held {
+			break
+		}
+		err = handOver(path, data)
+		if err == nil {
+			lock.Close()
+			return nil, ErrRunning
+		}
+		if time.Now().After(deadline) {
+			lock.Close()
+			return nil, fmt.Errorf("%w: %w", ErrNoAnswer, err)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	// A socket left by a copy that died is in the way. Only the copy that holds
@@ -144,26 +160,16 @@ func tryLock(f *os.File) (bool, error) {
 	return err == nil, err
 }
 
-// handOver sends the request to the copy that runs, waiting for it to listen.
-func handOver(path string, request Request) error {
-	data, err := json.Marshal(request)
+// handOver sends the request, as JSON, to the copy that runs, if it listens.
+func handOver(path string, data []byte) error {
+	conn, err := net.Dial("unix", path)
 	if err != nil {
 		return err
 	}
-	deadline := time.Now().Add(answerWait)
-	for {
-		conn, err := net.Dial("unix", path)
-		if err == nil {
-			defer conn.Close()
-			conn.SetDeadline(time.Now().Add(answerWait))
-			_, err = conn.Write(append(data, '\n'))
-			return err
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("%w: %w", ErrNoAnswer, err)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(answerWait))
+	_, err = conn.Write(append(data, '\n'))
+	return err
 }
 
 // Serve calls handle, on a goroutine of its own, with the request of each copy

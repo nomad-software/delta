@@ -139,13 +139,11 @@ func (w *Window) connectHistory() {
 		defer menu.DeleteLater()
 		menu.ExecAt(h.commits.Viewport().MapToGlobal(pos))
 	})
-	// More are read on reaching the end of those read.
+	// More are read on reaching the end of those read, or while it is in
+	// sight, as when they all fit.
 	bar := h.commits.VerticalScrollBar()
-	bar.OnValueChanged(func(value int) {
-		if value == bar.Maximum() {
-			w.loadMoreHistory()
-		}
-	})
+	bar.OnValueChanged(func(int) { w.fillHistory() })
+	bar.OnRangeChanged(func(int, int) { w.fillHistory() })
 	// The diff is of the file chosen, as in the changes.
 	h.files.OnCurrentRowChanged(func(int) {
 		if !h.updating {
@@ -238,8 +236,31 @@ func (w *Window) loadHistory() {
 			}
 			h.more = more
 			w.showCommits(page)
+			// Commits the same as before leave the scroll bar as it was,
+			// which may be at an end that a page dropped for this was
+			// to follow.
+			w.fillHistoryNow()
 		})
 	}()
+}
+
+// fillHistoryNow is fillHistory once rows just added are laid out, which Qt
+// otherwise does later, so that the scroll bar is not taken as at the end of
+// rows that will no longer fit, which would read one page after another.
+func (w *Window) fillHistoryNow() {
+	if w.historyShown() {
+		w.history.commits.DoItemsLayout()
+		w.fillHistory()
+	}
+}
+
+// fillHistory reads the next commits if the end of those read is in sight, and
+// there are more, while the history is on show.
+func (w *Window) fillHistory() {
+	bar := w.history.commits.VerticalScrollBar()
+	if w.historyShown() && bar.Value() == bar.Maximum() {
+		w.loadMoreHistory()
+	}
 }
 
 // loadMoreHistory reads the next commits, in the background.
@@ -276,6 +297,8 @@ func (w *Window) loadMoreHistory() {
 			h.updating = true
 			h.commits.AddTopLevelItems(commitItems(page))
 			h.updating = false
+			// Rows that all fit leave the scroll bar as it was.
+			w.fillHistoryNow()
 		})
 	}()
 }

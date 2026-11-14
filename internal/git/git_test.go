@@ -786,3 +786,21 @@ func TestHasChanges(t *testing.T) {
 		t.Errorf("a staged file is not a change: %+v", s)
 	}
 }
+
+// What git writes to its errors with an empty answer, as a hint, is not taken
+// for the answer: reading past the history's end gives no commits.
+func TestReadIgnoresHints(t *testing.T) {
+	r := newRepo(t)
+	write(t, filepath.Join(r.Root, ".git", "info"), "grafts", "")
+	commits, err := r.Log(10, 5)
+	if err != nil || len(commits) != 0 {
+		t.Errorf("past the end gave %v, %v", commits, err)
+	}
+	if _, err := r.read("log", "-1", "--format=%H"); err != nil {
+		t.Fatal(err)
+	}
+	// What changes something still reports what git said there.
+	if out, err := r.run("log", "--skip=5", "--format=%H"); err != nil || !strings.Contains(out, "hint:") {
+		t.Errorf("run gave %q, %v", out, err)
+	}
+}

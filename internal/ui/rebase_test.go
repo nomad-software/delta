@@ -562,3 +562,22 @@ func TestRebaseNeedsACleanTree(t *testing.T) {
 		}
 	})
 }
+
+// Moving rows keeps the current commit current, though it is not among them,
+// so that the message shown stays that commit's.
+func TestRebaseMoveKeepsTheCurrentCommit(t *testing.T) {
+	dir := newRepo(t)
+	commitFiles(t, dir, "a", "b", "c", "d", "e")
+	d, _ := newTestRebaseDialog(t, dir, "a")
+	on(func() {
+		d.choose(0, 1)
+		d.list.SetCurrentItemWith(d.list.TopLevelItem(2), 0, qtcore.QItemSelectionModelNoUpdate)
+		d.moveRows([]int{0, 1}, 5)
+		if got := planText(d.steps); !slices.Equal(got, []string{"pick c", "pick d", "pick e", "pick a", "pick b"}) {
+			t.Errorf("moved %q", got)
+		}
+		if row := d.currentRow(); row != 0 || d.message.ToPlainText() != "c" {
+			t.Errorf("current row %d, message %q", row, d.message.ToPlainText())
+		}
+	})
+}

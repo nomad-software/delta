@@ -58,7 +58,9 @@ delta [folder]
 ```
 
 Only one copy of Delta runs at a time. Starting it again brings back the
-window there is, opening the repository the new copy would have opened.
+window there is, opening the repository the new copy would have opened, unless
+a command is running or a dialog is open, when the status bar says it was not
+opened.
 
 It opens the repository holding the folder given. Without one, it opens the
 repository the current folder is in, or else the one you last opened, or else
@@ -139,7 +141,8 @@ need a force push.
 left in your files, unstaged, as if you had just made them, along with anything
 you had staged. It says so if the commit has been pushed, as the branch will then
 need a force push. The first commit of a branch is taken back to none, its
-files untracked. A merge can't be uncommitted.
+files untracked, unless HEAD is detached there, when there is no branch to take
+it back from. A merge can't be uncommitted.
 
 Forcing uses `--force-with-lease`: git refuses if the remote has commits you have
 not fetched, so you can't overwrite someone else's work without seeing it.
@@ -155,7 +158,8 @@ delete, as it can't be undone.
 The commits of the current branch are listed at the top, newest
 first, with a graph at the left drawing how they branch and merge, and any
 branches and tags at them in brackets. They are read 500 at a time (a setting),
-and more as you scroll to the end. If anything is not committed yet, an
+and more as you scroll to the end, or straight away while the end is in sight,
+as when they all fit. If anything is not committed yet, an
 **Uncommitted changes** row comes first, staged, unstaged and untracked together.
 
 Below the commits, choose one to see the files it changed on the left, and the
@@ -210,7 +214,8 @@ the branch back as it was.
 or `master` if there is no `main`, pulls into it, and deletes the branch you were
 on. It asks first, and won't start with changes not committed. If the pull
 fails, it stops there and keeps the branch. If git won't delete the branch, as
-its commits are not merged, it asks whether to delete it anyway.
+its commits are not merged, it asks whether to delete it anyway; any other
+refusal, as of a branch checked out in another work tree, is told of.
 
 **Remote > Tag Release…** (`Ctrl+T`) tags a release of the current branch with
 the next [semantic version](https://semver.org). It reads the highest version
@@ -220,7 +225,8 @@ patch, as many as you like, but none below what keeps the version above the
 latest, so that a release never goes backwards. Tags such as `v1.2.3` or
 `1.2.3` count, and the new tag keeps their `v`; pre-releases and other tags are
 ignored. The tag is annotated, with the message you give or else its name, and
-pushed together with the branch, so that both arrive or neither does: if the
+pushed together with the branch, to its upstream's branch if that is on the
+remote, or else to one of its own name, so that both arrive or neither does: if the
 push is refused, the tag is deleted again. The dialog notes when the commit is
 tagged already, and when you have changes not committed, which are not in the
 release.
@@ -231,10 +237,11 @@ hyphens, and what git doesn't allow in a branch's name is taken out, so
 
 **Checkout** lists every local branch by name, with the current one chosen. Tick
 **Include remote branches** to fetch and list the remote ones too: checking one
-out makes a local branch that tracks it.
+out makes a local branch that tracks it. Cancelling while it fetches lets the
+fetch finish, as a command, before anything else is started.
 
 Deleting a branch asks first, and asks again if it has commits that have not been
-merged.
+merged (merged into neither the current branch nor its upstream).
 
 ## Stashes
 
@@ -277,7 +284,8 @@ The settings are kept in `delta/settings.json` under the system's configuration
 folder (`~/.config` on Linux), along with the repositories you have opened and
 the last of them, whether **Force push** is ticked, the size of the window and
 its panes, which are saved when it closes, and the size of the interactive rebase
-dialog.
+dialog. A value in it that can't be used, as one of the wrong type, gives its
+default, keeping the rest; a file that is not JSON gives the defaults.
 
 ## Desktop entry
 

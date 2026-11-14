@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -100,6 +101,21 @@ func TestNoQuickFixDuringMerge(t *testing.T) {
 	on(func() {
 		if w.quickFixAction.IsEnabled() || w.uncommit.IsEnabled() {
 			t.Error("Quick Fix or Uncommit is enabled during a merge")
+		}
+	})
+}
+
+// A rescan that fails leaves neither Quick Fix nor Uncommit enabled from what
+// was read before, as the last commits may have changed since.
+func TestFailedRescanDisablesQuickFix(t *testing.T) {
+	dir := newRepo(t)
+	writeFile(t, dir, "file", "more\n")
+	w := newTestWindow(t, dir)
+	waitFor(t, "the status", func() bool { return w.quickFixAction.IsEnabled() && w.uncommit.IsEnabled() })
+	on(func() {
+		w.applySnapshot(git.Snapshot{Err: errors.New("no index")})
+		if w.quickFixAction.IsEnabled() || w.uncommit.IsEnabled() {
+			t.Errorf("quick fix %v, uncommit %v", w.quickFixAction.IsEnabled(), w.uncommit.IsEnabled())
 		}
 	})
 }

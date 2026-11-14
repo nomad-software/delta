@@ -757,9 +757,11 @@ func TestCheckoutDialog(t *testing.T) {
 		return all
 	}
 	fetches := 0
-	fetch := func() ([]string, error) {
+	fetch := func() func() ([]string, error) {
 		fetches++
-		return []string{"origin/topic", "origin/Beta", "origin/main"}, nil
+		return func() ([]string, error) {
+			return []string{"origin/topic", "origin/Beta", "origin/main"}, nil
+		}
 	}
 	var d *formDialog
 	var branch *qtwidgets.QComboBox
@@ -811,8 +813,8 @@ func TestCheckoutDialog(t *testing.T) {
 	var failingBox *qtwidgets.QCheckBox
 	on(func() {
 		var fd *formDialog
-		fd, failing, failingBox = newCheckoutDialog(nil, "main", []string{"main"}, []string{"origin/old"}, func() ([]string, error) {
-			return nil, errors.New("could not resolve host")
+		fd, failing, failingBox = newCheckoutDialog(nil, "main", []string{"main"}, []string{"origin/old"}, func() func() ([]string, error) {
+			return func() ([]string, error) { return nil, errors.New("could not resolve host") }
 		})
 		t.Cleanup(func() { on(fd.DeleteLater) })
 		failingBox.SetChecked(true)
@@ -838,9 +840,9 @@ func TestCheckoutFetch(t *testing.T) {
 	runGit(t, dir, "push", "-q", "origin", "main")
 	w := newTestWindow(t, dir)
 	waitFor(t, "the status", func() bool { return w.status.Branch == "main" && w.working == 0 })
-	fetched := false
+	var fetching checkoutFetching
 	var fetch func() ([]string, error)
-	on(func() { fetch = w.checkoutFetch(&fetched) })
+	on(func() { fetch = w.checkoutFetch(&fetching)() })
 	type answer struct {
 		remote []string
 		err    error
@@ -851,12 +853,44 @@ func TestCheckoutFetch(t *testing.T) {
 		answers <- answer{remote, err}
 	}()
 	// The main thread reads it while the fetch may still be going on.
-	waitFor(t, "the fetch to be noted", func() bool { return fetched })
+	waitFor(t, "the fetch to be noted", func() bool { return fetching.started })
 	got := <-answers
 	if got.err != nil || !slices.Equal(got.remote, []string{"origin/main"}) {
 		t.Errorf("remote %q, %v", got.remote, got.err)
 	}
-	waitFor(t, "the count of work", func() bool { return w.working == 0 })
+	waitFor(t, "the count of work", func() bool { return w.working == 0 && fetching.done })
+}
+
+// A fetch still going on when the checkout dialog is cancelled goes on as a
+// command does, with the actions disabled, and rescans once it is done.
+func TestCheckoutFetchOutlivesTheDialog(t *testing.T) {
+	dir := newRepo(t)
+	bare := t.TempDir()
+	runGit(t, bare, "init", "-q", "--bare", "-b", "main")
+	runGit(t, dir, "remote", "add", "origin", bare)
+	runGit(t, dir, "push", "-q", "origin", "main")
+	// The fetch waits for go to be there.
+	gate := filepath.Join(t.TempDir(), "go")
+	runGit(t, dir, "config", "remote.origin.uploadpack", "while [ ! -e '"+gate+"' ]; do sleep 0.02; done; git-upload-pack")
+	w := newTestWindow(t, dir)
+	waitFor(t, "the status", func() bool { return w.idleWith(0, 0) })
+	answer(t, w.checkoutBranch, func(d *qtwidgets.QDialog) {
+		children(d.AsQObject(), "QCheckBox", qtwidgets.QCheckBoxCast)[0].SetChecked(true)
+		d.Reject()
+	})
+	waitFor(t, "the dialog to close", func() bool { return qtwidgets.QApplicationActiveModalWidget() == nil })
+	on(func() {
+		if !w.busy || w.repoOnly[0].IsEnabled() || w.said.Text() != "Fetching…" {
+			t.Errorf("busy %v, actions enabled %v, said %q", w.busy, w.repoOnly[0].IsEnabled(), w.said.Text())
+		}
+	})
+	writeFile(t, filepath.Dir(gate), "go", "")
+	waitFor(t, "the fetch", func() bool { return !w.busy && w.working == 0 })
+	on(func() {
+		if got := w.said.Text(); got != "Fetch done." || !w.repoOnly[0].IsEnabled() {
+			t.Errorf("said %q, actions enabled %v", got, w.repoOnly[0].IsEnabled())
+		}
+	})
 }
 
 // TestFirstTextFieldHasTheFocus checks that a dialog opens with the cursor in
@@ -966,6 +1000,26 @@ func TestKeepingAnUnmergedBranch(t *testing.T) {
 	})
 }
 
+// A branch git won't delete for another reason than its not being merged, as
+// it is checked out in another work tree, is told of, not offered to be deleted
+// by force, which would not help.
+func TestBranchDeletionRefusedOtherwise(t *testing.T) {
+	dir := newRepo(t)
+	runGit(t, dir, "worktree", "add", "-q", "-b", "topic", t.TempDir())
+	w := newTestWindow(t, dir)
+	waitFor(t, "the branch", func() bool { return w.status.Branch == "main" && !w.busy })
+	on(func() {
+		w.answer = true
+		w.removeBranch("topic")
+	})
+	waitFor(t, "the failure", func() bool { return len(w.failures) == 1 && !w.busy })
+	on(func() {
+		if len(w.asked) != 1 {
+			t.Errorf("asked %q", w.asked)
+		}
+	})
+}
+
 func TestMergePrefillsMessage(t *testing.T) {
 	dir := newRepo(t)
 	runGit(t, dir, "switch", "-c", "topic")
@@ -1055,6 +1109,27 @@ func TestDiffColours(t *testing.T) {
 		if !strings.Contains(v.ToPlainText(), "+new") {
 			t.Error("the text was lost")
 		}
+	})
+}
+
+// A change of colour keeps where the diff is scrolled to across, as well as down.
+func TestDiffColoursKeepTheScroll(t *testing.T) {
+	on(func() {
+		v := newDiffView("#00ff00", "#ff0000", "#808080")
+		defer v.Delete()
+		v.Resize(200, 100)
+		v.Show()
+		v.show("diff --git a/f b/f\n@@ -1 +1 @@\n+" + strings.Repeat("a long line ", 100) + "\n")
+		bar := v.HorizontalScrollBar()
+		if bar.Maximum() == 0 {
+			t.Fatal("nothing to scroll across")
+		}
+		bar.SetValue(bar.Maximum() / 2)
+		v.setColours("#0000ff", "#ff0000", "#123456")
+		if got := bar.Value(); got != bar.Maximum()/2 {
+			t.Errorf("scrolled across to %d, not %d", got, bar.Maximum()/2)
+		}
+		v.Hide()
 	})
 }
 
@@ -1497,7 +1572,7 @@ func TestHistoryShowsUncommittedChanges(t *testing.T) {
 	w := newTestWindow(t, dir)
 	h := w.history
 	on(func() {
-		h.pageSize = 2
+		paged(h, 2)
 		w.showHistory.SetChecked(true)
 	})
 	// It comes first and is chosen, on top of the first page of real commits.
@@ -1551,7 +1626,7 @@ func TestHistoryReadsMoreAtTheEnd(t *testing.T) {
 	w := newTestWindow(t, dir)
 	h := w.history
 	on(func() {
-		h.pageSize = 2
+		paged(h, 2)
 		w.showHistory.SetChecked(true)
 	})
 	waitFor(t, "the first page", func() bool { return h.commits.TopLevelItemCount() == 2 && !h.loading })
@@ -1858,6 +1933,56 @@ func TestShortcuts(t *testing.T) {
 		}
 		if len(seen) < 15 {
 			t.Errorf("only %d shortcuts found", len(seen))
+		}
+	})
+}
+
+// paged has the history read size commits at a time, in a list too short to
+// show them, so that only scrolling to its end reads more.
+func paged(h *historyView, size int) {
+	h.pageSize = size
+	h.commits.SetFixedHeight(h.commits.Header().Height() + 4)
+}
+
+// While the end of the commits read is in sight, as when they all fit, more are
+// read without scrolling, until there are none.
+func TestHistoryFillsWhatIsInSight(t *testing.T) {
+	dir := historyRepo(t, 4)
+	w := newTestWindow(t, dir)
+	h := w.history
+	on(func() {
+		h.pageSize = 2
+		w.showHistory.SetChecked(true)
+	})
+	waitFor(t, "every page", func() bool { return h.commits.TopLevelItemCount() == 5 && !h.loading && !h.more })
+}
+
+// Reaching the end reads one page, not one after another while the rows just
+// added are not yet laid out and the scroll bar still seems at the end.
+func TestHistoryReadsOnePageAtTheEnd(t *testing.T) {
+	dir := historyRepo(t, 12)
+	w := newTestWindow(t, dir)
+	h := w.history
+	on(func() {
+		paged(h, 2)
+		// Room for a row or two, so that the first page fits.
+		h.commits.SetFixedHeight(h.commits.Header().Height() + 60)
+		w.showHistory.SetChecked(true)
+	})
+	waitFor(t, "the first pages", func() bool { return h.commits.TopLevelItemCount() >= 2 && !h.loading && w.working == 0 })
+	var before int
+	on(func() {
+		bar := h.commits.VerticalScrollBar()
+		if bar.Maximum() == 0 {
+			t.Fatal("the rows read all fit")
+		}
+		before = h.commits.TopLevelItemCount()
+		bar.SetValue(bar.Maximum())
+	})
+	waitFor(t, "the next page", func() bool { return !h.loading && w.working == 0 })
+	on(func() {
+		if got := h.commits.TopLevelItemCount(); got != before+2 {
+			t.Errorf("%d rows after %d", got, before)
 		}
 	})
 }

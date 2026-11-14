@@ -254,35 +254,66 @@ func (w *Window) checkoutBranch() {
 			w.failed("Checkout", "There are no branches yet.")
 			return
 		}
-		fetched := false
-		d, branch, _ := newCheckoutDialog(w, w.status.Branch, local, remote, w.checkoutFetch(&fetched))
-		if d.run() {
+		var fetch checkoutFetching
+		d, branch, _ := newCheckoutDialog(w, w.status.Branch, local, remote, w.checkoutFetch(&fetch))
+		switch {
+		case d.run():
 			name := branch.CurrentText()
 			w.checkout(name, !slices.Contains(local, name))
-		} else if fetched {
+		case fetch.done:
 			// What was fetched changes how far the branch is from its upstream.
 			w.rescanRepository()
+		case fetch.started:
+			// A fetch outlives the dialog as a command does, so that no other
+			// starts meanwhile, and rescans once it is done.
+			fetch.outlived = true
+			w.busy = true
+			w.updateActions()
+			w.say("Fetching…")
 		}
 	})
 }
 
-// checkoutFetch returns what fetches for the checkout dialog, in the background,
-// and gives the remote branches after it, noting that it has in fetched. Both
-// that and the count of work are only touched on the main thread, as the
-// window reads them there, perhaps while the fetch is still going on.
-func (w *Window) checkoutFetch(fetched *bool) func() ([]string, error) {
+// checkoutFetching is how far the checkout dialog's fetch has got: started,
+// done, and whether it outlived the dialog. It is only touched on the main
+// thread, as the window reads it there, perhaps while the fetch is going on.
+type checkoutFetching struct {
+	started, done, outlived bool
+}
+
+// checkoutFetch returns what starts the checkout dialog's fetch, on the main
+// thread, noting it in fetch and the count of work, and gives what fetches, in
+// the background, and gives the remote branches after it. fetch is only touched
+// on the main thread, as the window reads it there. One that outlived the dialog
+// ends as a command does.
+func (w *Window) checkoutFetch(fetch *checkoutFetching) func() func() ([]string, error) {
 	r := w.repo
-	return func() ([]string, error) {
-		qute.PostSync(func() {
-			*fetched = true
-			w.beginWork()
-		})
-		defer qute.Post(w.endWork)
-		if _, err := r.Fetch(); err != nil {
-			return nil, err
+	return func() func() ([]string, error) {
+		fetch.started = true
+		w.beginWork()
+		return func() ([]string, error) {
+			_, err := r.Fetch()
+			qute.Post(func() {
+				w.endWork()
+				fetch.done = true
+				if !fetch.outlived {
+					return
+				}
+				w.busy = false
+				if err != nil {
+					w.say("Fetch failed: " + firstLine(err.Error()))
+				} else {
+					w.tellDone("Fetch", "")
+				}
+				w.updateActions()
+				w.rescanRepository()
+			})
+			if err != nil {
+				return nil, err
+			}
+			_, remote, err := r.Branches()
+			return remote, err
 		}
-		_, remote, err := r.Branches()
-		return remote, err
 	}
 }
 
@@ -346,12 +377,15 @@ func (w *Window) removeBranch(name string) {
 	}
 	// What git says to deleting it decides what to ask next.
 	w.background(title, func() (string, error) { return r.DeleteBranch(name, false) }, func(_ string, err error) {
-		if err == nil {
+		switch {
+		case err == nil:
 			w.say("Deleted the branch " + name)
-			return
+		case errors.Is(err, git.ErrNotMerged):
+			w.say("Kept the branch " + name)
+			w.askForceDelete(title, name, err)
+		default:
+			w.tellFailed(title, err)
 		}
-		w.say("Kept the branch " + name)
-		w.askForceDelete(title, name, err)
 	})
 }
 

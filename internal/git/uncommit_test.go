@@ -61,3 +61,28 @@ func TestUncommit(t *testing.T) {
 		t.Error("a merge was uncommitted")
 	}
 }
+
+// Uncommitting the first commit on a detached HEAD is refused, as there is no
+// branch to take it back from: deleting HEAD itself would leave no repository.
+func TestUncommitDetachedRoot(t *testing.T) {
+	r := newRepo(t)
+	git(t, r.Root, "switch", "-q", "--detach")
+	if _, err := r.Uncommit(); err == nil {
+		t.Fatal("uncommitting the first commit on a detached HEAD was not refused")
+	}
+	if _, err := r.Status(); err != nil {
+		t.Fatalf("the repository is broken: %v", err)
+	}
+	if got := headSubjects(t, r); strings.Join(got, " ") != "first" {
+		t.Errorf("commits %q", got)
+	}
+}
+
+// A file named HEAD at the top does not make the last commits unreadable.
+func TestReadTipWithFileNamedHEAD(t *testing.T) {
+	r := newRepo(t)
+	write(t, r.Root, "HEAD", "a file\n")
+	if refused := r.ReadTip().UncommitRefused(); refused != "" {
+		t.Errorf("refused: %s", refused)
+	}
+}

@@ -247,7 +247,9 @@ func (w *Window) Activate(r instance.Request) {
 				w.failed("Open Repository", err.Error())
 			}
 		case w.repo != nil && repo.Root == w.repo.Root:
-		case w.busy:
+			// One chosen in the bar meanwhile was dropped for this.
+			w.bar.setRepositories(w.config.Repositories, w.root())
+		case w.cantOpen() != "":
 			w.notOpened(repo)
 		default:
 			w.useRepository(repo)
@@ -703,7 +705,7 @@ func (w *Window) openFolder(dir string) {
 		switch {
 		case err != nil:
 			w.failed("Open Repository", err.Error())
-		case w.busy:
+		case w.cantOpen() != "":
 			w.notOpened(r)
 		default:
 			w.useRepository(r)
@@ -719,9 +721,23 @@ func (w *Window) root() string {
 	return w.repo.Root
 }
 
-// notOpened says that a repository found was not opened, as a command is running.
+// cantOpen returns why a repository found can't be opened now, or nothing if it
+// can: not while a command runs, as what it does next would go to it, nor while
+// a dialog is open, as what is chosen in it is for the one open, which it would
+// act on once answered.
+func (w *Window) cantOpen() string {
+	switch {
+	case w.busy:
+		return "a command is running"
+	case qtwidgets.QApplicationActiveModalWidget() != nil:
+		return "a dialog is open"
+	}
+	return ""
+}
+
+// notOpened says that a repository found was not opened, and why.
 func (w *Window) notOpened(r *git.Repo) {
-	w.say(r.Root + " was not opened, as a command is running.")
+	w.say(r.Root + " was not opened, as " + w.cantOpen() + ".")
 }
 
 // chooseListedRepository opens the repository chosen in the bar, unless it is
@@ -735,7 +751,7 @@ func (w *Window) chooseListedRepository(index int) {
 		return
 	}
 	w.findRepository(func() (*git.Repo, error) { return git.Open(path) }, func(r *git.Repo, err error) {
-		if err == nil && !w.busy {
+		if err == nil && w.cantOpen() == "" {
 			w.useRepository(r)
 			return
 		}
@@ -787,6 +803,11 @@ func (w *Window) rescanRepository() {
 func (w *Window) applySnapshot(snap git.Snapshot) {
 	if snap.Err != nil {
 		w.say("Rescan failed: " + firstLine(snap.Err.Error()))
+		// What was read of the last commits may no longer be so, and is not
+		// acted on.
+		w.quickFix = git.QuickFix{}
+		w.canUncommit = false
+		w.updateActions()
 		return
 	}
 	s := snap.Status

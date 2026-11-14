@@ -162,3 +162,26 @@ func TestTagReleaseToUpstreamOfAnotherName(t *testing.T) {
 		t.Errorf("the remote has %q", got)
 	}
 }
+
+// A branch whose upstream is a local branch is pushed under its own name, not
+// onto the remote's branch of its upstream's name.
+func TestTagReleaseWithLocalUpstream(t *testing.T) {
+	r, bare := releaseRepo(t)
+	main := git(t, bare, "rev-parse", "main")
+	git(t, r.Root, "switch", "-q", "-c", "feature")
+	git(t, r.Root, "branch", "-q", "-u", "main")
+	git(t, r.Root, "commit", "-q", "--allow-empty", "-m", "feature")
+	rel, err := r.ReadRelease("feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.TagRelease("feature", rel.Next(), "", rel.Remote); err != nil {
+		t.Fatal(err)
+	}
+	if got := git(t, bare, "rev-parse", "main"); got != main {
+		t.Error("the remote's main was moved")
+	}
+	if git(t, bare, "rev-parse", "feature") != git(t, r.Root, "rev-parse", "HEAD") {
+		t.Error("feature was not pushed")
+	}
+}

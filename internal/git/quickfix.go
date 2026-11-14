@@ -62,13 +62,13 @@ func (r *Repo) RunQuickFix(q QuickFix) (string, error) {
 // of the commit before it, and moves the branch from head to it.
 func (r *Repo) foldHead(head string) (string, error) {
 	previous := head + "~1"
-	raw, err := r.run("cat-file", "commit", previous)
+	raw, err := r.read("cat-file", "commit", previous)
 	if err != nil {
 		return "", err
 	}
 	// The message is all after the headers, exactly as it was.
 	_, message, _ := strings.Cut(raw, "\n\n")
-	who, err := r.run("log", "-1", "--format=%an%x00%ae%x00%ad", "--date=raw", previous)
+	who, err := r.read("log", "-1", "--format=%an%x00%ae%x00%ad", "--date=raw", previous)
 	if err != nil {
 		return "", err
 	}
@@ -77,7 +77,7 @@ func (r *Repo) foldHead(head string) (string, error) {
 		return "", fmt.Errorf("the author of %s can't be read", previous)
 	}
 	args := []string{"commit-tree", head + "^{tree}"}
-	parents, err := r.run("rev-list", "--parents", "-n", "1", previous)
+	parents, err := r.read("rev-list", "--parents", "-n", "1", previous)
 	if err != nil {
 		return "", err
 	}

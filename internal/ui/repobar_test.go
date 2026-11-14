@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/nomad-software/delta/internal/settings"
+	"github.com/nomad-software/qute/qtcore"
 	"github.com/nomad-software/qute/qtwidgets"
 )
 
@@ -394,4 +395,30 @@ func TestRepositoryLimitSetting(t *testing.T) {
 	if got := settings.Load(w.path); got.RepositoryLimit != 2 || !slices.Equal(got.Repositories, []string{two, three}) {
 		t.Errorf("saved %d, %q", got.RepositoryLimit, got.Repositories)
 	}
+}
+
+// A rescan that changes a list keeps its current file, among several selected,
+// so that the diff stays on it and the keys move on from it.
+func TestRescanKeepsTheCurrentFile(t *testing.T) {
+	dir := newRepo(t)
+	for _, name := range []string{"a", "b", "c"} {
+		writeFile(t, dir, name, name+"\n")
+	}
+	w := newTestWindow(t, dir)
+	waitFor(t, "the files", func() bool { return w.idleWith(3, 0) })
+	list := w.changes.unstaged
+	on(func() {
+		list.SetCurrentRowWith(0, qtcore.QItemSelectionModelClearAndSelect)
+		list.SetCurrentRowWith(1, qtcore.QItemSelectionModelSelect)
+		list.SetCurrentRowWith(2, qtcore.QItemSelectionModelSelect)
+	})
+	waitFor(t, "its diff", func() bool { return w.changes.diffLabel.Text() == "Unstaged: c" })
+	writeFile(t, dir, "0", "new\n")
+	on(w.rescanRepository)
+	waitFor(t, "the new file", func() bool { return w.idleWith(4, 0) })
+	on(func() {
+		if row := list.CurrentRow(); row != 3 || len(list.SelectedItems()) != 3 || w.changes.diffLabel.Text() != "Unstaged: c" {
+			t.Errorf("current row %d, %d selected, diff %q", row, len(list.SelectedItems()), w.changes.diffLabel.Text())
+		}
+	})
 }

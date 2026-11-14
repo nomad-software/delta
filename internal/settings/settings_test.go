@@ -60,6 +60,27 @@ func TestUnusableValues(t *testing.T) {
 	}
 }
 
+// A value of the wrong type, as a number put in quotes, gives its default,
+// keeping every other setting, rather than losing them all.
+func TestWrongTypeKeepsTheRest(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	data := `{"width":"900","theme":"dark","repositories":["/a","/b"],"lastRepository":"/b"}`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := Load(path)
+	if got.Width != Defaults().Width || got.Theme != ThemeDark || !slices.Equal(got.Repositories, []string{"/a", "/b"}) || got.LastRepository != "/b" {
+		t.Errorf("got %+v", got)
+	}
+	// What is not JSON at all gives the defaults.
+	if err := os.WriteFile(path, []byte(`{"theme":"dark",`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := Load(path); !reflect.DeepEqual(got, Defaults()) {
+		t.Errorf("broken JSON gave %+v", got)
+	}
+}
+
 func TestHistoryPageSizeBounds(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")
 	for text, want := range map[string]int{

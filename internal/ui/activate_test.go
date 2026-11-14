@@ -2,11 +2,13 @@ package ui
 
 import (
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/nomad-software/delta/internal/instance"
 	"github.com/nomad-software/qute/qtcore"
+	"github.com/nomad-software/qute/qtwidgets"
 )
 
 // The window is brought back when the program is started again, from being
@@ -118,6 +120,54 @@ func TestOpenFolderNotWhileBusy(t *testing.T) {
 	on(func() {
 		if w.repo.Root != other {
 			t.Errorf("open %q", w.repo.Root)
+		}
+	})
+}
+
+// A repository found while a dialog is open is not opened, as what is chosen in
+// the dialog is for the one open, and would go to the other once answered.
+func TestOpenFolderNotWhileADialogIsOpen(t *testing.T) {
+	first, other := namedRepo(t, "first"), namedRepo(t, "other")
+	w := newTestWindow(t, first)
+	waitFor(t, "the status", func() bool { return w.idleWith(0, 0) })
+	answer(t, func() { qtwidgets.NewQDialog(w).Exec() }, func(*qtwidgets.QDialog) {
+		w.Activate(instance.Request{Folder: other, Named: true})
+	})
+	waitFor(t, "the folder to be looked for", func() bool { return w.finding == 0 })
+	on(func() {
+		if w.repo.Root != first || !strings.Contains(w.said.Text(), "a dialog is open") {
+			t.Errorf("opened %q while a dialog is open, or said %q", w.repo.Root, w.said.Text())
+		}
+		qtwidgets.QApplicationActiveModalWidget().Close()
+	})
+	waitFor(t, "the dialog to close", func() bool { return qtwidgets.QApplicationActiveModalWidget() == nil })
+	on(func() { w.Activate(instance.Request{Folder: other, Named: true}) })
+	waitFor(t, "the folder to be looked for", func() bool { return w.finding == 0 })
+	on(func() {
+		if w.repo.Root != other {
+			t.Errorf("open %q", w.repo.Root)
+		}
+	})
+}
+
+// A repository chosen in the bar, then dropped for the one open being asked
+// for, as on starting the program again in it, leaves the bar on the one open.
+func TestBarChoiceDroppedForTheOneOpen(t *testing.T) {
+	first, other := namedRepo(t, "first"), namedRepo(t, "other")
+	w := newTestWindow(t, other)
+	waitFor(t, "the status", func() bool { return w.idleWith(0, 0) })
+	on(func() { w.openFolder(first) })
+	waitFor(t, "the status", func() bool { return w.repo.Root == first && w.idleWith(0, 0) })
+	on(func() {
+		at := slices.Index(w.bar.paths, other)
+		w.bar.repos.SetCurrentIndex(at)
+		w.chooseListedRepository(at)
+		w.Activate(instance.Request{Folder: first})
+	})
+	waitFor(t, "the folders to be looked for", func() bool { return w.finding == 0 })
+	on(func() {
+		if got := w.bar.repos.CurrentIndex(); w.repo.Root != first || w.bar.paths[got] != first {
+			t.Errorf("open %q, the bar on %q", w.repo.Root, w.bar.paths[got])
 		}
 	})
 }

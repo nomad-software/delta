@@ -383,7 +383,11 @@ func (d *rebaseDialog) dropAt(y int) {
 // moveRows moves the commits on the rows together, in order, to before the row
 // to, or the end if it is past the last, keeping them chosen.
 func (d *rebaseDialog) moveRows(rows []int, to int) {
-	current := d.currentRow()
+	// The current commit stays current wherever it goes, moved or not.
+	var current string
+	if row := d.currentRow(); row >= 0 && row < len(d.steps) {
+		current = d.steps[row].Commit.Hash
+	}
 	steps, now := moved(d.steps, rows, to)
 	if slices.EqualFunc(steps, d.steps, func(a, b git.Step) bool { return a.Commit.Hash == b.Commit.Hash }) {
 		return
@@ -394,10 +398,9 @@ func (d *rebaseDialog) moveRows(rows []int, to int) {
 		d.showStep(row)
 	}
 	d.list.ClearSelection()
-	if i := slices.Index(rows, current); i >= 0 {
-		current = now[i]
+	if row := slices.IndexFunc(d.steps, func(s git.Step) bool { return s.Commit.Hash == current }); row >= 0 {
+		d.list.SetCurrentItemWith(d.list.TopLevelItem(row), 0, qtcore.QItemSelectionModelNoUpdate)
 	}
-	d.list.SetCurrentItemWith(d.list.TopLevelItem(current), 0, qtcore.QItemSelectionModelNoUpdate)
 	for _, row := range now {
 		d.list.TopLevelItem(row).SetSelected(true)
 	}

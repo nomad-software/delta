@@ -139,7 +139,7 @@ func TestHistoryPagesJoinUp(t *testing.T) {
 	w := newTestWindow(t, dir)
 	h := w.history
 	on(func() {
-		h.pageSize = 2
+		paged(h, 2)
 		w.showHistory.SetChecked(true)
 	})
 	waitFor(t, "the first page", func() bool { return len(h.list) == 3 && !h.loading })
@@ -179,7 +179,7 @@ func TestHistoryPageDroppedAfterReload(t *testing.T) {
 	w := newTestWindow(t, dir)
 	h := w.history
 	on(func() {
-		h.pageSize = 2
+		paged(h, 2)
 		w.showHistory.SetChecked(true)
 	})
 	waitFor(t, "the first page", func() bool { return len(h.list) == 2 && !h.loading })

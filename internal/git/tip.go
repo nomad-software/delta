@@ -23,7 +23,7 @@ type tipCommit struct {
 // ReadTip reads the last commit and the one before it. On a branch with no
 // commits, or if they can't be read, it holds none.
 func (r *Repo) ReadTip() Tip {
-	out, err := r.run("log", "-2", "--format=%H%x00%P%x00%s", "HEAD")
+	out, err := r.read("log", "-2", "--format=%H%x00%P%x00%s", "HEAD", "--")
 	if err != nil {
 		return Tip{}
 	}

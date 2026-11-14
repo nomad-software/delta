@@ -130,8 +130,9 @@ func (list *fileList) MouseMoveEvent(event *qtgui.QMouseEvent) {
 	}
 }
 
-// setList replaces what a list shows, keeping the selection and scroll position.
-// If nothing changed the list is not touched at all.
+// setList replaces what a list shows, keeping the selection, the current file,
+// which the diff shows and the keys move from, and the scroll position. If
+// nothing changed the list is not touched at all.
 func (v *changesView) setList(list *qtwidgets.QListWidget, old, changes []git.Change) {
 	if slices.Equal(old, changes) {
 		return
@@ -142,14 +143,21 @@ func (v *changesView) setList(list *qtwidgets.QListWidget, old, changes []git.Ch
 			selected[old[row].Path] = true
 		}
 	}
+	current := ""
+	if row := list.CurrentRow(); row >= 0 && row < len(old) {
+		current = old[row].Path
+	}
 	scroll := list.VerticalScrollBar().Value()
 	v.updating = true
 	defer func() { v.updating = false }()
 	list.Clear()
-	for _, c := range changes {
+	for row, c := range changes {
 		item := newChangeItem(c)
 		list.AddItem(item)
 		item.SetSelected(selected[c.Path])
+		if c.Path == current {
+			list.SetCurrentRowWith(row, qtcore.QItemSelectionModelNoUpdate)
+		}
 	}
 	list.VerticalScrollBar().SetValue(scroll)
 }

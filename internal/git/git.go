@@ -111,30 +111,46 @@ func (r *Repo) commandPaths(literal bool, args ...string) *exec.Cmd {
 	return cmd
 }
 
-// run runs git and returns what it wrote to its output.
+// run runs git and returns what it wrote to its output, or, if it wrote
+// nothing there, what it wrote to its errors, as some commands, push and fetch
+// among them, report there: what is said of a command that changes something.
 func (r *Repo) run(args ...string) (string, error) {
 	return r.runInput("", args...)
 }
 
-// runInput runs git with the input and returns what it wrote to its output.
-// The error of a failure holds everything git said.
+// runInput runs git with the input as run does. The error of a failure holds
+// everything git said.
 func (r *Repo) runInput(input string, args ...string) (string, error) {
 	return r.runCommand(r.command(args...), input)
 }
 
 // runCommand runs a git command made by command, as runInput does.
 func (r *Repo) runCommand(cmd *exec.Cmd, input string) (string, error) {
+	out, said, err := runOutput(cmd, input)
+	if err == nil && out == "" {
+		return said, nil
+	}
+	return out, err
+}
+
+// read runs git and returns only what it wrote to its output, for what is
+// parsed: a warning or hint git writes to its errors, as on an empty answer,
+// must not be taken for it.
+func (r *Repo) read(args ...string) (string, error) {
+	out, _, err := runOutput(r.command(args...), "")
+	return out, err
+}
+
+// runOutput runs the command with the input, and returns what it wrote to its
+// output and to its errors. The error of a failure holds both.
+func runOutput(cmd *exec.Cmd, input string) (stdout, stderr string, err error) {
 	cmd.Stdin = strings.NewReader(input)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	var out, said bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &said
 	if err := cmd.Run(); err != nil {
-		return stdout.String(), failure(err, stdout.String(), stderr.String())
+		return out.String(), said.String(), failure(err, out.String(), said.String())
 	}
-	if stdout.Len() == 0 {
-		// Some commands, push and fetch among them, report on their errors.
-		return stderr.String(), nil
-	}
-	return stdout.String(), nil
+	return out.String(), said.String(), nil
 }
 
 // failure returns the error of a command that failed.
@@ -148,7 +164,7 @@ func failure(err error, stdout, stderr string) error {
 
 // gitPath returns the absolute path of a file in the repository's git folder.
 func (r *Repo) gitPath(name string) (string, error) {
-	out, err := r.run("rev-parse", "--path-format=absolute", "--git-path", name)
+	out, err := r.read("rev-parse", "--path-format=absolute", "--git-path", name)
 	return strings.TrimRight(out, "\n"), err
 }
 
@@ -169,7 +185,7 @@ func (r *Repo) Status() (Status, error) {
 		rebasing      bool
 	)
 	together(
-		func() { out, err = r.run("status", "--porcelain=v2", "--branch", "-z", "--untracked-files=all") },
+		func() { out, err = r.read("status", "--porcelain=v2", "--branch", "-z", "--untracked-files=all") },
 		// The command fails, as it should, when there is no such ref.
 		func() { _, mergeErr = r.run("rev-parse", "-q", "--verify", "MERGE_HEAD") },
 		func() { rebase, rebasing = r.rebaseState() },
@@ -375,7 +391,7 @@ func (r *Repo) Log(limit, skip int) ([]Commit, error) {
 	if !r.hasCommits() {
 		return nil, nil
 	}
-	out, err := r.run("log", "--topo-order", "--no-color", "--no-show-signature", "--max-count="+strconv.Itoa(limit), "--skip="+strconv.Itoa(skip),
+	out, err := r.read("log", "--topo-order", "--no-color", "--no-show-signature", "--max-count="+strconv.Itoa(limit), "--skip="+strconv.Itoa(skip),
 		"--format="+commitFormat, "HEAD", "--")
 	if err != nil {
 		return nil, err
@@ -462,7 +478,7 @@ func compared(c Commit) []string {
 // has no HEAD to compare with, so has what is staged, and what is untracked.
 func (r *Repo) CommitFiles(c Commit) ([]Change, error) {
 	if c.Hash != Uncommitted {
-		out, err := r.run(append([]string{"diff-tree", "-r", "-z", "-M", "--no-commit-id", "--name-status"}, compared(c)...)...)
+		out, err := r.read(append([]string{"diff-tree", "-r", "-z", "-M", "--no-commit-id", "--name-status"}, compared(c)...)...)
 		if err != nil {
 			return nil, err
 		}
@@ -474,7 +490,7 @@ func (r *Repo) CommitFiles(c Commit) ([]Change, error) {
 	var s Status
 	var outErr, statusErr error
 	together(
-		func() { out, outErr = r.run("diff", "-z", "-M", "--name-status", base, "--") },
+		func() { out, outErr = r.read("diff", "-z", "-M", "--name-status", base, "--") },
 		func() { s, statusErr = r.Status() },
 	)
 	if err := cmp.Or(outErr, statusErr); err != nil {
@@ -592,7 +608,7 @@ func (r *Repo) MergeMessage() string {
 
 // Branches returns the names of the local and of the remote tracking branches.
 func (r *Repo) Branches() (local, remote []string, err error) {
-	out, err := r.run("for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes")
+	out, err := r.read("for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -684,14 +700,39 @@ func (r *Repo) RenameBranch(from, to string) (string, error) {
 	return r.run("branch", "-m", "--", from, to)
 }
 
+// ErrNotMerged is in the error of a branch git refused to delete as it is not
+// merged, which deleting it by force would get past.
+var ErrNotMerged = errors.New("the branch is not merged")
+
 // DeleteBranch deletes a local branch. Without force, git refuses one that has
-// not been merged.
+// not been merged, whose error then holds ErrNotMerged; any other refusal, as of
+// a branch checked out in another work tree, does not.
 func (r *Repo) DeleteBranch(name string, force bool) (string, error) {
 	flag := "-d"
 	if force {
 		flag = "-D"
 	}
-	return r.run("branch", flag, "--", name)
+	out, err := r.run("branch", flag, "--", name)
+	if err != nil && !force && r.unmerged(name) {
+		return out, fmt.Errorf("%w: %w", ErrNotMerged, err)
+	}
+	return out, err
+}
+
+// unmerged reports whether the local branch is there and merged into neither
+// HEAD nor its upstream, either of which lets git delete it without force. It
+// is asked of git, not read from its words, which are in the user's language.
+func (r *Repo) unmerged(name string) bool {
+	branch := "refs/heads/" + name
+	if _, err := r.read("rev-parse", "-q", "--verify", branch); err != nil {
+		return false
+	}
+	for _, into := range []string{"HEAD", name + "@{upstream}"} {
+		if _, err := r.read("merge-base", "--is-ancestor", branch, into); err == nil {
+			return false
+		}
+	}
+	return true
 }
 
 // Merge merges the branch into the current one.
@@ -722,7 +763,7 @@ func (r *Repo) DiscardChanges() (string, error) {
 
 // Remotes returns the names of the remotes.
 func (r *Repo) Remotes() ([]string, error) {
-	out, err := r.run("remote")
+	out, err := r.read("remote")
 	if err != nil {
 		return nil, err
 	}
@@ -731,7 +772,7 @@ func (r *Repo) Remotes() ([]string, error) {
 
 // RemoteURL returns the URL of a remote.
 func (r *Repo) RemoteURL(name string) (string, error) {
-	out, err := r.run("remote", "get-url", "--", name)
+	out, err := r.read("remote", "get-url", "--", name)
 	return strings.TrimSpace(out), err
 }
 
@@ -779,6 +820,13 @@ func (r *Repo) runStash(args ...string) (string, error) {
 	return r.runCommand(r.commandPaths(false, append([]string{"stash"}, args...)...), "")
 }
 
+// readStash runs a stash command as runStash does, returning only what it wrote
+// to its output, as read does.
+func (r *Repo) readStash(args ...string) (string, error) {
+	out, _, err := runOutput(r.commandPaths(false, append([]string{"stash"}, args...)...), "")
+	return out, err
+}
+
 // StashChanges stashes everything uncommitted, staged or not, and untracked
 // files too if asked, with the message, or git's own if it is empty.
 func (r *Repo) StashChanges(message string, untracked bool) (string, error) {
@@ -794,7 +842,7 @@ func (r *Repo) StashChanges(message string, untracked bool) (string, error) {
 
 // Stashes returns the stashes, newest first.
 func (r *Repo) Stashes() ([]Stash, error) {
-	out, err := r.runStash("list", "-z", "--format=%gd%x1f%gs")
+	out, err := r.readStash("list", "-z", "--format=%gd%x1f%gs")
 	if err != nil {
 		return nil, err
 	}

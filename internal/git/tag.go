@@ -124,8 +124,8 @@ func (r *Repo) ReadRelease(branch string) (Release, error) {
 	var localErr, remoteErr, taggedErr error
 	together(
 		func() { local, localErr = r.localTags() },
-		func() { remoteTags, remoteErr = r.run("ls-remote", "--tags", "--refs", "--", remote) },
-		func() { tagged, taggedErr = r.run("tag", "--points-at", "HEAD") },
+		func() { remoteTags, remoteErr = r.read("ls-remote", "--tags", "--refs", "--", remote) },
+		func() { tagged, taggedErr = r.read("tag", "--points-at", "HEAD") },
 	)
 	if err := cmp.Or(localErr, remoteErr, taggedErr); err != nil {
 		return Release{}, err
@@ -193,7 +193,7 @@ func (r *Repo) TagRelease(branch string, v Version, message, remote string) (str
 	if _, err := r.run("tag", "-a", "-m", message, "--", tag); err != nil {
 		return "", err
 	}
-	out, err := r.run("push", "--atomic", "--", remote, r.upstreamRefspec(branch), "refs/tags/"+tag)
+	out, err := r.run("push", "--atomic", "--", remote, r.upstreamRefspec(branch, remote), "refs/tags/"+tag)
 	if err != nil {
 		if _, delErr := r.run("tag", "-d", "--", tag); delErr != nil {
 			return "", fmt.Errorf("%w\n\nThe tag %s could not be deleted again: %w", err, tag, delErr)
@@ -203,10 +203,14 @@ func (r *Repo) TagRelease(branch string, v Version, message, remote string) (str
 	return out, nil
 }
 
-// upstreamRefspec returns what pushes the branch to its upstream's branch, or
-// to one of its own name if it has none.
-func (r *Repo) upstreamRefspec(branch string) string {
-	target := r.branchConfig(branch, "merge")
+// upstreamRefspec returns what pushes the branch to its upstream's branch on
+// the remote, or to one of its own name if its upstream is not there, as one
+// that is a local branch is not.
+func (r *Repo) upstreamRefspec(branch, remote string) string {
+	target := ""
+	if r.branchConfig(branch, "remote") == remote {
+		target = r.branchConfig(branch, "merge")
+	}
 	if target == "" {
 		target = "refs/heads/" + branch
 	}
@@ -216,7 +220,7 @@ func (r *Repo) upstreamRefspec(branch string) string {
 // branchConfig returns the branch's setting of the key, as remote or merge, or
 // nothing if it has none.
 func (r *Repo) branchConfig(branch, key string) string {
-	out, err := r.run("config", "--get", "branch."+branch+"."+key)
+	out, err := r.read("config", "--get", "branch."+branch+"."+key)
 	if err != nil {
 		return ""
 	}
@@ -225,6 +229,6 @@ func (r *Repo) branchConfig(branch, key string) string {
 
 // localTags returns the names of the tags in the repository.
 func (r *Repo) localTags() ([]string, error) {
-	out, err := r.run("tag", "--list")
+	out, err := r.read("tag", "--list")
 	return strings.Fields(out), err
 }

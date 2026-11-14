@@ -35,7 +35,10 @@ func (r *Repo) FinishBranch(branch, main string) (string, error) {
 	}
 	out, err := r.DeleteBranch(branch, false)
 	if err != nil {
-		return "", fmt.Errorf("%w: %w", ErrBranchKept, err)
+		if errors.Is(err, ErrNotMerged) {
+			return "", fmt.Errorf("%w: %w", ErrBranchKept, err)
+		}
+		return "", fmt.Errorf("checked out %s, but %s could not be deleted: %w", main, branch, err)
 	}
 	return out, nil
 }

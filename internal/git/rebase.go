@@ -50,7 +50,7 @@ func (r *Repo) RebaseCommits(from string) (commits []Commit, base string, err er
 	if _, err := r.run("merge-base", "--is-ancestor", from, "HEAD"); err != nil {
 		return nil, "", errors.New("the commit is not in the current branch")
 	}
-	out, err := r.run("rev-list", "--parents", "-n", "1", from)
+	out, err := r.read("rev-list", "--parents", "-n", "1", from)
 	if err != nil {
 		return nil, "", err
 	}
@@ -63,7 +63,7 @@ func (r *Repo) RebaseCommits(from string) (commits []Commit, base string, err er
 		base = parents[0]
 		revisions = base + "..HEAD"
 	}
-	out, err = r.run("log", "--reverse", "-z", "--no-color", "--no-show-signature",
+	out, err = r.read("log", "--reverse", "-z", "--no-color", "--no-show-signature",
 		"--format="+commitFormat+"%x00%B", revisions, "--")
 	if err != nil {
 		return nil, "", err

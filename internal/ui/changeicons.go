@@ -23,7 +23,7 @@ const changeFill = 0.2
 // changeColours are the colours of what happened to a file, by its code, so
 // that each is told at a glance, from the settings: by default Solarized's
 // accents, which read on light and dark alike, so that each is the same in
-// every theme, and its grey for what git does not track. A circle is drawn in
+// every theme. A circle is drawn in
 // them each time it is shown, so that one changed shows once the lists are
 // painted again.
 var changeColours = changeCodes(settings.DefaultChangeColours)

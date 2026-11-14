@@ -4,6 +4,7 @@ package settings
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -187,11 +188,14 @@ func Path() (string, error) {
 }
 
 // Load reads the settings from the file. A missing or unreadable file gives the
-// defaults, as does any unusable value in one.
+// defaults, as does a file that is not JSON; any unusable value in one, as one
+// of the wrong type, gives its own default, keeping the rest.
 func Load(path string) Settings {
 	s := Defaults()
 	if data, err := os.ReadFile(path); err == nil {
-		if json.Unmarshal(data, &s) != nil {
+		// A value of the wrong type is skipped, the rest still read.
+		var wrongType *json.UnmarshalTypeError
+		if err := json.Unmarshal(data, &s); err != nil && !errors.As(err, &wrongType) {
 			s = Defaults()
 		}
 	}

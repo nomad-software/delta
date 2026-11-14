@@ -1,6 +1,9 @@
 package git
 
-import "errors"
+import (
+	"errors"
+	"strings"
+)
 
 // UncommitRefused says why the last commit can't be uncommitted, or is empty if
 // it can: there must be one, and it must not be a merge, as taking a merge back
@@ -26,8 +29,13 @@ func (r *Repo) Uncommit() (string, error) {
 	last := t.commits[0]
 	if len(last.parents) == 0 {
 		// The branch goes back to having no commits, only if it is still at
-		// this one, and nothing is staged.
-		if _, err := r.run("update-ref", "-d", "HEAD", last.hash); err != nil {
+		// this one, and nothing is staged. It is named, as on a detached HEAD
+		// update-ref would delete HEAD itself, leaving no repository.
+		branch, err := r.read("symbolic-ref", "-q", "HEAD")
+		if err != nil {
+			return "", errors.New("HEAD is detached at the first commit, so there is no branch to take it back from")
+		}
+		if _, err := r.run("update-ref", "-d", strings.TrimSpace(branch), last.hash); err != nil {
 			return "", err
 		}
 		return r.run("read-tree", "--empty")
