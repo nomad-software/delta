@@ -322,12 +322,18 @@ func TestPanesLook(t *testing.T) {
 	})
 }
 
-// The dark theme has no light line along the toolbar's top, its first row
-// being the row below's colour, and keeps the lines along its bottom, the
-// light one a little darker than Fusion's; the light theme keeps Fusion's.
+// The toolbar is in the window's layout, above the progress bar, not in a
+// toolbar area, as termite's is, and draws its own line along its bottom in
+// the text's colour, in every theme, and none along its top.
 func TestToolBarLines(t *testing.T) {
 	w := newTestWindow(t, newRepo(t))
 	on(func() {
+		if w.ToolBarArea(w.toolbar) != qtcore.NoToolBarArea || w.toolbar.ParentWidget().Ptr() != w.CentralWidget().Ptr() {
+			t.Error("the toolbar is in a toolbar area of the window")
+		}
+		if _, y := mapPoint(w.toolbar.AsQWidget(), w.CentralWidget(), 0, 0); y != 0 {
+			t.Errorf("the toolbar is at %d in the window's layout", y)
+		}
 		defer func() {
 			w.config.Theme = ""
 			applyTheme("")
@@ -339,27 +345,19 @@ func TestToolBarLines(t *testing.T) {
 			qtcore.QCoreApplicationProcessEvents()
 			image := w.toolbar.Grab().ToImage()
 			x, last := image.Width()-1, image.Height()-1
-			lined := image.Pixel(x, 0) != image.Pixel(x, 1)
-			if want := theme != settings.ThemeDark; lined != want {
-				t.Errorf("%s: a line along the top is %v, not %v", theme, lined, want)
+			if image.Pixel(x, 0) != image.Pixel(x, 1) {
+				t.Errorf("%s: a line along the top", theme)
 			}
-			if image.Pixel(x, last) == image.Pixel(x, last-3) || image.Pixel(x, last-1) == image.Pixel(x, last-3) {
-				t.Errorf("%s: the lines along the bottom are gone", theme)
+			palette := w.toolbar.Palette()
+			window, text := palette.Color(qtgui.QPaletteWindow), palette.Color(qtgui.QPaletteWindowText)
+			blend := func(w, t uint8) int { return (int(w)*(255-toolBarLine) + int(t)*toolBarLine) / 255 }
+			got := image.PixelColor(x, last)
+			if r := blend(window.R, text.R); int(got.R) < r-2 || int(got.R) > r+2 {
+				t.Errorf("%s: the bottom line is %d, not %d", theme, got.R, r)
 			}
-		}
-		// Fusion's own line is what is drawn while the theme is not known to
-		// be dark.
-		lineAt := func() int {
-			image := w.toolbar.Grab().ToImage()
-			return int(image.PixelColor(image.Width()-1, image.Height()-1).R)
-		}
-		w.config.Theme = ""
-		fusion := lineAt()
-		w.config.Theme = settings.ThemeDark
-		ours := lineAt()
-		window := int(w.toolbar.Palette().Color(qtgui.QPaletteWindow).R)
-		if ours >= fusion || ours <= window {
-			t.Errorf("the bottom line is %d, not between the window's %d and Fusion's %d", ours, window, fusion)
+			if image.Pixel(x, last-1) == image.Pixel(x, last) {
+				t.Errorf("%s: no line along the bottom", theme)
+			}
 		}
 	})
 }

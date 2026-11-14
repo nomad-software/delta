@@ -71,6 +71,9 @@ repository is opened while a git command is running; the status bar says so.
 
 ## The toolbar
 
+The toolbar is part of the window's contents, under the menus, rather than
+docked in the window's header, with a line of its own along its bottom.
+
 | Button | Does |
 | ------ | ---- |
 | **Open** | Opens a repository, as **File > Open Repository…** (`Ctrl+O`) does. |

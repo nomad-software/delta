@@ -86,18 +86,6 @@ func alpha(fraction float64) uint8 {
 	return uint8(math.Round(fraction * 255))
 }
 
-// lighter returns the colour made lighter by the factor, in percent, as Qt's
-// QColor::lighter does for a colour it does not take past white: its value, and
-// so each channel, is scaled in Qt's sixteen bits a channel, then rounded back
-// to eight.
-func lighter(c qtgui.QColor, factor int) qtgui.QColor {
-	channel := func(v uint8) uint8 {
-		wide := uint32(v) * 257 * uint32(factor) / 100
-		return uint8(min((wide-(wide>>8)+0x80)>>8, 255))
-	}
-	return qtgui.QColor{R: channel(c.R), G: channel(c.G), B: channel(c.B), A: c.A}
-}
-
 // labelled returns the widget with a label above it.
 func labelled(label *qtwidgets.QLabel, widget qtwidgets.QWidgetLike) *qtwidgets.QWidget {
 	pane := qtwidgets.NewQWidget(nil)

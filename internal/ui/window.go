@@ -127,19 +127,22 @@ func NewWindow(path string) *Window {
 	w.views.AddWidget(w.history.page)
 	w.bar = newRepoBar()
 	w.bar.setRepositories(w.config.Repositories, "")
-	// The progress bar is under the toolbar, the width of the window.
+	w.makeMenus()
+	w.makeToolBar()
+	// The toolbar is in the window's own layout, as termite's is, not in a
+	// toolbar area of the main window, and the progress bar is under it, the
+	// width of the window.
 	w.progress = newProgress()
 	central := qtwidgets.NewQWidget(nil)
 	layout := qtwidgets.NewQVBoxLayout(central)
 	layout.SetContentsMargins(qtcore.QMargins{})
 	layout.SetSpacing(0)
+	layout.AddWidget(w.toolbar)
 	layout.AddWidget(w.progress)
 	layout.AddWidgetFull(w.views, 1, 0)
 	w.SetCentralWidget(central)
 	w.makeStatusBar()
 
-	w.makeMenus()
-	w.makeToolBar()
 	w.applyColours()
 	w.applyCodeFont()
 	w.connect()
@@ -324,8 +327,8 @@ func (w *Window) makeToolBar() {
 	w.finishAction.SetIconText("Finish")
 	w.showHistory.SetIconText("History")
 
-	bar := &toolBar{window: w}
-	qtwidgets.NewQToolBarWithTitleWith(bar, "Buttons", w)
+	bar := &toolBar{}
+	qtwidgets.NewQToolBarWithTitleWith(bar, "Buttons", nil)
 	w.toolbar = bar.QToolBar
 	w.toolbar.SetMovable(false)
 	w.toolbar.SetToolButtonStyle(qtcore.ToolButtonTextUnderIcon)
@@ -358,21 +361,29 @@ func (w *Window) makeToolBar() {
 
 	// The dropdowns take up the rest, at the right.
 	w.toolbar.AddWidget(w.bar.widget)
-	w.AddToolBarArea(qtcore.TopToolBarArea, w.toolbar)
 }
 
-// toolBar is the window's toolbar: Fusion draws it, then the dark theme's own
-// lines over it.
+// toolBar is the window's toolbar, in its layout rather than a toolbar area,
+// as termite's is. Styles draw nothing for a toolbar outside a main window's
+// areas, so it draws its own line along its bottom, in the text's colour so
+// that it shows in every theme.
 type toolBar struct {
 	qtwidgets.QToolBarBase
-	window *Window
 }
 
-// PaintEvent draws the toolbar, and the dark theme's lines over it.
+// PaintEvent draws the toolbar, then its line along the bottom.
 func (b *toolBar) PaintEvent(event *qtgui.QPaintEvent) {
 	b.Super().PaintEvent(event)
-	b.window.paintDarkToolBar()
+	painter := qtgui.NewQPainterOn(b)
+	defer painter.End()
+	line := b.Palette().Color(qtgui.QPaletteWindowText)
+	line.A = toolBarLine
+	painter.FillRect(qtcore.QRect{Y: b.Height() - 1, Width: b.Width(), Height: 1}, line)
 }
+
+// toolBarLine is the opacity, out of 255, of the line along the toolbar's
+// bottom, as termite's.
+const toolBarLine = 60
 
 // tipFilter takes the tooltip events of what it watches, so that no tooltip
 // shows.
@@ -382,29 +393,6 @@ type tipFilter struct{ qtcore.QObjectBase }
 func (f *tipFilter) EventFilter(watched *qtcore.QObject, event *qtcore.QEvent) bool {
 	return event.Type() == qtcore.QEventToolTip || f.Super().EventFilter(watched, event)
 }
-
-// paintDarkToolBar paints over the light lines Fusion draws along the
-// toolbar's top and bottom whatever the palette, in the dark theme only, where
-// they stand out. The top's goes, painted in the colour of the row below it,
-// the top of Fusion's gradient (the window's colour 4% lighter). The bottom's
-// is painted a little darker than Fusion's: white at toolBarLine over the
-// window's colour, the bottom of the gradient.
-func (w *Window) paintDarkToolBar() {
-	if w.config.Theme != settings.ThemeDark {
-		return
-	}
-	painter := qtgui.NewQPainterOn(w.toolbar)
-	defer painter.End()
-	window := w.toolbar.Palette().Color(qtgui.QPaletteWindow)
-	width, bottom := w.toolbar.Width(), w.toolbar.Height()-1
-	painter.FillRect(qtcore.QRect{Width: width, Height: 1}, lighter(window, 104))
-	painter.FillRect(qtcore.QRect{Y: bottom, Width: width, Height: 1}, window)
-	painter.FillRect(qtcore.QRect{Y: bottom, Width: width, Height: 1}, qtgui.RGBAColor(255, 255, 255, toolBarLine))
-}
-
-// toolBarLine is the opacity, out of 255, of the white of the dark theme's
-// line along the toolbar's bottom: Fusion's is 90.
-const toolBarLine = 70
 
 // action adds an action of the window to a menu.
 func (w *Window) action(menu *qtwidgets.QMenu, text, key string, triggered func()) *qtgui.QAction {
