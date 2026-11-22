@@ -1,9 +1,18 @@
 BINARY := delta
 
+# Symbols and debugging information are left out of the binary.
+LDFLAGS := -s -w
+
+# The version the about box shows: the tag the commit is, or follows. Go
+# records none that would do, as it ignores tags from v2 on for a module
+# path without /v2.
+VERSION := $(shell git describe --tags --abbrev=0 2>/dev/null)
+LDFLAGS += -X github.com/nomad-software/delta/internal/ui.version=$(VERSION)
+
 .PHONY: build run install test race vet bench screenshots appimage clean
 
 build:
-	go build -ldflags "-s -w" -o $(BINARY) .
+	go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
 
 run: build
 	./$(BINARY)
@@ -11,7 +20,7 @@ run: build
 # Installs the program where Go puts programs ($GOBIN, or else $GOPATH/bin), to run
 # from any folder if that is on the path.
 install:
-	go install -ldflags "-s -w" .
+	go install -ldflags "$(LDFLAGS)" .
 
 test:
 	go test -timeout 5m ./...

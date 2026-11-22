@@ -26,7 +26,10 @@ rm -rf "$APPDIR"
 mkdir -p "$TOOLS"
 
 echo "Building Delta $VERSION"
-go build -ldflags "-s -w" -o "$BUILD/delta" .
+# The about box shows the tag the commit is, or follows (VERSION may be a
+# commit's hash when the workflow is run by hand).
+TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+go build -ldflags "-s -w -X github.com/nomad-software/delta/internal/ui.version=$TAG" -o "$BUILD/delta" .
 # linuxdeploy copies the program and every library it uses into a folder
 # laid out as an AppImage needs, and its Qt plugin adds the parts of Qt that
 # are loaded while running, which cannot be found by looking at the program.

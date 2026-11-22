@@ -1,10 +1,6 @@
 package ui
 
 import (
-	"runtime/debug"
-	"strconv"
-	"strings"
-
 	"github.com/nomad-software/qute/qtcore"
 	"github.com/nomad-software/qute/qtgui"
 	"github.com/nomad-software/qute/qtwidgets"
@@ -18,30 +14,20 @@ const (
 	versionOpacity = 0.5
 )
 
-// version returns the version Go recorded from git when the program was built,
-// as the release it is or follows.
-func version() string {
-	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
-		return release(info.Main.Version)
-	}
-	return "dev"
-}
+// version is the release the program is built from: the tag its commit is,
+// or follows, set from git by the Makefile and the AppImage's script
+// (-ldflags -X). Go records no version of its own that would do: under a
+// module path without /v2 it ignores every tag from v2 on, and numbers the
+// build after the last v1 tag.
+var version string
 
-// release returns the release a version Go recorded is, or follows. Between
-// tags Go makes a version of the commit whose patch is one past the tag before
-// it, as v1.2.4-0.20261027184954-00c19a9187bb follows v1.2.3.
-func release(version string) string {
-	version, _, _ = strings.Cut(version, "+")
-	version, pre, _ := strings.Cut(version, "-")
-	if !strings.HasPrefix(pre, "0.") {
-		return version
+// appVersion returns the version the about box shows, or dev for a build
+// that was not given one.
+func appVersion() string {
+	if version == "" {
+		return "dev"
 	}
-	dot := strings.LastIndex(version, ".") + 1
-	patch, err := strconv.Atoi(version[dot:])
-	if err != nil || patch == 0 {
-		return version
-	}
-	return version[:dot] + strconv.Itoa(patch-1)
+	return version
 }
 
 // newAboutTitle returns the name of the program with its version to the right
@@ -53,7 +39,7 @@ func newAboutTitle() (*qtwidgets.QHBoxLayout, *qtwidgets.QLabel) {
 	font.SetPointSizeF(font.PointSizeF() * titleScale)
 	name.SetFont(font)
 
-	label := qtwidgets.NewQLabelWithText(version(), nil)
+	label := qtwidgets.NewQLabelWithText(appVersion(), nil)
 	label.SetTextFormat(qtcore.PlainText)
 	small := label.Font()
 	small.SetPointSizeF(small.PointSizeF() * versionScale)
