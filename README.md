@@ -353,13 +353,15 @@ make test         # runs the tests, which need git and draw offscreen
 make race         # runs the tests with the race detector
 make vet          # runs go vet
 make bench        # measures what Delta asks of Qt most; compare runs with benchstat
+make icons        # redraws the icon from packaging/delta.svg (needs rsvg-convert)
 make screenshots  # redraws the pictures in docs/
 make appimage     # builds the AppImage in /tmp/delta-build, leaving it here
 make clean        # removes ./delta, the AppImage and /tmp/delta-build
 ```
 
-To change the icon, replace `internal/appicon/appicon.png` with another 256×256
-PNG.
+The icon is drawn in `packaging/delta.svg`, as wide as its 256 pixels. To change
+it, edit the SVG and run `make icons`, which draws
+`internal/appicon/appicon.png` from it.
 
 ## Releases
 

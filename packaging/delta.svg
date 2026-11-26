@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- Delta's three slanted bars making a triangle, in the style of Termite's
+       and Notepad's icons: a thick dark outline around them all, each bar
+       with a lighter band along its top. The triangle is equilateral, as wide as the
+       picture and in the middle of its height. The bars' paths are 5 inside their edges, and stroked 10 wide with
+       round joins to round their corners. -->
+  <defs>
+    <g id="first">
+      <path d="M14.3 226.0 L128.0 29.0 L146.7 61.4 L51.7 226.0 z"/>
+    </g>
+    <mask id="first-top"><use href="#first" fill="#fff" stroke="#fff" stroke-width="10" stroke-linejoin="round"/></mask>
+    <g id="second">
+      <path d="M161.5 87.0 L180.2 119.4 L118.7 226.0 L81.2 226.0 z"/>
+    </g>
+    <mask id="second-top"><use href="#second" fill="#fff" stroke="#fff" stroke-width="10" stroke-linejoin="round"/></mask>
+    <g id="third">
+      <path d="M195.0 145.0 L241.7 226.0 L221.3 226.0 L184.7 162.7 z"/>
+      <path d="M227.9 202.0 L241.7 226.0 L148.2 226.0 L162.1 202.0 z"/>
+    </g>
+    <mask id="third-top"><use href="#third" fill="#fff" stroke="#fff" stroke-width="10" stroke-linejoin="round"/></mask>
+  </defs>
+  <!-- the dark outline, a triangle behind the bars -->
+  <path d="M128 31 L240 225 H16 z" fill="#232b08" stroke="#232b08" stroke-width="32" stroke-linejoin="round"/>
+  <!-- the bars, each with its top band highlight -->
+  <use href="#first" fill="#859900" stroke="#859900" stroke-width="10" stroke-linejoin="round"/>
+  <rect x="0" y="0" width="256" height="58" fill="#b3c832" mask="url(#first-top)"/>
+  <use href="#second" fill="#859900" stroke="#859900" stroke-width="10" stroke-linejoin="round"/>
+  <rect x="0" y="0" width="256" height="117" fill="#b3c832" mask="url(#second-top)"/>
+  <use href="#third" fill="#859900" stroke="#859900" stroke-width="10" stroke-linejoin="round"/>
+  <rect x="0" y="0" width="256" height="163" fill="#b3c832" mask="url(#third-top)"/>
+</svg>

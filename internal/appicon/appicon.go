@@ -1,5 +1,6 @@
 // Package appicon holds the program's icon, built into the binary so that the
-// program needs nothing beside it. It knows nothing of Qt.
+// program needs nothing beside it. It is drawn from packaging/delta.svg by
+// make icons. It knows nothing of Qt.
 package appicon
 
 import _ "embed"

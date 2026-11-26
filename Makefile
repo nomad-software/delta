@@ -9,7 +9,7 @@ LDFLAGS := -s -w
 VERSION := $(shell git describe --tags --abbrev=0 2>/dev/null)
 LDFLAGS += -X github.com/nomad-software/delta/internal/ui.version=$(VERSION)
 
-.PHONY: build run install test race vet bench screenshots appimage clean
+.PHONY: build run install test race vet bench icons screenshots appimage clean
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
@@ -38,6 +38,11 @@ vet:
 # (golang.org/x/perf/cmd/benchstat).
 bench:
 	go test -run '^$$' -bench . -benchmem -count 6 -timeout 30m ./internal/ui/
+
+# Draws the program's icon, internal/appicon/appicon.png, from
+# packaging/delta.svg. Run it again whenever the SVG changes.
+icons:
+	rsvg-convert -w 256 -h 256 packaging/delta.svg -o internal/appicon/appicon.png
 
 # Draws the window into docs/.
 screenshots:
